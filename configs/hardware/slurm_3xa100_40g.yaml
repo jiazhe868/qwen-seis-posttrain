@@ -1,0 +1,81 @@
+# =============================================================================
+# the cluster profile: `gpu-a100` queue, one job = up to 8 nodes × 3 × A100-PCIE-40GB.
+# Use with the Qwen3.5-9B line:  DPT_HW_PROFILE=slurm_3xa100_40g DPT_MODEL_LINE=qwen35_9b
+# (scripts/slurm/env.sh exports both). README explains every choice below.
+#
+# Facts (cluster user guide, checked 2026-10-13):
+#   gpu-a100       84 nodes; 3 × A100 PCIe 40 GB (GPU0 on socket 0, GPU1-2 on socket 1), 2 × EPYC 7763
+#                  (128 cores), 256 GB RAM, 288 GB local /tmp SSD. Max 8 nodes per job, 12 nodes per
+#                  user, 48 h, 3 SU per node-hour.
+#   gpu-a100-dev   2 nodes, 2 h (env checks, parity, short smoke runs)
+#   gpu-a100-small 1 GPU, 1.5 SU/node-hour (single-GPU serving, the train-forward parity check)
+#   gpu-h100       4 nodes of 2 × H100 PCIe 80 GB; 1 node per user, 6 SU/node-hour (27B teacher/judge)
+#   Network        HDR InfiniBand, 200 Gb/s per node (≈ 25 GB/s)
+#   $SCRATCH       no quota, files not accessed for 10 days are purged; $WORK 1 TB, not purged
+#
+# Layout for the 9B (24 GPUs), and why:
+#   * TP = 1. The GPUs are PCIe (no NVLink), and TP must divide the 4 KV heads, so TP3 is invalid.
+#     Tensor parallelism over PCIe would put two all-reduces per layer on the slow link.
+#   * PP = 8, DP = 3: each node is one pipeline stage holding 4 of the 32 layers, and its 3 GPUs
+#     are the 3 data-parallel replicas of that stage. The gradient all-reduce stays inside a node;
+#     only pipeline activations (≈ 270 MB per 32K-token micro-batch boundary) cross InfiniBand.
+#     PP4 × DP6 would put ~40 GB on the first and last stage (embedding / LM head are 1.0B params
+#     each, untied), which is the whole GPU. PP8 leaves the heaviest stage at 32.3 GB (average stage
+#     24.7 GB). DP = 3 constrains the RL batch: verl's validate_config needs prompts × n divisible by DP ×
+#     micro-batch, and its engine worker needs each mini-batch × n divisible by DP. Its padding only fills a
+#     batch up to lcm(DP, mini-batch × n), so 128 prompts × 8 fail (timing run 3530168, 2026-10-26).
+#     configs/rl/rl_9b.yaml uses 126 prompts, like the SFT batch.
+#   * Rollout: one vLLM replica per GPU (24 replicas). 19.3 GB of weights + 10.7 GB KV/state at 0.8
+#     utilization ≈ 42 sequences of 6K tokens in flight per replica, ~1,000 in total (the 27B cluster
+#     plan had ~780).
+#   Recompute these with:  python -m dpt.planning.budget --profile slurm_3xa100_40g --model-line qwen35_9b
+# =============================================================================
+hardware:
+  profile: slurm_3xa100_40g
+  nnodes: 8
+  gpus_per_node: 3
+  gpu_mem_gb: 40
+  gpu_bf16_tflops: 312          # A100 dense BF16 peak (the PCIe part is power-capped at 250 W: expect less)
+  supports_fp8: false
+  nvlink_gbps: 0                # PCIe only
+  ib_gbps: 25                   # HDR 200 Gb/s per node
+  pcie_gbps: 25
+  cpu_mem_gb: 256               # per node; holds the offloaded optimizer/grad/param state (~34 GB/node)
+  local_nvme_tb: 0.28           # /tmp SSD (job lifetime only)
+  shared_ckpt: null
+
+  train:
+    tp: 1
+    pp: 8
+    dp: 3
+    cp: 1
+    sequence_parallel: false    # needs TP > 1
+    gradient_accumulation_fusion: false   # needs Apex's CUDA extension, which our env does not build
+  rollout:
+    engine: vllm
+    tp: 1
+    replicas: 24
+    gpu_memory_utilization: 0.8 # tune in the timing run (plan §3, week 1): raise if no OOM after the weight sync
+  # Inference-only layouts (eval, difficulty calibration, SFT data generation), one model per job:
+  inference_9b:                 # 3 replicas per node, TP1
+    tp: 1
+    gpu_memory_utilization: 0.9
+    max_model_len: 32768
+  inference_27b:                # teacher / judge: gpu-h100 node (2 × 80 GB, TP2), or TP2 on 2 of an A100 node's 3 GPUs
+    tp: 2
+    gpu_memory_utilization: 0.9
+    max_model_len: 32768
+
+# Checkpoints (hundreds of GB) on $SCRATCH: fast, no quota, but files not accessed for 10 days are
+# purged, so copy every checkpoint you will need later (the SFT export, the selected RL step) to $WORK
+# (plan §4). Data, eval sets and results are small and must survive the month: $WORK.
+project:
+  paths:
+    data_root: ${oc.env:DPT_DATA_ROOT,${oc.env:WORK,/tmp}/dpt/data}
+    raw_root: ${oc.env:DPT_RAW_ROOT,${oc.env:WORK,/tmp}/dpt/raw}
+    ckpt_root: ${oc.env:DPT_CKPT_ROOT,${oc.env:SCRATCH,/tmp}/dpt/checkpoints}
+    eval_root: ${oc.env:DPT_EVAL_ROOT,${oc.env:WORK,/tmp}/dpt/eval_results}
+    # One user account on the cluster, so "training cannot read the eval sets" cannot be enforced by
+    # permissions. dpt.launch.rl warns on this profile; the decontam stage and the eval harness are the
+    # only readers by convention (plan §4).
+    eval_secure_root: ${oc.env:DPT_EVAL_SECURE_ROOT,${oc.env:WORK,/tmp}/dpt/eval_secure}

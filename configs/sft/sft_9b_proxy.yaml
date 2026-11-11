@@ -1,0 +1,9 @@
+# 9B proxy SFT (same recipe as 27B) on one cluster node, as the starting point for ablation screening.
+defaults_from: sft_27b.yaml
+sft:
+  run_name: sft9b_proxy_seed${project.seed}
+  base_model: ${project.model.proxy_9b}
+verl_sft:
+  trainer.nnodes: 1
+  engine.tensor_model_parallel_size: 2
+  engine.pipeline_model_parallel_size: 1

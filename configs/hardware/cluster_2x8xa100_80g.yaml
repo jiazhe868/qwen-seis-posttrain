@@ -1,0 +1,38 @@
+# =============================================================================
+# Production profile: 2 nodes × 8 × A100-SXM4-80GB (report §硬件假设).
+# All 27B SFT / RL / final-eval runs use this profile.
+# =============================================================================
+hardware:
+  profile: cluster_2x8xa100_80g
+  nnodes: 2
+  gpus_per_node: 8
+  gpu_mem_gb: 80
+  gpu_bf16_tflops: 312          # A100 dense BF16 peak; there is NO FP8 on A100
+  supports_fp8: false
+  nvlink_gbps: 600              # NVLink + NVSwitch, GB/s
+  ib_gbps: 100                  # 4 × 200 Gb/s HDR per node ≈ 100 GB/s
+  pcie_gbps: 25                 # effective host<->device for offload estimates
+  cpu_mem_gb: 2048              # per node; holds offloaded optimizer/grad/param state
+  local_nvme_tb: 30
+  shared_ckpt: /nfs/ckpt        # shared NFS for checkpoints (override per site)
+
+  # Parallel layout (report §并行策略). TP*PP = 8 = one node, so the only
+  # cross-node traffic is the DP gradient reduce-scatter / param all-gather.
+  train:
+    tp: 4                       # ≤ 4 because there are only 4 KV heads
+    pp: 2
+    dp: 2
+    cp: 1                       # CP is not validated for GDN on this stack
+    sequence_parallel: true
+    gradient_accumulation_fusion: true   # requires Apex with --cuda_ext (present in the verl/NeMo images)
+  rollout:
+    engine: vllm
+    tp: 2                       # 8 replicas × TP2 maximizes replica count for bandwidth-bound decode
+    replicas: 8
+    gpu_memory_utilization: 0.7
+
+# Checkpoints go to shared NFS on the cluster (both nodes, and the eval box, must see them).
+# This overrides project.paths.ckpt_root, the single key every stage reads.
+project:
+  paths:
+    ckpt_root: ${oc.env:DPT_CKPT_ROOT,${hardware.shared_ckpt}/qwen38-domain}

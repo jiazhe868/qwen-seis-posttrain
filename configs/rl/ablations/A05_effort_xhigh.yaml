@@ -1,0 +1,7 @@
+# A5: roll out at xhigh instead of medium effort. (27B, 100 steps)
+# Result: +1.2 D-Num, but 2.6× tokens per step. The project goal is xhigh quality at medium cost,
+# so medium it is.
+ablation: {id: A5, base_config: rl/rl_27b.yaml, steps: 100, metric: d_num_gain_per_token, decision: "medium"}
+rl:
+  total_steps: 100
+  sampling: {effort: xhigh}

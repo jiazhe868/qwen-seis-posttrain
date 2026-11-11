@@ -1,0 +1,7 @@
+# A2: divide group advantages by the group std (original GRPO)? (9B proxy, 200 steps)
+# Result: NOT dividing gave +0.9 D-Num and +2.3 hard-problem pass@8. Std division inflates
+# nearly-all-correct and nearly-all-wrong groups, which biases learning by difficulty.
+ablation: {id: A2, base_config: rl/rl_9b_proxy.yaml, steps: 200, metric: d_num_dev_gain, decision: "no std division"}
+rl:
+  total_steps: 200
+  advantage: {estimator: group_mean_std}

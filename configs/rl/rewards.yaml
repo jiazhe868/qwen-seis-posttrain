@@ -1,0 +1,102 @@
+# =============================================================================
+# rewards.yaml: training-time graders (dpt.rewards). Loaded by
+# dpt.rewards.router.load_rewards_config() inside every verl reward worker.
+# Override the file with  DPT_REWARDS_CONFIG=/path/to/file.yaml .
+#
+# Every value here moves the reward, so changing it is a training change. Put
+# it in its own commit, and re-run `python -m dpt.rewards.validate` first.
+# =============================================================================
+rewards:
+  max_workers: 64                    # thread pool for compute_score_batch (sandbox/judge I/O)
+
+  # Length control (report §算法配置 "长度控制"): 24K cap; 20K→24K linear penalty up to −0.5;
+  # truncated responses are flagged and excluded from the loss by the trainer.
+  length:
+    max_response_tokens: ${project.thinking.rl_max_response}
+    overlong_start: ${project.thinking.rl_overlong_start}
+    max_penalty: ${project.thinking.rl_overlong_max_penalty}
+    est_chars_per_token: 3.2         # only used when the rollout did not pass response_length
+    # Set both to false under verl with reward_manager=dapo: dapo already applies the token-exact
+    # overlong penalty from valid_response_length, and the trainer detects truncation from the
+    # response mask. verl does not pass response_length/finish_reason into compute_score.
+    apply_penalty: true              # false → no overlong penalty here (length_penalty = 0)
+    truncation_from_estimate: true   # false → flag truncation only from a real token count / finish_reason
+
+  # T1 numeric reasoning: binary, unit-aware, single answer only (ablation A7: no partial credit).
+  t1_num:
+    default_rel_tol: 0.01            # used when a problem does not specify its own tolerance
+    default_abs_tol: 0.0
+    require_unit: true               # reference has a unit and the answer has none → 0
+    max_unmarked_chars: 64           # longer answers must use \boxed{} or "Final answer:"
+    dimensionless_labels: [Mw, ML, Ms, mb, M_w, M_L, M_s, m_b, M, times, 倍, 级]
+    # ABLATION A7 ONLY (configs/rl/ablations). Partial credit by relative error raised training
+    # reward but lowered D-Num by 1.8: the policy learned "close enough" answers. Keep disabled.
+    partial_credit:
+      enabled: false
+      max_rel_err: 0.10              # score = max(0, 1 - rel_err / max_rel_err) when enabled
+
+  # T4 math: same parser, near-exact tolerance.
+  t4_math:
+    math_rel_tol: 1.0e-6
+    math_abs_tol: 1.0e-9
+
+  # T2 code & tools: hidden-test pass fraction; tamper categories hard-zero the reward.
+  t2_code:
+    timeout_s: 10
+    run_visible_tests: true          # needed for the visible–hidden gap monitor (step-205 hack)
+    zero_on: [test_tamper, exit_call, env_probe, test_dir_read, blanket_except, introspection]
+    sandbox:
+      mode: local                    # local (dev workstation) | remote (CPU sandbox cluster)
+      hidden_tests_dir: null         # local mode only; production keeps hidden tests on sandbox hosts
+      urls: []                       # remote mode: one URL per sandbox_server worker
+      token_env: DPT_SANDBOX_TOKEN
+      cpu_s: 10
+      mem_mb: 2048
+      network_isolation: auto        # auto → `unshare -rn` when unprivileged namespaces are available
+      # Filesystem isolation (local mode). With an Apptainer image the model's code sees only its own
+      # sandbox directory and the read-only interpreter below; without one it runs as the training
+      # user and can delete that user's files. dpt.launch.rl requires it on the cluster profiles.
+      # scripts/slurm/env.sh exports both variables (scripts/slurm/README.md §sandbox).
+      container_image: ${oc.env:DPT_SANDBOX_SIF,null}
+      container_runtime: apptainer
+      container_network: none        # `--net --network none`; scripts/slurm/check_sandbox.sh verifies it works
+      python: ${oc.env:DPT_SANDBOX_PYTHON,null}   # null = the reward worker's own interpreter
+
+  # T3 open-ended reports: rubric judge × citation factor − length and self-praise penalties.
+  t3_report:
+    citation_penalty_per_unverified: 0.1
+    length_ratio_threshold: 1.5      # penalty starts beyond 1.5× the reference length
+    length_penalty_per_ratio: 0.5
+    length_penalty_max: 0.5
+    self_praise_penalty: 0.1         # per self-evaluation sentence (step-310 hack) ...
+    self_praise_penalty_max: 0.3     # ... capped
+    judge:
+      base_url: ${oc.env:DPT_JUDGE_URL,http://localhost:8001/v1}
+      # PIN the exact served model name. A different model in the response fails closed
+      # (judge_version_mismatch). Re-run `python -m dpt.rewards.validate --calibrate` after any change.
+      model: ${oc.env:DPT_JUDGE_MODEL,judge-model-pinned}
+      api_key_env: DPT_JUDGE_API_KEY
+      temperature: 0.0
+      max_tokens: 3072                 # atomic rubrics: ~15–25 yes/no verdicts with quoted evidence (11-07)
+      timeout_s: 60
+      retries: 2
+      enforce_model_match: true
+    calibration:
+      path: data/judge_calibration.jsonl   # fixed items with reference scores
+      max_mean_shift: 0.05
+      max_mae: 0.10
+    citations:
+      mode: crossref                 # crossref | offline (known_works JSON list of {doi,title})
+      mailto: ${oc.env:DPT_CROSSREF_MAILTO,null}
+      cache_path: data/cache/crossref_cache.json
+      min_interval_s: 0.1
+      timeout_s: 10
+      known_works: null
+
+  # T4 instruction following: rule checks + relevance gate (step-60 hack).
+  t4_ifeval:
+    scoring: all                     # all (binary) | fraction
+    relevance_check: true
+    min_prompt_overlap: 0.15
+    min_prompt_content_words: 4
+    filler_repetition_threshold: 0.3

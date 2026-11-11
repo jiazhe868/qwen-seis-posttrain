@@ -1,0 +1,12 @@
+# A9: LoRA (rank 64) vs full-parameter RL. (27B, 200 steps)
+# Result: LoRA reached 82% of the full-parameter gain; weight sync dropped from 10 s to 1 s and each
+# GPU saved 18 GB. Full parameters for the main line; LoRA is the fast lane for exploring new tasks.
+# NOTE: verify verl 0.9.1's Megatron LoRA keys on the smoke model first (docs/verl_integration.md §LoRA).
+ablation: {id: A9, base_config: rl/rl_27b.yaml, steps: 200, metric: d_num_dev_gain, decision: "full; LoRA as fast lane"}
+rl:
+  total_steps: 200
+  lr_schedule: {base_lr: 1.0e-5, final_lr: 5.0e-6}   # LoRA needs a ~10× larger LR
+verl:
+  actor_rollout_ref.model.lora.rank: 64
+  actor_rollout_ref.model.lora.alpha: 128
+  actor_rollout_ref.model.lora.freeze_vision_model: true

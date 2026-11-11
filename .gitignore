@@ -1,0 +1,39 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+/build/
+/dist/
+# run outputs at the repo root only (large, machine-specific). Anchored with "/" so that
+# src/dpt/data/, src/dpt/parity/ and tests/data/ are NOT ignored.
+/data/
+/checkpoints/
+/eval_results/
+/parity/
+/outputs/
+/wandb/
+/env_report.json
+# NOTE: '#' only starts a comment at the beginning of a line.
+
+# --- workstation logs from the October smoke runs: machine paths, not results -------------
+/env_logs/
+
+# --- model weights and checkpoints: kept on the cluster and in the local backup, not in git -------
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# --- local session, tooling and editor state ---------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# --- held-out eval families and kinds: never published (README, "Data & licensing") ---------------------
+# They regenerate the D-Num, D-Num-hard and D-Code test problems. They live only on the machines that build
+# the eval sets; the public code runs without them (dpt.data.gen.common.import_private_module_if_present).
+/src/dpt/data/gen/seismology_heldout.py
+/src/dpt/data/gen/seismology_hard_heldout.py
+/src/dpt/data/gen/t2_tasks_heldout.py
+/tests/data/gen/test_heldout_private.py

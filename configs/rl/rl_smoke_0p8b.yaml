@@ -1,0 +1,62 @@
+# =============================================================================
+# End-to-end RL smoke test on the 4×A100-40GB workstation (Qwen3.5-0.8B, same
+# qwen3_5 architecture: GDN + gated attention + MTP).
+#
+#   DPT_HW_PROFILE=local_4xa100_40g bash scripts/05_rl_smoke.sh
+#
+# What it proves before any cluster time is spent:
+#   * every adapter loads (trainer mode, replay buffer, sampler, reward fn, estimator)
+#   * the curriculum walks through all three stages and admits the hard pool
+#   * zero-advantage filtering, task-aware advantages, TIS and the alert engine run
+#   * checkpoint → resume is exact: run 12 steps straight, then 6 + resume + 6, and
+#     compare (scripts/05_rl_smoke.sh does both and diffs the loss curves; Incident 2).
+#     The resume point (step 6) sits after the hard pool joins (step 5) and before the
+#     last stage boundary (step 8), so both restored states are exercised.
+# The response cap (4K) leaves the 0.8B model room to finish T1/T4 answers; at 2K
+# every group of those tasks was truncated and carried no learning signal.
+# Numbers from this run mean nothing: the data is the toy bank.
+# =============================================================================
+defaults_from: rl_27b.yaml
+
+rl:
+  total_steps: 12
+  prompts_per_step: 16
+  group_size: 4
+  sampling: {max_response: 4096}
+  length: {overlong_start: 3072}
+  lr_schedule: {base_lr: 1.0e-5, warmup_steps: 2, final_lr: 5.0e-6, final_phase_steps: 3}
+  loss:
+    task_normalization:
+      response_tokens: {t1_num: 600, t2_code: 1200, t3_report: 1200, t4_general: 500}
+
+curriculum:
+  hard_pool_join_step: 5
+  stages:
+    - {name: A_verifiable_warmup, start: 0, end: 4, mix: {t1_num: 0.50, t2_code: 0.25, t3_report: 0.00, t4_general: 0.25}}
+    - {name: B_add_open_ended, start: 4, end: 8, mix: {t1_num: 0.40, t2_code: 0.25, t3_report: 0.15, t4_general: 0.20}}
+    - {name: C_consolidate, start: 8, end: 12, mix: {t1_num: 0.35, t2_code: 0.25, t3_report: 0.15, t4_general: 0.25}}
+  auto_reweight: {window: 3, cooldown: 3}
+
+rl_run:
+  run_name: rl_smoke_0p8b
+  init_checkpoint: ${project.model.smoke}
+  data_dir: ${project.paths.data_root}/smoke                # toy pipeline output (scripts/01_data.sh --smoke)
+  # The toy bank is too small for a held-out dev split (publish keeps ≥3/4 of each task for
+  # training). The smoke pipeline writes rl_dev as a relabeled copy of rl_main
+  # (publish.dev_copy_if_empty), so the dev-only gold grader → gold/<task>, dev/d_num path runs.
+  # Fine for plumbing, meaningless for scores.
+  dev_files: ["${rl_run.data_dir}/rl_dev.parquet"]
+  max_prompt_length: 1024
+  save_freq: 6
+  dev_freq: 6
+  reward_workers: 4
+  logger: [console]
+
+verl:
+  trainer.val_before_train: false
+  # No flash-attn build on the workstation: let Transformer Engine pick cuDNN fused or unfused attention.
+  actor_rollout_ref.actor.megatron.override_transformer_config.attention_backend: auto
+  data.max_prompt_length: ${rl_run.max_prompt_length}
+  actor_rollout_ref.rollout.max_model_len: 5120          # 1K prompt + 4K response
+  actor_rollout_ref.rollout.val_kwargs.n: 2
+  trainer.max_actor_ckpt_to_keep: 3

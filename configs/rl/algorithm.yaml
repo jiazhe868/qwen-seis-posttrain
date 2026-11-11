@@ -1,0 +1,91 @@
+# =============================================================================
+# Framework-free RL algorithm settings (consumed by dpt.rl.*; the verl adapter
+# maps them onto verl keys). Report §阶段二 RL 设计 / §算法配置.
+# Every value names the ablation or incident it came from.
+# =============================================================================
+rl:
+  total_steps: 420
+  prompts_per_step: 128          # 128 prompts × 8 samples = 1,024 responses per step
+  group_size: 8                  # A6: 16 samples gave only +0.6 at 2× generation cost
+  num_updates_per_step: 2        # 2 mini-batch updates (ppo_mini_batch_size = 64 prompts); more = more off-policy
+
+  sampling:
+    temperature: 1.0
+    top_p: 1.0                   # top-p < 1 makes the sampling distribution differ from the scored one
+    effort: ${project.thinking.train_effort}        # medium (A5: xhigh +1.2 but 2.6× tokens/step)
+    max_response: ${project.thinking.rl_max_response}  # 24,576
+
+  length:
+    overlong_start: ${project.thinking.rl_overlong_start}       # 20,480
+    overlong_max_penalty: ${project.thinking.rl_overlong_max_penalty}  # 0.5 at the cap
+    exclude_truncated_from_loss: true
+    exclude_truncated_from_baseline: true   # "unfinished" is not "wrong" for the other group members
+    max_total_tokens: ${project.thinking.max_context}           # prompt + response ≤ 32K (Incident 4)
+
+  advantage:
+    estimator: group_mean        # r - mean(group); NO division by group std (A2)
+    zero_adv_eps: 1.0e-6
+    scale_tasks: [t3_report]     # per-task running-std scaling (§多任务 调整-2)
+    scale_momentum: 0.9
+    scale_min_std: 0.05
+    scale_target_std: null       # null → pooled running std of the unscaled (verifiable) tasks
+    scale_max_gain: 4.0
+
+  loss:
+    clip_low: 0.2
+    clip_high: 0.28              # clip-higher (A3)
+    dual_clip_c: 3.0
+    kl_coef: 0.0                 # A1: KL 0.001 gave 3.0 vs 4.1 for 0; no reference model is loaded
+    aggregation: fixed-constant  # Σ token loss / C, C fixed (A10). Never token-mean.
+    # Per-task loss normalization (§多任务 调整-1): L = Σ_k (w_k / B_k) Σ_{t∈k} ℓ_t,
+    # implemented as advantage multipliers w_k·C/B_k. B_k = nominal prompts_k × group_size
+    # × response_tokens[k] / num_updates, recomputed only at stage boundaries.
+    task_normalization:
+      enabled: true
+      weights: null              # null → w_k = the stage's nominal mix share
+      # Typical response length (tokens, loss-masked part only) per task; design constants
+      # taken from the stage-A logs, frozen for the run. They set B_k; they are NOT measured per batch.
+      response_tokens: {t1_num: 4000, t2_code: 9000, t3_report: 8000, t4_general: 3500}
+
+  tis:
+    enabled: true                # A4: without TIS run 1 collapsed at step 180
+    cap: 2.0
+    seq_mask:
+      enabled: true
+      statistic: abs_log_ppl_diff          # per-sequence |mean(rollout) - mean(train)|
+      threshold: 1.0e-2                    # 5× the batch alert level; healthy runs mask < 0.5% of sequences
+
+  filtering:
+    drop_zero_advantage_groups: true       # before old-logprob recompute (A10: −4.4 min/step)
+
+  partial_rollout:
+    enabled: true
+    chunk_tokens: 16384          # responses past 16K new tokens in a step are suspended …
+    max_staleness: 1             # … and continued next step; groups older than 1 version are evicted
+
+  lr_schedule:
+    base_lr: 1.0e-6              # A8: 2e-6 (tuned on 9B) → 3× entropy oscillation on 27B
+    warmup_steps: 10
+    final_lr: 5.0e-7
+    final_phase_steps: 120
+    decay: step
+
+  microbatch:
+    max_tokens_per_microbatch: 32768     # token budget incl. padding (Incident 4)
+    pad_multiple: 128
+    memory_limit_gb: 76.0                # preflight hard limit (dashboard: alert 72, hard 76)
+
+  mismatch:
+    position_edges: [4096, 8192, 12288]  # Incident 1 was only visible past 12K
+    length_edges: [4096, 8192, 16384]
+    # Engine mismatch is measured on fresh samples only (all tokens from the current weights).
+    # With partial rollout a step can have very few, and those are the shortest responses, whose
+    # per-sequence mean is noisy. Below these minima the step emits no mismatch/* values (the
+    # alert skips it) and sets mismatch/insufficient_fresh = 1. Smoke run: 4 fresh samples
+    # gave 8.8e-3 and a false auto-pause; 28 fresh samples on the previous step gave 2.8e-4.
+    min_fresh_sequences: 8
+    min_fresh_tokens: 4096
+    parity_probe:
+      num_prompts: 16                    # fixed prompts scored on both sides after every weight sync
+      prompt_mean_tol: 2.0e-3
+      token_max_tol: 0.5

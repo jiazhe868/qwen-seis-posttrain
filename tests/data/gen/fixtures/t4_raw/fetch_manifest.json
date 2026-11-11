@@ -1,0 +1,29 @@
+{
+  "gsm8k": {
+    "repo": "openai/gsm8k",
+    "revision": "gsm-rev",
+    "files": [
+      "main/train-00000-of-00001.parquet"
+    ],
+    "license": "MIT",
+    "rows": 6
+  },
+  "math": {
+    "repo": "EleutherAI/hendrycks_math",
+    "revision": "math-rev",
+    "files": [
+      "algebra/train-00000-of-00001.parquet"
+    ],
+    "license": "MIT",
+    "rows": 12
+  },
+  "dolly": {
+    "repo": "databricks/databricks-dolly-15k",
+    "revision": "dolly-rev",
+    "files": [
+      "databricks-dolly-15k.jsonl"
+    ],
+    "license": "CC-BY-SA-3.0",
+    "rows": 29
+  }
+}

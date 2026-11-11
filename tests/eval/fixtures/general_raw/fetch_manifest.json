@@ -1,0 +1,72 @@
+{
+ "gpqa_diamond": {
+  "repo": "fixture/gpqa_diamond",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ },
+ "mmlu_pro_test": {
+  "repo": "fixture/mmlu_pro_test",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ },
+ "ifeval": {
+  "repo": "fixture/ifeval",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ },
+ "livecodebench": {
+  "repo": "fixture/livecodebench",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ },
+ "bfcl": {
+  "repo": "fixture/bfcl",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ },
+ "jbb": {
+  "repo": "fixture/jbb",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ },
+ "xstest": {
+  "repo": "fixture/xstest",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ },
+ "gsm8k_test": {
+  "repo": "fixture/gsm8k_test",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ },
+ "math_test": {
+  "repo": "fixture/math_test",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ },
+ "math500": {
+  "repo": "fixture/math500",
+  "revision": "fixture-rev",
+  "license": "fixture",
+  "files": {},
+  "rows": 0
+ }
+}

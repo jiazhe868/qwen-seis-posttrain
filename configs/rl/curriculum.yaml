@@ -1,0 +1,36 @@
+# =============================================================================
+# Three-stage curriculum (report §三段课程; consumed by dpt.rl.curriculum).
+# Step ranges are [start, end). Mixes are prompt shares per step and must sum to 1.
+# =============================================================================
+curriculum:
+  seed: ${project.seed}
+  prompts_per_step: ${rl.prompts_per_step}
+  stages:
+    - name: A_verifiable_warmup     # learn where rewards are reliable; confirm stability
+      start: 0
+      end: 120
+      mix: {t1_num: 0.50, t2_code: 0.25, t3_report: 0.00, t4_general: 0.25}
+    - name: B_add_open_ended        # judge-scored T3 enters late so judge-pleasing is not learned first
+      start: 120
+      end: 300
+      mix: {t1_num: 0.40, t2_code: 0.25, t3_report: 0.15, t4_general: 0.20}
+    - name: C_consolidate           # more general replay + lower LR to win back forgetting
+      start: 300
+      end: 420
+      mix: {t1_num: 0.35, t2_code: 0.25, t3_report: 0.15, t4_general: 0.25}
+
+  # Problems the base model solved 0/8 at medium effort (≈7K) wait until step 150.
+  hard_pool_join_step: 150
+  hard_share: 0.15                  # initial share of a task's prompts drawn from its hard pool
+
+  # §多任务 RL 难调 调整-6
+  auto_reweight:
+    enabled: true
+    window: 30                      # dev metric flat for 30 steps …
+    zero_adv_threshold: 0.60        # … AND mean zero-advantage group fraction > 60%
+    min_dev_improvement: 0.0
+    weight_factor: 0.8              # → sampling weight × 0.8 (floored at 0.4 of the stage weight)
+    min_weight_factor: 0.4
+    hard_share_increment: 0.10      # → hard-pool share + 0.10 (capped at 0.5 total)
+    max_hard_share: 0.50
+    cooldown: 30

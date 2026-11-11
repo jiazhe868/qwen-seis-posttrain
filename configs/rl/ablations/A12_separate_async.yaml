@@ -1,0 +1,18 @@
+# A12: one node rolls out, one node trains (verl separate_async, staleness ≤ 1, partial rollout) vs
+# colocated on both nodes. (27B, 60 steps; THROUGHPUT ONLY)
+# Result: 31 min/step vs 27. On A100, 27B is training-bound; halving the training GPUs costs more
+# than overlapping generation saves. Whether async helps depends on workload and hardware.
+# This overlay uses verl's stock separate_async trainer (our colocated hooks do not apply), so read
+# only the step-time metric from it.
+ablation: {id: A12, base_config: rl/rl_27b.yaml, steps: 60, metric: step_time, decision: "colocated"}
+rl: {total_steps: 60}
+verl:
+  trainer.v1.trainer_mode: separate_async
+  trainer.nnodes: 1
+  trainer.n_gpus_per_node: 8
+  actor_rollout_ref.rollout.nnodes: 1
+  actor_rollout_ref.rollout.n_gpus_per_node: 8
+  trainer.v1.separate_async.parameter_sync_step: 1
+  actor_rollout_ref.actor.megatron.param_offload: false   # training no longer shares GPUs with vLLM
+  actor_rollout_ref.actor.megatron.optimizer_offload: false
+  # 27B training state does not fit on 8×80GB without offload at DP1; keep optimizer offload if OOM.

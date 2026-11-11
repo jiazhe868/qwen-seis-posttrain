@@ -1,0 +1,55 @@
+# =============================================================================
+# Development profile: this workstation, 1 node × 4 × A100-SXM4-40GB (NV4 all-to-all).
+#
+# What runs here (README §3.2):
+#   - every CPU unit test, the data pipeline, decontamination, grader validation
+#   - 27B *inference*: vLLM TP4 (≈13.5 GB weights/GPU, ~20 GB left for KV) for
+#     baseline eval, difficulty calibration (8 samples/problem), self-distillation
+#   - GPU parity checks (DeltaNet kernel vs FP32 reference; vLLM vs HF logprobs)
+#   - end-to-end RL/SFT *smoke* runs with the 0.8B same-family model
+# What does NOT run here: 27B full-parameter SFT/RL (needs ~16 bytes/param of
+# training state ≈ 430 GB before activations; we have 160 GB of HBM).
+#
+# Environments (tested): driver 560.35 supports CUDA ≤ 12.6.
+#   dpt-gpu  : torch 2.11.0+cu126 + flash-linear-attention   (scripts/00_setup_env.sh gpu-local)
+#   dpt-vllm : vLLM 0.24.0+cu129 + conda cuda-compat 12.9    (scripts/00_setup_env.sh vllm-local)
+# The base conda env's torch (CUDA 13.0) cannot see these GPUs.
+# The GPUs are shared: scripts pick the GPUs with the most free memory.
+# =============================================================================
+hardware:
+  profile: local_4xa100_40g
+  nnodes: 1
+  gpus_per_node: 4
+  gpu_mem_gb: 40
+  gpu_bf16_tflops: 312
+  supports_fp8: false
+  nvlink_gbps: 600
+  ib_gbps: 0
+  pcie_gbps: 25
+  cpu_mem_gb: 1007
+  local_nvme_tb: 0
+  shared_ckpt: null             # single machine: checkpoints stay under project.paths.ckpt_root
+
+  # Smoke-test layout for the 0.8B model (keeps every code path of the real
+  # layout alive: TP>1, PP>1, DP>1, colocated vLLM).
+  train:
+    tp: 1
+    pp: 2
+    dp: 2
+    cp: 1
+    sequence_parallel: false
+    # Megatron's fused weight-gradient accumulation needs NVIDIA Apex's CUDA extension, which the
+    # workstation env (dpt-train) does not build. It is a speed optimization only.
+    gradient_accumulation_fusion: false
+  rollout:
+    engine: vllm
+    tp: 1
+    replicas: 4
+    gpu_memory_utilization: 0.5
+  # 27B inference-only layout (eval / calibration / self-distillation).
+  inference_27b:
+    tp: 4
+    replicas: 1
+    gpu_memory_utilization: 0.88
+    max_model_len: 32768
+

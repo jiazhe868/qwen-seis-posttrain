@@ -1,0 +1,17 @@
+# SFT smoke test on the workstation (Qwen3.5-0.8B, toy SFT mix from the offline pipeline).
+#   DPT_HW_PROFILE=local_4xa100_40g bash scripts/04_sft.sh --config sft/sft_smoke_0p8b.yaml
+defaults_from: sft_27b.yaml
+sft:
+  run_name: sft_smoke_0p8b
+  base_model: ${project.model.smoke}
+  train_files: ["${project.paths.data_root}/smoke/sft/sft_train.jsonl"]
+  epochs: 1
+  global_batch_conversations: 8
+  max_length: 4096
+  lr_warmup_steps: 2
+verl_sft:
+  engine.override_transformer_config.attention_backend: auto   # no flash-attn build on the workstation
+  trainer.save_freq: 5
+  trainer.test_freq: -1
+  trainer.logger: [console]
+  optim.min_lr: 8.0e-7

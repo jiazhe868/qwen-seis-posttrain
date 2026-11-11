@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite it."
+title: "Qwen-Seis-Posttrain: SFT and multi-task RL of Qwen3.5-9B for seismology on a GPU cluster"
+abstract: >-
+  Supervised fine-tuning on teacher-written, solver-checked data and multi-task
+  GRPO-style reinforcement learning (numeric, code, judged reports, general
+  instructions) of Qwen3.5-9B for seismology, run in one month on a shared
+  Slurm cluster (8 nodes of 3 x A100-40GB). Includes the evaluation contract
+  (test sets frozen before training, a measured noise floor, two judges), the
+  data pipeline (verification, difficulty audit, decontamination), the memory
+  and runtime fixes needed to train a 9B model on 40 GB GPUs, and a failure
+  atlas of what went wrong and how each failure is now caught.
+type: software
+authors:
+  - name: "jiazhe868"
+    email: jiazhe868@gmail.com
+url: "https://github.com/jiazhe868/qwen-seis-posttrain"
+repository-code: "https://github.com/jiazhe868/qwen-seis-posttrain"
+license: MIT
+keywords:
+  - large-language-models
+  - post-training
+  - supervised-fine-tuning
+  - reinforcement-learning
+  - grpo
+  - llm-as-a-judge
+  - evaluation
+  - hpc
+  - seismology
+references:
+  - type: software
+    title: "nanoGPT-Seis: the full LLM pretraining lifecycle on earthquake text"
+    authors:
+      - name: "jiazhe868"
+    repository-code: "https://github.com/jiazhe868/nanogpt-seis"
+    license: MIT
+  - type: software
+    title: "nanoGPT-Seis-Posttrain: SFT and verifier RL on a 113M seismology model"
+    authors:
+      - name: "jiazhe868"
+    repository-code: "https://github.com/jiazhe868/nanogpt-seis-posttrain"
+    license: MIT

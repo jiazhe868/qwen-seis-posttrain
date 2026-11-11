@@ -1,0 +1,7 @@
+# A3: symmetric clip 0.2 vs clip-higher 0.28. (9B proxy, 200 steps)
+# Result: with 0.28, entropy at step 200 is still 62% of its initial value (0.2: 35%), and D-Num
+# is +1.4. The higher upper bound lets low-probability tokens rise, which delays entropy collapse.
+ablation: {id: A3, base_config: rl/rl_9b_proxy.yaml, steps: 200, metric: entropy_ratio_and_d_num, decision: "0.28"}
+rl:
+  total_steps: 200
+  loss: {clip_high: 0.2}

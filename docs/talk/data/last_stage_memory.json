@@ -1,0 +1,19 @@
+{
+  "source": "GPU memory of the last pipeline stage (TP1 x PP8, the stage with the output layer and the MTP head), measured on one A100-PCIe-40GB on 2026-10-28 before any 9B training step ran; the run log incidents 17 and 18, configs/sft/sft_9b.yaml.",
+  "gpu_capacity_gib": 39.5,
+  "longest_sft_row_tokens": 20841,
+  "before_fixes": {
+    "fixed_state_gib": 29.3,
+    "fixed_state_note": "BF16 weights + FP32 gradients + Adam sharded over DP3, 3.14B parameters",
+    "loss_mib_per_token": 2.38,
+    "loss_note": "main + MTP losses, both upcasting the full 248,320-word logits to FP32"
+  },
+  "after_fixes": {
+    "fixed_state_gib": 13.9,
+    "fixed_state_note": "Adam on the CPU (FP32 master weights there only), one decoder layer on the last stage: 2.49B parameters x 6 bytes",
+    "loss_at_longest_row_gib": 21.7,
+    "loss_note": "Transformer Engine cross entropy on BF16 logits: 0.94 MiB per token plus the output layer's 2 GiB weight gradient, measured at 20,841 tokens"
+  },
+  "measured_peak_mib": 40366,
+  "measured_peak_note": "8-node pre-flight on the 12 longest rows (2026-10-29), after fix 3; the GPU holds 40,437 MiB"
+}

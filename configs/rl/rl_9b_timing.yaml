@@ -1,0 +1,30 @@
+# =============================================================================
+# 9B timing run (README §6.1): 10 RL steps from the BASE 9B on the preliminary bank, on the real
+# 8-node layout. It measures step time, memory headroom, checkpoint time and how long an 8-node job waits
+# in the queue; the RL length and SU plan are fitted to it. The numbers say nothing about learning.
+#
+#   python -m dpt.data.gen.prelim --t1 ... --t2 ... --t4 ... --out-dir $DATA/prelim     # login node
+#   DPT_CHAIN_LEFT=1 DPT_ALLOW_NO_JUDGE=1 sbatch -A <alloc> -t 03:00:00 scripts/slurm/rl.slurm \
+#       --config rl/rl_9b_timing.yaml
+#
+# All 10 steps fall in curriculum stage A (T1 / T2 / T4, no T3), so no judge is needed. The base model's
+# answers are longer than an SFT model's, so these steps are a conservative (slow) estimate.
+# =============================================================================
+defaults_from: rl_9b.yaml
+requires_model_line: qwen35_9b
+
+rl:
+  total_steps: 10
+  lr_schedule: {warmup_steps: 2, final_phase_steps: 4}
+
+rewards:
+  t2_code:
+    sandbox:
+      hidden_tests_dir: ${project.paths.data_root}/prelim/t2/hidden_tests
+
+rl_run:
+  run_name: rl9b_timing
+  init_checkpoint: ${project.model.base}       # the base 9B, not an SFT export
+  data_dir: ${project.paths.data_root}/prelim
+  train_files: ["${rl_run.data_dir}/rl_main.parquet"]   # the preliminary bank has no hard pool
+  save_freq: 10                                # one save at the end: measures the checkpoint write time

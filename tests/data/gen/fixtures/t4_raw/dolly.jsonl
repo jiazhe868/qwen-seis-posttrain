@@ -1,0 +1,29 @@
+{"id": "dolly/0", "instruction": "Why do volcanoes erupt?", "context": "", "response": "", "category": "open_qa"}
+{"id": "dolly/1", "instruction": "What is the difference between a crocodile and an alligator?", "context": "", "response": "", "category": "open_qa"}
+{"id": "dolly/2", "instruction": "How do airplanes stay in the air?", "context": "", "response": "", "category": "general_qa"}
+{"id": "dolly/3", "instruction": "Describe the water cycle and explain why it matters for agriculture.", "context": "", "response": "", "category": "general_qa"}
+{"id": "dolly/4", "instruction": "What are some good ways to save money on groceries?", "context": "", "response": "", "category": "brainstorming"}
+{"id": "dolly/5", "instruction": "Give me ideas for a rainy weekend at home.", "context": "", "response": "", "category": "brainstorming"}
+{"id": "dolly/6", "instruction": "Write a story about a lighthouse keeper who finds a mysterious bottle on the beach.", "context": "", "response": "", "category": "creative_writing"}
+{"id": "dolly/7", "instruction": "Explain how vaccines train the immune system to recognize pathogens.", "context": "", "response": "", "category": "general_qa"}
+{"id": "dolly/8", "instruction": "What should I consider when adopting a rescue dog?", "context": "", "response": "", "category": "open_qa"}
+{"id": "dolly/9", "instruction": "How does compound interest work and why does it matter for retirement savings?", "context": "", "response": "", "category": "general_qa"}
+{"id": "dolly/10", "instruction": "Name five birds that live in Antarctica.", "context": "", "response": "", "category": "brainstorming"}
+{"id": "dolly/11", "instruction": "Write a haiku about autumn leaves.", "context": "", "response": "", "category": "creative_writing"}
+{"id": "dolly/12", "instruction": "What is the capital of Australia?", "context": "", "response": "", "category": "open_qa"}
+{"id": "dolly/13", "instruction": "Why is the sky blue during the day but red at sunset?", "context": "", "response": "", "category": "general_qa"}
+{"id": "dolly/14", "instruction": "Suggest some fun activities for a family reunion in the mountains.", "context": "", "response": "", "category": "brainstorming"}
+{"id": "dolly/15", "instruction": "Describe the main causes of the French Revolution.", "context": "", "response": "", "category": "general_qa"}
+{"id": "dolly/16", "instruction": "How can I improve my sleep quality without medication?", "context": "", "response": "", "category": "general_qa"}
+{"id": "dolly/17", "instruction": "Write a short poem about the ocean.", "context": "", "response": "", "category": "creative_writing"}
+{"id": "dolly/18", "instruction": "What are the benefits of learning a second language as an adult?", "context": "", "response": "", "category": "open_qa"}
+{"id": "dolly/19", "instruction": "Explain the rules of chess to a beginner who has never played a board game.", "context": "", "response": "", "category": "general_qa"}
+{"id": "dolly/20", "instruction": "What is the difference between a crocodile and an alligator?", "context": "", "response": "", "category": "open_qa"}
+{"id": "dolly/21", "instruction": "What does the passage say about the harbor?", "context": "The harbor was built in 1820 by fishermen.", "response": "", "category": "open_qa"}
+{"id": "dolly/22", "instruction": "When was the harbor built?", "context": "", "response": "", "category": "closed_qa"}
+{"id": "dolly/23", "instruction": "What is Python used for in data science and web development?", "context": "", "response": "", "category": "open_qa"}
+{"id": "dolly/24", "instruction": "Imagine a city built underwater. Describe daily life for its residents, including transportation, food and work.", "context": "", "response": "", "category": "creative_writing"}
+{"id": "dolly/25", "instruction": "\u00bfQu\u00e9 es la fotos\u00edntesis y por qu\u00e9 es tan importante?", "context": "", "response": "", "category": "open_qa"}
+{"id": "dolly/26", "instruction": "Summarize https://example.com/article about gardening tips.", "context": "", "response": "", "category": "general_qa"}
+{"id": "dolly/27", "instruction": "Hi there", "context": "", "response": "", "category": "open_qa"}
+{"id": "dolly/28", "instruction": "Extract the dates from the text.", "context": "Born 1900, died 1980.", "response": "", "category": "information_extraction"}

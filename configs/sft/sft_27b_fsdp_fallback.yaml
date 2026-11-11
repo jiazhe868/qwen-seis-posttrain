@@ -1,0 +1,35 @@
+# =============================================================================
+# Contingency only: FSDP2 over the Hugging Face Qwen3.5/3.8 implementation.
+#
+# Switch to this ONLY if the Megatron path is blocked. For example, the installed
+# Megatron-Bridge cannot convert the Qwen3.8 checkpoint, or scripts/02_parity.sh
+# finds a Megatron-vs-HF logprob gap on the smoke model. The output is an HF
+# checkpoint, the same format RL loads, so nothing downstream changes.
+#
+# Cost: no pipeline overlap and more all-gathers at 32K context. Budget about
+# +30% SFT wall-clock.
+#
+# Values of "__unset__" delete the key inherited from sft_27b.yaml (dpt.launch.sft).
+# =============================================================================
+defaults_from: sft_27b.yaml
+
+verl_sft:
+  engine: fsdp
+  optim: fsdp
+  engine.tensor_model_parallel_size: __unset__
+  engine.pipeline_model_parallel_size: __unset__
+  engine.context_parallel_size: __unset__
+  engine.sequence_parallel: __unset__
+  engine.use_mbridge: __unset__
+  engine.use_remove_padding: __unset__
+  engine.pad_bshd_to_minibatch_max: __unset__
+  engine.override_transformer_config.recompute_granularity: __unset__
+  engine.override_transformer_config.recompute_method: __unset__
+  engine.override_transformer_config.recompute_num_layers: __unset__
+  +engine.override_transformer_config.gradient_accumulation_fusion: __unset__
+  model.enable_gradient_checkpointing: true
+  optim.lr_decay_style: __unset__
+  optim.min_lr: __unset__
+  optim.use_checkpoint_opt_param_scheduler: __unset__
+  optim.lr_scheduler_type: cosine
+  optim.min_lr_ratio: ${sft.lr_min_ratio}

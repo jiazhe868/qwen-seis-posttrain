@@ -1,0 +1,140 @@
+# =============================================================================
+# monitoring.yaml: the default RL monitoring panel (report §默认监控面板) as rules.
+#
+# Consumed by dpt.monitoring.alerts.AlertManager.from_config(cfg["monitoring"]).
+# Metric names are defined in src/dpt/monitoring/keys.py; "{task}" expands over
+# `tasks`, "*" matches any key present in the step.
+#
+# Actions: warn | block_rollout (do not generate until it clears) | pause (stop, save, page a human)
+# Every rule names the risk it guards. docs/monitoring.md explains what to do when it fires.
+# =============================================================================
+monitoring:
+  tasks: [t1_num, t2_code, t3_report, t4_general]
+  cooldown_steps: 10            # a warning for the same rule+metric is repeated at most every 10 steps
+  gold_eval_every: 20           # proxy/gold, dev D-Num and human audits run every 20 steps
+  sinks:
+    jsonl: true                 # <ckpt_dir>/metrics.jsonl, the offline source of truth
+    wandb: false
+  audit:
+    every: 20
+    n_high: 50
+    n_low: 50
+    n_spot_pos: 50              # grader spot check: 50 reward=1 + 50 reward=0
+    n_spot_neg: 50
+  # 4 GB below device memory: 76 GB on the 80 GB cluster, 36 GB on the 40 GB workstation.
+  memory_warn_gb: ${sub:${hardware.gpu_mem_gb},4}
+
+  rules:
+    # --- numerics / systems: check these FIRST (triage step 1) --------------------------------
+    - name: logppl_diff
+      kind: threshold
+      metric: mismatch/log_ppl_abs_diff             # fresh samples only (policy drift excluded)
+      above: {warn: 2.0e-3, pause: 5.0e-3}         # normal < 5e-4
+      risk: "train/rollout numerical mismatch or failed weight sync (incident 1)"
+    - name: policy_drift
+      kind: threshold
+      metric: drift/log_ppl_abs_diff                # stale (partial-rollout) samples only
+      above: {warn: 1.0e-2}
+      risk: "policy moves too far per step (LR too high, or aux-loss-only updates on zero-signal steps); TIS weights on stale samples grow"
+    - name: logppl_diff_tail
+      kind: threshold
+      metric: mismatch/log_ppl_abs_diff_pos_gt_12k
+      above: {warn: 2.0e-3}
+      risk: "error accumulating with sequence length, e.g. BF16 recurrent state (incident 1 was only visible after 12K)"
+    - name: resume_state
+      kind: boolean
+      metric: resume/state_roundtrip_ok             # emitted once, at the first step after a resume
+      action: pause
+      risk: "a resumed run did not restore all of its extra state (sampler, curriculum, scaler, alerts): incident 2"
+    - name: post_sync_parity
+      kind: boolean
+      metric: parity/post_sync_pass
+      action: block_rollout
+      risk: "prefix cache not invalidated / resharding error after weight sync (incident 3)"
+    - name: grad_norm_spike
+      kind: spike
+      metric: actor/grad_norm
+      factor: 5.0
+      window: 20
+      min_history: 5
+      risk: "anomalous samples or numerical problems"
+    - name: memory_peak
+      kind: threshold
+      metric: memory/peak_gb_max_rank
+      above:
+        warn: ${monitoring.memory_warn_gb}
+      risk: "OOM; check the per-rank breakdown (incident 4 was a single PP-stage-2 rank)"
+    - name: mtp_acceptance
+      kind: threshold
+      metric: spec/mtp_acceptance_rate
+      below: {warn: 0.60}                          # normal > 0.65
+      risk: "MTP draft head stale vs drifting policy, rollout slows (incident 5)"
+
+    # --- learning dynamics, per task (triage step 2) ---------------------------------------------
+    - name: entropy_change
+      kind: relative_change
+      metric: "task/{task}/entropy"
+      window: 20
+      drop_frac: 0.30
+      rise_frac: 0.50
+      risk: "entropy collapse (drop) or explosion (rise)"
+    - name: wrong_length_growth
+      kind: length_divergence
+      incorrect: "task/{task}/len_incorrect"
+      correct: "task/{task}/len_correct"
+      window: 20
+      margin: 0.10
+      risk: "length bias or repetition loops"
+    - name: truncation
+      kind: threshold
+      metric: "task/{task}/truncation_rate"
+      above: {warn: 0.05}                          # normal < 3%
+      risk: "overthinking"
+    - name: zero_adv
+      kind: persistent
+      metric: "task/{task}/zero_adv_frac"
+      above: 0.60                                  # normal 20%–45%
+      consecutive: 30
+      risk: "problems too easy or too hard; triggers automatic reweighting in the curriculum"
+    - name: sandbox_infra
+      kind: threshold
+      metric: sandbox/t2_infra_error                # dev passes only (every gold_eval_every steps)
+      above: {warn: 0.02, pause: 0.20}
+      risk: "T2 sandbox cannot run code, so it fails closed and scores it 0 (incident 23: no apptainer on 7 of 8 nodes)"
+    - name: clip_frac
+      kind: threshold
+      metric: actor/pg_clipfrac
+      above: {warn: 0.10}                          # normal 1%–5% of tokens
+      risk: "updates too off-policy"
+
+    # --- reward hacking -------------------------------------------------------------------------
+    - name: proxy_gold
+      kind: divergence
+      proxy: "proxy/{task}"
+      gold: "gold/{task}"
+      consecutive: 3
+      risk: "reward hacking (most effective detector: caught the step-245 citation hack)"
+    - name: hack_growth
+      kind: rate_growth
+      metric: "hack/*/rate"
+      window: 20                                   # window-over-window stands in for week-over-week
+      factor: 2.0
+      min_rate: 0.005
+      risk: "a known hack pattern is being actively exploited"
+
+    # --- evaluation and forgetting --------------------------------------------------------------
+    - name: dev_d_num
+      kind: consecutive_drop
+      metric: dev/d_num
+      ci_metric: dev/d_num_ci_halfwidth
+      default_ci: 1.6
+      consecutive: 3
+      risk: "overfitting"
+    - name: general_replay
+      kind: baseline_drop
+      metric: task/t4_general/reward_mean
+      baseline_steps: 10
+      window: 10
+      max_drop: 2.0
+      scale: 100                                   # reward in [0,1]; "2 points" = 0.02
+      risk: "forgetting of general ability"

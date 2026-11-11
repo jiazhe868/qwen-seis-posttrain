@@ -1,0 +1,9 @@
+# A1: does a small KL penalty to the SFT reference help stability? (27B, 100 steps)
+# Result in the report: KL 0 → +4.1 D-Num, KL 0.001 → +3.0, with similar entropy decay. KL costs
+# an extra forward pass and a full weight copy, and it buys nothing that clip-higher + TIS do not.
+ablation: {id: A1, base_config: rl/rl_27b.yaml, steps: 100, metric: d_num_dev_gain, decision: "KL = 0"}
+rl: {total_steps: 100}
+verl:
+  actor_rollout_ref.actor.use_kl_loss: true            # verl loads a reference model when this is on
+  actor_rollout_ref.actor.kl_loss_coef: 0.001
+  actor_rollout_ref.actor.kl_loss_type: low_var_kl

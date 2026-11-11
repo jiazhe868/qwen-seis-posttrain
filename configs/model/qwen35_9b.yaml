@@ -1,0 +1,113 @@
+# =============================================================================
+# Model line: Qwen3.5-9B, the main line on the cluster (DPT_MODEL_LINE=qwen35_9b).
+#
+# Why 9B (README §1.1): a cluster job gets at most 8 nodes × 3 A100-40GB (PCIe).
+# The 27B needs 486 GB of training state before activations and a 54 GB rollout copy per vLLM
+# replica (TP2 over PCIe, ~5 GB of KV per GPU), so 27B RL does not fit there. The 9B has the same
+# hybrid architecture (3 Gated DeltaNet layers : 1 gated-attention layer, MTP head, vision tower)
+# and fits with room to spare: ~32 GB/GPU training on the first pipeline stage, and a full copy
+# per GPU for rollout.
+#
+# What differs from the 27B line, and why:
+#   * No reasoning-effort control. Qwen3.5's chat template has only enable_thinking (checked
+#     2026-10-13 against Qwen/Qwen3.5-9B chat_template.jinja); it ignores `reasoning_effort` and
+#     never renders an effort sentence. "medium" is therefore the only effort the renderer accepts
+#     (dpt.chat.render checks that no effort sentence is present), there is one thinking mode, and
+#     there is no base@xhigh row: gates that referenced base_xhigh reference base_medium.
+#   * Smaller eval sets (no existing data; models draft and check them this month). CI widths are
+#     scaled by sqrt(n_report / n_here) from the report's measured values; re-measure them with the
+#     noise-floor run (scripts/03_baseline_eval.sh) before reading any result.
+#   * Gates: the report's thresholds, relative to base 9B. CONFIRM OR EDIT THEM BEFORE STEP 03
+#     (gates are fixed before any test-set result exists; README §1.1 decision 1).
+# =============================================================================
+project:
+  model:
+    line: qwen35_9b
+    tag: 9b
+    base: Qwen/Qwen3.5-9B                # released 2026-02-27 (Hugging Face createdAt), Apache-2.0
+    # Strongest open model of the same family that fits inference on these GPUs: teacher for SFT data
+    # (rejection sampling), paraphrase judge for decontamination, one of the answer-verification
+    # families. Released 2026-08-05, after the 9B, so D-Fresh must be written after 2026-08-14.
+    teacher: Qwen/Qwen3.8-27B
+    # Qwen's official FP8 release of the teacher, served on one A100 in gpu-a100-small as endpoint
+    # `teacher_fp8` (decided 2026-10-23: the H100 queue was ~20 h out). Same tokenizer and chat template; the
+    # full-precision `teacher` on the H100 node joins when it starts. Data records name the endpoint used.
+    teacher_fp8: Qwen/Qwen3.8-27B-FP8
+    arch:                                # Qwen/Qwen3.5-9B config.json → text_config
+      num_layers: 32
+      num_linear_attn_layers: 24         # Gated DeltaNet
+      num_full_attn_layers: 8            # gated attention, every 4th layer
+      hidden_size: 4096
+      ffn_hidden_size: 12288
+      attn_q_heads: 16
+      attn_kv_heads: 4                   # caps training TP at 4
+      attn_head_dim: 256                 # same d=256 as the 27B: same TE backend choice on SM80
+      gdn_v_heads: 32
+      gdn_qk_heads: 16
+      gdn_head_dim: 128
+      vocab_size: 248320                 # untied: embedding and LM head are 1.0B parameters each
+      params_billion: 9.65               # safetensors total, including the vision tower and MTP
+      native_context: 262144
+
+  thinking:
+    train_effort: medium                 # = "no effort sentence": the template's single thinking mode
+    eval_efforts: [medium]               # no xhigh: the template has no effort control
+    eval_base_xhigh_extra_max_response: null
+    # RL length budget of the 9B line: 16K, not the project's 24K (the user's decision, 2026-10-29). At TP1 the last
+    # pipeline stage holds the whole vocabulary and the MTP head; with MTP trained ~17K tokens fit there and 24K do
+    # not (configs/sft/sft_9b.yaml; talk notes, incident 18). RL prompts are at most 763 tokens. Eval keeps 32K.
+    rl_max_response: 16384
+    rl_overlong_start: 12288             # the same 4K penalty ramp as the project's 20K → 24K
+
+  eval:
+    sets:
+      d_num:    {n_items: 300, expected_ci: 2.3}    # all generated from held-out solver families
+      d_code:   {n_items: 150, expected_ci: 3.4}
+      # D-Report and D-Fresh are drafted by GPT-6 Luna and checked by Gemma (dpt.eval.autocheck); no expert
+      # writes or edits them. Blind review: 20 pairs, 10 more if the reviewer and a judge differ by > 15 points.
+      d_report: {n_items: 100, expected_ci: 5.7,
+                 blind_review: {n_first: 20, n_extra: 10, extra_if_gap: 15.0}}
+      d_fresh:  {n_items: 60,  expected_ci: 4.9, written_after: "2026-08-14"}   # after base AND teacher release
+
+  # Model roles (README §1.1, decided 2026-10-13). Teacher = Qwen3.8-27B above (all training
+  # data). Primary judge on the cluster: Gemma 4 26B-A4B, another family than the teacher and the policy,
+  # Apache-2.0 (training on its verdicts is allowed); MoE with 3.8B active, so it is fast, and at bf16
+  # (51.6 GB) it fits TP2 on two 40 GB A100s with ~20 GB of KV. It is the T3 reward, the second
+  # answer-verification family and the primary D-Report judge. Second judge: GPT-6 Luna at xhigh effort
+  # through the OpenAI API, D-Report only. OpenAI's terms forbid using its output to develop competing
+  # models, so it is used on the eval side only and its output never enters training data.
+  judges:
+    primary:
+      # Gemma 4 26B-A4B with FP8 weights (Red Hat's quantization of google/gemma-4-26B-A4B-it, Apache-2.0),
+      # served on ONE A100 in gpu-a100-small (FP8 weights ≈ 26 GB; W8A16 Marlin kernels on SM80). Decided
+      # 2026-10-23: the gpu-a100 queue had ~100 jobs ahead of ours, gpu-a100-small none. Used for every
+      # judge role (T3 reward, primary D-Report judge, verification, eval-set checks) so they stay consistent.
+      hf_id: RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic
+      serve: {partition: gpu-a100-small, tp: 1}
+    second:
+      endpoint: https://api.openai.com
+      model: gpt-6-luna                  # pin the dated snapshot it reports (results: by_judge.second.served_models)
+      api_key_env: OPENAI_API_KEY
+      effort: xhigh                      # the highest chat-completions accepts for gpt-6-luna (checked 2026-10-21;
+                                         # `max` exists only in the Responses API, which dpt.eval.hosted does not speak)
+      max_tokens: 32768                  # hidden reasoning counts against it; truncation = unparsed verdict
+    # The primary judge is the T3 reward, so RL optimizes against it; the second never touched training.
+    # min = the D-Report gate needs BOTH win rates to clear it. Confirmed with the other gates on 2026-10-21.
+    gate_judge: min
+
+  gates:
+    d_num:    {metric: avg@8,  rule: ">=", ref: base_medium, delta: 8.0}
+    d_code:   {metric: pass@1, rule: ">=", ref: base_medium, delta: 10.0}
+
+  # RL-entry gate on this line (decided 2026-10-27, after the base eval and before any SFT result). The base
+  # scores 91.6 avg@8 on D-Num and ~99.8 pass@16, so "SFT strictly above base" and "pass@16 ≥ base" would be
+  # settled by noise at the ceiling, and a failed gate ended the 8-node job (the last one queued ~3 days).
+  # Instead D-Num may not fall below base by more than the combined 95% CI, pass@16 may trail base by up to
+  # 1 point (3 of 300 items), and any failure holds the job for a person's go or stop (dpt.eval.gates).
+  rl_entry_gate:
+    domain_beats_base: [d_code, d_report]
+    domain_not_below_base: [d_num]
+    pass_at_16_tolerance: 1.0
+    on_fail: hold
+    hold_hours: 8
+    decision_file: ${oc.env:WORK,.}/dpt/campaign/GATE_DECISION    # one word: go | stop

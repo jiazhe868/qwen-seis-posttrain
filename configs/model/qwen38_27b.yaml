@@ -1,0 +1,11 @@
+# =============================================================================
+# Model line: Qwen3.8-27B, the report's model (default; DPT_MODEL_LINE unset or qwen38_27b).
+#
+# configs/project.yaml already holds every 27B value (base id, architecture, effort policy,
+# eval protocol, gates), so this layer only names the line. See qwen35_9b.yaml for the
+# the 9B main line.
+# =============================================================================
+project:
+  model:
+    line: qwen38_27b
+    tag: 27b                     # used in run names: sft27b_seed1, rl27b_seed1

@@ -1,0 +1,57 @@
+# =============================================================================
+# RL v2 on the 9B line (2026-11-07, README §8.3).
+#
+# Run 1 (rl9b_seed1) had almost no learning signal and a lenient report judge. In steps 1–20 the SFT policy
+# solved 88% of T1, 90% of T2 and 76% of T4 groups 8/8. The judge gave 0–10 scores to rubric criteria of 47 words.
+# Answers then shrank until accuracy collapsed (step 52), and only the train/rollout alarm stopped the run (step 56).
+#
+# v2 changes the data, the report reward and the stop rule:
+#   - bank v2 ($DATA/v2):
+#     - every v1 problem re-graded by the SFT model (8 samples, 16K, medium; dpt.data.difficulty mode audit_all);
+#       8/8 is dropped and 0/8 goes to the hard pool;
+#     - plus the verified hard T1 families (seismology_hard: 12 families, 3–5 steps);
+#     - plus the long T1 families (seismology_long: 6 families, 6–8 steps).
+#   - harder problems drawn more often: 3 / 2 / 1 copies per epoch for pass rates of at most 3/8, 5/8 and 7/8.
+#   - the hard pool (0/8 for the SFT model) joins at stage B with a 10% share, scaled down below 300 problems.
+#   - T3 rubrics as atomic yes/no checks with quoted evidence (dpt.data.gen.t3_atomic, dpt.rewards.judge).
+#   - a dev pass and a checkpoint every 10 steps, and a pause when dev D-Num falls 3 points below its best.
+# Everything else is as in run 1 (LR, batch, 16K cap, losses, task mix), so the comparison isolates data and
+# reward. Like run 1, it starts from the SFT checkpoint.
+# =============================================================================
+defaults_from: rl_9b.yaml
+requires_model_line: qwen35_9b
+
+curriculum:
+  hard_pool_join_step: 34                   # stage B; 0/8 problems give no signal until the policy has improved
+  hard_share: 0.10
+  hard_pool_min_size: 300
+  difficulty_weights: {enabled: true, bands: [[0.375, 3], [0.625, 2], [1.0, 1]], unknown: 1}
+
+rl_run:
+  run_name: rl${project.model.tag}_v2_seed${project.seed}
+  # The SFT export from its copy on $WORK. The $SCRATCH original (same files) was last read on 10-29, and the site
+  # purges $SCRATCH files left unread for 10 days (checked 2026-11-09).
+  init_checkpoint: ${oc.env:WORK,.}/dpt/exports/sft${project.model.tag}_seed${rl_run.sft_seed}
+  data_dir: ${project.paths.data_root}/v2
+  train_files: ["${rl_run.data_dir}/rl_main.parquet", "${rl_run.data_dir}/rl_hard.parquet"]
+  dev_freq: 10
+  # Every dev pass has a checkpoint to select: 12 × ~126 GB on $SCRATCH.
+  save_freq: 10
+
+monitoring:
+  gold_eval_every: 10
+  extra_rules:
+    - name: dev_d_num_best_drop
+      kind: best_drop
+      metric: dev/d_num
+      max_drop: 3.0
+      action: pause
+      risk: "the policy is getting worse on dev (run 1: 97.3 at step 20, 78.9 at step 40; stopped only at step 56)"
+    - name: t1_length_drop
+      kind: relative_change
+      metric: task/t1_num/len_mean
+      window: 30
+      drop_frac: 0.6
+      action: warn
+      risk: "T1 answers shrinking fast, as before run 1's collapse; a warning only, since shorter answers are also
+        the efficiency RL is for"

@@ -1,0 +1,13 @@
+# A10: the "original" scheme (no zero-advantage filtering, token-mean loss) vs filtering + fixed
+# constant normalization. (27B, 150 steps)
+# Result: learning curves overlap within the CI, and filtering saves 4.4 min/step. A unit test
+# (tests/rl) shows that filtering leaves the gradient unchanged ONLY with fixed-constant normalization.
+ablation: {id: A10, base_config: rl/rl_27b.yaml, steps: 150, metric: curve_overlap_and_step_time,
+           decision: "filter + fixed constant", preflight_waivers: [loss_agg]}
+rl:
+  total_steps: 150
+  filtering: {drop_zero_advantage_groups: false}
+  loss:
+    task_normalization: {enabled: false}
+verl:
+  actor_rollout_ref.actor.loss_agg_mode: token-mean

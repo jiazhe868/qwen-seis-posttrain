@@ -1,0 +1,893 @@
+{
+ "collected_at": "2026-11-10T14:22",
+ "d_num_hard": {
+  "base_medium": {
+   "answers": 1280,
+   "kinds": {
+    "right": 793,
+    "format": 51,
+    "unfinished": 421,
+    "wrong_value": 15
+   },
+   "kinds_pct": {
+    "right": 62.0,
+    "unfinished": 32.9,
+    "format": 4.0,
+    "wrong_value": 1.2
+   },
+   "format_reasons": {
+    "multiple_answers": 22,
+    "no_answer": 29
+   },
+   "wrong_signatures": {
+    "other": 10,
+    "near_miss": 4,
+    "simple_factor": 1
+   },
+   "wrong_systematic_share": 0.0,
+   "labelled": 14,
+   "label_categories": {
+    "concept": 14
+   },
+   "label_subtypes": {
+    "concept:wrong_formula": 14
+   },
+   "label_by_systematic": {
+    "True": {},
+    "False": {
+     "concept": 14
+    }
+   },
+   "unfinished_gold_seen_share": 0.549,
+   "unfinished_labelled": 58,
+   "unfinished_label_categories": {
+    "execution": 46,
+    "concept": 12
+   },
+   "unfinished_label_subtypes": {
+    "execution:verification_loop": 33,
+    "execution:indecision": 8,
+    "concept:wrong_formula": 7,
+    "concept:wrong_assumption": 5,
+    "execution:arithmetic_struggle": 3,
+    "execution:unit_struggle": 2
+   },
+   "unfinished_reached_value": {
+    "True": 29,
+    "False": 29
+   },
+   "est_concept_share_of_failures": 0.21,
+   "weighted_wrong": {
+    "concept": 15.0
+   },
+   "weighted_unfinished": {
+    "execution": 258.4,
+    "concept": 162.6
+   },
+   "unfinished_labels_by_family": {
+    "coulomb_stress_change": {
+     "execution": 6
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "execution": 4,
+     "concept": 6
+    },
+    "gradient_ray_range": {
+     "execution": 8,
+     "concept": 2
+    },
+    "gradient_ray_travel_time": {
+     "execution": 10
+    },
+    "moho_depth_from_ps_delay": {
+     "execution": 6,
+     "concept": 4
+    },
+    "mw_from_spectral_plateau": {
+     "execution": 10
+    },
+    "rupture_length_from_directivity": {
+     "execution": 2
+    }
+   },
+   "est_concept_share_of_failures_weighted": 0.365,
+   "families": {
+    "coulomb_stress_change": {
+     "answers": 160,
+     "kinds": {
+      "right": 93.1,
+      "unfinished": 3.8,
+      "format": 3.1
+     },
+     "labelled": 0,
+     "labels": {}
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "answers": 160,
+     "kinds": {
+      "unfinished": 99.4,
+      "format": 0.6
+     },
+     "labelled": 0,
+     "labels": {}
+    },
+    "gmpe_distance_for_pga": {
+     "answers": 160,
+     "kinds": {
+      "right": 96.2,
+      "format": 3.8
+     },
+     "labelled": 0,
+     "labels": {}
+    },
+    "gradient_ray_range": {
+     "answers": 160,
+     "kinds": {
+      "right": 66.9,
+      "unfinished": 25.0,
+      "format": 4.4,
+      "wrong_value": 3.8
+     },
+     "labelled": 6,
+     "labels": {
+      "concept": 6
+     }
+    },
+    "gradient_ray_travel_time": {
+     "answers": 160,
+     "kinds": {
+      "right": 61.2,
+      "unfinished": 28.8,
+      "format": 10.0
+     },
+     "labelled": 0,
+     "labels": {}
+    },
+    "moho_depth_from_ps_delay": {
+     "answers": 160,
+     "kinds": {
+      "unfinished": 92.5,
+      "wrong_value": 5.0,
+      "format": 2.5
+     },
+     "labelled": 8,
+     "labels": {
+      "concept": 8
+     }
+    },
+    "mw_from_spectral_plateau": {
+     "answers": 160,
+     "kinds": {
+      "right": 80.6,
+      "unfinished": 12.5,
+      "format": 6.9
+     },
+     "labelled": 0,
+     "labels": {}
+    },
+    "rupture_length_from_directivity": {
+     "answers": 160,
+     "kinds": {
+      "right": 97.5,
+      "unfinished": 1.2,
+      "format": 0.6,
+      "wrong_value": 0.6
+     },
+     "labelled": 0,
+     "labels": {}
+    }
+   }
+  },
+  "sft": {
+   "answers": 1280,
+   "kinds": {
+    "right": 872,
+    "wrong_value": 46,
+    "format": 1,
+    "unfinished": 361
+   },
+   "kinds_pct": {
+    "right": 68.1,
+    "unfinished": 28.2,
+    "wrong_value": 3.6,
+    "format": 0.1
+   },
+   "format_reasons": {
+    "unit_parse_error": 1
+   },
+   "wrong_signatures": {
+    "other": 30,
+    "simple_factor": 10,
+    "near_miss": 6
+   },
+   "wrong_systematic_share": 0.065,
+   "labelled": 34,
+   "label_categories": {
+    "concept": 22,
+    "execution": 12
+   },
+   "label_subtypes": {
+    "concept:wrong_formula": 19,
+    "execution:arithmetic": 11,
+    "concept:wrong_assumption": 3,
+    "execution:input_misread": 1
+   },
+   "label_by_systematic": {
+    "True": {
+     "execution": 3
+    },
+    "False": {
+     "concept": 22,
+     "execution": 9
+    }
+   },
+   "unfinished_gold_seen_share": 0.867,
+   "unfinished_labelled": 45,
+   "unfinished_label_categories": {
+    "execution": 37,
+    "concept": 8
+   },
+   "unfinished_label_subtypes": {
+    "execution:verification_loop": 16,
+    "execution:indecision": 12,
+    "execution:arithmetic_struggle": 9,
+    "concept:wrong_formula": 6,
+    "concept:wrong_assumption": 2
+   },
+   "unfinished_reached_value": {
+    "True": 20,
+    "False": 25
+   },
+   "est_concept_share_of_failures": 0.23,
+   "weighted_wrong": {
+    "concept": 31.5,
+    "execution": 14.5
+   },
+   "weighted_unfinished": {
+    "execution": 264.8,
+    "concept": 96.2
+   },
+   "unfinished_labels_by_family": {
+    "coulomb_stress_change": {
+     "execution": 1
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "execution": 7,
+     "concept": 3
+    },
+    "gmpe_distance_for_pga": {
+     "execution": 2
+    },
+    "gradient_ray_range": {
+     "execution": 8
+    },
+    "gradient_ray_travel_time": {
+     "concept": 2,
+     "execution": 8
+    },
+    "moho_depth_from_ps_delay": {
+     "concept": 3,
+     "execution": 7
+    },
+    "mw_from_spectral_plateau": {
+     "execution": 3
+    },
+    "rupture_length_from_directivity": {
+     "execution": 1
+    }
+   },
+   "est_concept_share_of_failures_weighted": 0.313,
+   "families": {
+    "coulomb_stress_change": {
+     "answers": 160,
+     "kinds": {
+      "right": 98.8,
+      "wrong_value": 0.6,
+      "unfinished": 0.6
+     },
+     "labelled": 1,
+     "labels": {
+      "concept": 1
+     }
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "answers": 160,
+     "kinds": {
+      "unfinished": 93.1,
+      "right": 3.8,
+      "wrong_value": 3.1
+     },
+     "labelled": 5,
+     "labels": {
+      "concept": 5
+     }
+    },
+    "gmpe_distance_for_pga": {
+     "answers": 160,
+     "kinds": {
+      "right": 95.0,
+      "wrong_value": 3.1,
+      "unfinished": 1.2,
+      "format": 0.6
+     },
+     "labelled": 5,
+     "labels": {
+      "execution": 5
+     }
+    },
+    "gradient_ray_range": {
+     "answers": 160,
+     "kinds": {
+      "right": 91.2,
+      "unfinished": 5.0,
+      "wrong_value": 3.8
+     },
+     "labelled": 3,
+     "labels": {
+      "execution": 1,
+      "concept": 2
+     }
+    },
+    "gradient_ray_travel_time": {
+     "answers": 160,
+     "kinds": {
+      "right": 51.2,
+      "unfinished": 47.5,
+      "wrong_value": 1.2
+     },
+     "labelled": 2,
+     "labels": {
+      "concept": 1,
+      "execution": 1
+     }
+    },
+    "moho_depth_from_ps_delay": {
+     "answers": 160,
+     "kinds": {
+      "unfinished": 75.6,
+      "right": 15.0,
+      "wrong_value": 9.4
+     },
+     "labelled": 10,
+     "labels": {
+      "execution": 1,
+      "concept": 9
+     }
+    },
+    "mw_from_spectral_plateau": {
+     "answers": 160,
+     "kinds": {
+      "right": 95.6,
+      "wrong_value": 2.5,
+      "unfinished": 1.9
+     },
+     "labelled": 4,
+     "labels": {
+      "execution": 3,
+      "concept": 1
+     }
+    },
+    "rupture_length_from_directivity": {
+     "answers": 160,
+     "kinds": {
+      "right": 94.4,
+      "wrong_value": 5.0,
+      "unfinished": 0.6
+     },
+     "labelled": 4,
+     "labels": {
+      "concept": 3,
+      "execution": 1
+     }
+    }
+   }
+  },
+  "rl_seed1": {
+   "answers": 1280,
+   "kinds": {
+    "right": 897,
+    "wrong_value": 161,
+    "format": 11,
+    "unfinished": 211
+   },
+   "kinds_pct": {
+    "right": 70.1,
+    "unfinished": 16.5,
+    "wrong_value": 12.6,
+    "format": 0.9
+   },
+   "format_reasons": {
+    "missing_unit": 1,
+    "unit_parse_error": 2,
+    "multiple_answers": 2,
+    "no_answer": 6
+   },
+   "wrong_signatures": {
+    "near_miss": 29,
+    "other": 114,
+    "simple_factor": 18
+   },
+   "wrong_systematic_share": 0.149,
+   "labelled": 62,
+   "label_categories": {
+    "execution": 16,
+    "concept": 44,
+    "unclear": 2
+   },
+   "label_subtypes": {
+    "concept:wrong_formula": 38,
+    "execution:arithmetic": 13,
+    "concept:wrong_assumption": 6,
+    "unclear:other": 2,
+    "execution:input_misread": 2,
+    "execution:other": 1
+   },
+   "label_by_systematic": {
+    "True": {
+     "concept": 3
+    },
+    "False": {
+     "execution": 16,
+     "concept": 41,
+     "unclear": 2
+    }
+   },
+   "unfinished_gold_seen_share": 0.848,
+   "unfinished_labelled": 30,
+   "unfinished_label_categories": {
+    "concept": 11,
+    "execution": 19
+   },
+   "unfinished_label_subtypes": {
+    "execution:verification_loop": 10,
+    "execution:indecision": 8,
+    "concept:wrong_formula": 7,
+    "concept:wrong_assumption": 4,
+    "execution:arithmetic_struggle": 1
+   },
+   "unfinished_reached_value": {
+    "False": 22,
+    "True": 8
+   },
+   "est_concept_share_of_failures": 0.5,
+   "weighted_wrong": {
+    "concept": 129.1,
+    "execution": 28.4,
+    "unclear": 3.6
+   },
+   "weighted_unfinished": {
+    "execution": 125.1,
+    "concept": 85.9
+   },
+   "unfinished_labels_by_family": {
+    "crustal_vpvs_from_ps_and_ppps": {
+     "concept": 4,
+     "execution": 6
+    },
+    "gradient_ray_travel_time": {
+     "execution": 8,
+     "concept": 2
+    },
+    "moho_depth_from_ps_delay": {
+     "execution": 5,
+     "concept": 5
+    }
+   },
+   "est_concept_share_of_failures_weighted": 0.561,
+   "families": {
+    "coulomb_stress_change": {
+     "answers": 160,
+     "kinds": {
+      "right": 96.2,
+      "wrong_value": 2.5,
+      "format": 1.2
+     },
+     "labelled": 4,
+     "labels": {
+      "execution": 2,
+      "concept": 2
+     }
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "answers": 160,
+     "kinds": {
+      "unfinished": 79.4,
+      "wrong_value": 14.4,
+      "right": 5.0,
+      "format": 1.2
+     },
+     "labelled": 9,
+     "labels": {
+      "concept": 8,
+      "unclear": 1
+     }
+    },
+    "gmpe_distance_for_pga": {
+     "answers": 160,
+     "kinds": {
+      "right": 95.6,
+      "wrong_value": 3.8,
+      "format": 0.6
+     },
+     "labelled": 6,
+     "labels": {
+      "execution": 5,
+      "unclear": 1
+     }
+    },
+    "gradient_ray_range": {
+     "answers": 160,
+     "kinds": {
+      "right": 88.1,
+      "wrong_value": 11.2,
+      "format": 0.6
+     },
+     "labelled": 9,
+     "labels": {
+      "concept": 9
+     }
+    },
+    "gradient_ray_travel_time": {
+     "answers": 160,
+     "kinds": {
+      "right": 74.4,
+      "unfinished": 14.4,
+      "wrong_value": 10.0,
+      "format": 1.2
+     },
+     "labelled": 9,
+     "labels": {
+      "concept": 9
+     }
+    },
+    "moho_depth_from_ps_delay": {
+     "answers": 160,
+     "kinds": {
+      "unfinished": 38.1,
+      "wrong_value": 31.2,
+      "right": 28.8,
+      "format": 1.9
+     },
+     "labelled": 7,
+     "labels": {
+      "concept": 7
+     }
+    },
+    "mw_from_spectral_plateau": {
+     "answers": 160,
+     "kinds": {
+      "right": 85.6,
+      "wrong_value": 14.4
+     },
+     "labelled": 10,
+     "labels": {
+      "execution": 7,
+      "concept": 3
+     }
+    },
+    "rupture_length_from_directivity": {
+     "answers": 160,
+     "kinds": {
+      "right": 86.9,
+      "wrong_value": 13.1
+     },
+     "labelled": 8,
+     "labels": {
+      "concept": 6,
+      "execution": 2
+     }
+    }
+   }
+  }
+ },
+ "d_report": {
+  "base_medium": {
+   "reports": 100,
+   "unfinished": 2,
+   "labelled": 98,
+   "criteria_verdicts": {
+    "partial": 232,
+    "met": 257,
+    "missed": 30
+   },
+   "criteria_verdicts_pct": {
+    "met": 49.5,
+    "partial": 44.7,
+    "missed": 5.8
+   },
+   "shortfall_types": {
+    "coverage": 122,
+    "concept": 114,
+    "quantitative": 26
+   },
+   "shortfall_types_pct": {
+    "coverage": 46.6,
+    "concept": 43.5,
+    "quantitative": 9.9
+   },
+   "shortfall_weighted": {
+    "coverage": 69.0,
+    "concept": 62.0,
+    "quantitative": 15.0
+   },
+   "common_errors_present_pct": 4.2,
+   "main_weakness": {
+    "concept": 70,
+    "coverage": 16,
+    "quantitative": 11,
+    "evidence": 1
+   }
+  },
+  "sft": {
+   "reports": 100,
+   "unfinished": 1,
+   "labelled": 99,
+   "criteria_verdicts": {
+    "met": 276,
+    "partial": 226,
+    "missed": 21
+   },
+   "criteria_verdicts_pct": {
+    "met": 52.8,
+    "partial": 43.2,
+    "missed": 4.0
+   },
+   "shortfall_types": {
+    "coverage": 92,
+    "concept": 125,
+    "quantitative": 29,
+    "evidence": 1
+   },
+   "shortfall_types_pct": {
+    "concept": 50.6,
+    "coverage": 37.2,
+    "quantitative": 11.7,
+    "evidence": 0.4
+   },
+   "shortfall_weighted": {
+    "concept": 64.5,
+    "coverage": 52.0,
+    "quantitative": 17.0,
+    "evidence": 0.5
+   },
+   "common_errors_present_pct": 6.9,
+   "main_weakness": {
+    "concept": 62,
+    "quantitative": 19,
+    "coverage": 10,
+    "evidence": 6,
+    "none": 1,
+    "clarity": 1
+   }
+  },
+  "rl_seed1": {
+   "reports": 100,
+   "unfinished": 0,
+   "labelled": 100,
+   "criteria_verdicts": {
+    "partial": 233,
+    "met": 264,
+    "missed": 32
+   },
+   "criteria_verdicts_pct": {
+    "met": 49.9,
+    "partial": 44.0,
+    "missed": 6.0
+   },
+   "shortfall_types": {
+    "concept": 132,
+    "coverage": 96,
+    "evidence": 1,
+    "quantitative": 35,
+    "clarity": 1
+   },
+   "shortfall_types_pct": {
+    "concept": 49.8,
+    "coverage": 36.2,
+    "quantitative": 13.2,
+    "evidence": 0.4,
+    "clarity": 0.4
+   },
+   "shortfall_weighted": {
+    "concept": 72.5,
+    "coverage": 53.0,
+    "quantitative": 22.0,
+    "evidence": 0.5,
+    "clarity": 0.5
+   },
+   "common_errors_present_pct": 5.3,
+   "main_weakness": {
+    "concept": 64,
+    "quantitative": 26,
+    "coverage": 5,
+    "evidence": 3,
+    "none": 2
+   }
+  }
+ },
+ "cut_off_32k": {
+  "base_medium": {
+   "gpqa_diamond": {
+    "score": 56.6,
+    "cut_off": 0.379,
+    "tokens": 23628
+   },
+   "ifeval": {
+    "score": 93.1,
+    "cut_off": 0.0,
+    "tokens": 4957
+   },
+   "livecodebench_post_2025_01": {
+    "score": 38.2,
+    "cut_off": 0.611,
+    "tokens": 26683
+   },
+   "mmlu_pro_2k": {
+    "score": 74.8,
+    "cut_off": 0.095,
+    "tokens": 12804
+   },
+   "tool_calling": {
+    "score": 83.0,
+    "cut_off": 0.0,
+    "tokens": 234
+   },
+   "d_code": {
+    "score": 80.5,
+    "cut_off": 0.022,
+    "tokens": 4452
+   },
+   "d_fresh": {
+    "score": 70.6,
+    "cut_off": 0.15,
+    "tokens": 20816
+   },
+   "d_num": {
+    "score": 91.6,
+    "cut_off": 0.058,
+    "tokens": 16388
+   },
+   "d_report": {
+    "score": 50.0,
+    "cut_off": 0.02,
+    "tokens": 7556
+   },
+   "refusal": {
+    "score": 56.0,
+    "cut_off": 0.0,
+    "tokens": 0
+   },
+   "d_num_hard": {
+    "score": 62.0,
+    "cut_off": 0.355,
+    "tokens": 25787
+   }
+  },
+  "sft": {
+   "gpqa_diamond": {
+    "score": 71.3,
+    "cut_off": 0.17,
+    "tokens": 13329
+   },
+   "ifeval": {
+    "score": 93.1,
+    "cut_off": 0.005,
+    "tokens": 4806
+   },
+   "livecodebench_post_2025_01": {
+    "score": 52.5,
+    "cut_off": 0.289,
+    "tokens": 17274
+   },
+   "mmlu_pro_2k": {
+    "score": 77.3,
+    "cut_off": 0.045,
+    "tokens": 5317
+   },
+   "tool_calling": {
+    "score": 88.8,
+    "cut_off": 0.005,
+    "tokens": 398
+   },
+   "d_code": {
+    "score": 86.3,
+    "cut_off": 0.083,
+    "tokens": 11095
+   },
+   "d_fresh": {
+    "score": 78.8,
+    "cut_off": 0.087,
+    "tokens": 10408
+   },
+   "d_num": {
+    "score": 89.4,
+    "cut_off": 0.063,
+    "tokens": 9123
+   },
+   "d_report": {
+    "score": 49.0,
+    "cut_off": 0.01,
+    "tokens": 5231
+   },
+   "refusal": {
+    "score": 51.3,
+    "cut_off": 0.0,
+    "tokens": 0
+   },
+   "d_num_hard": {
+    "score": 68.1,
+    "cut_off": 0.282,
+    "tokens": 19148
+   }
+  },
+  "rl_seed1": {
+   "gpqa_diamond": {
+    "score": 74.2,
+    "cut_off": 0.083,
+    "tokens": 9588
+   },
+   "ifeval": {
+    "score": 93.9,
+    "cut_off": 0.008,
+    "tokens": 4521
+   },
+   "livecodebench_post_2025_01": {
+    "score": 50.0,
+    "cut_off": 0.168,
+    "tokens": 14402
+   },
+   "mmlu_pro_2k": {
+    "score": 78.3,
+    "cut_off": 0.029,
+    "tokens": 3723
+   },
+   "tool_calling": {
+    "score": 86.7,
+    "cut_off": 0.0,
+    "tokens": 245
+   },
+   "d_code": {
+    "score": 85.2,
+    "cut_off": 0.048,
+    "tokens": 6593
+   },
+   "d_fresh": {
+    "score": 83.3,
+    "cut_off": 0.025,
+    "tokens": 6125
+   },
+   "d_num": {
+    "score": 89.2,
+    "cut_off": 0.019,
+    "tokens": 5356
+   },
+   "d_report": {
+    "score": 49.0,
+    "cut_off": 0.0,
+    "tokens": 4306
+   },
+   "refusal": {
+    "score": 45.7,
+    "cut_off": 0.0,
+    "tokens": 0
+   },
+   "d_num_hard": {
+    "score": 70.1,
+    "cut_off": 0.17,
+    "tokens": 14196
+   }
+  }
+ },
+ "judge": [
+  "gpt-6-luna"
+ ],
+ "usage": {
+  "at": "2026-11-10T14:21",
+  "usage": {
+   "prompt_tokens": 427244,
+   "completion_tokens": 335438,
+   "total_tokens": 762682
+  },
+  "effort": "medium"
+ }
+}

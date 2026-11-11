@@ -1,0 +1,7 @@
+# A11: MTP speculative decoding off. (27B, 150 steps)
+# Result: with MTP (acceptance ≈ 0.70) generation was 32% faster, with no significant change in
+# train/rollout logprob mismatch. Requires the MTP head trained in RL (Incident 5).
+ablation: {id: A11, base_config: rl/rl_27b.yaml, steps: 150, metric: gen_time_and_mismatch, decision: "MTP on"}
+rl: {total_steps: 150}
+verl:
+  actor_rollout_ref.model.mtp.enable_rollout: false

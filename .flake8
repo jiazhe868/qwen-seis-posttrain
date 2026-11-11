@@ -1,0 +1,12 @@
+[flake8]
+max-line-length = 120
+extend-ignore = E203, W503
+exclude = .git,__pycache__,build,dist
+per-file-ignores =
+    # long regexes / prompt strings are clearer on one line
+    src/dpt/rewards/hack_patterns.py: E501
+    src/dpt/rewards/judge.py: E501
+    src/dpt/data/gen/t3_atomic.py: E501
+    scripts/talk/failure_types.py: E501
+    # test fixtures quote long literal model outputs verbatim
+    tests/*: E501

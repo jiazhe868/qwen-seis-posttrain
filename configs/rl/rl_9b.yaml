@@ -1,0 +1,84 @@
+# =============================================================================
+# Stage 2 on the 9B main line: multi-task RL of the Qwen3.5-9B SFT checkpoint
+# (README). Everything the report learned is inherited from rl_27b.yaml (TIS, no KL,
+# no std division, clip-higher, zero-advantage filtering, fixed-constant loss normalization,
+# partial rollout, MTP drafting with a trained head, FP32 GDN state, 3-stage curriculum with the
+# hard pool at step 150, alerts with auto-pause, exact resume). Only what is model- or
+# machine-specific changes here.
+#
+#   sbatch scripts/slurm/rl.slurm                      # 8 gpu-a100 nodes; resubmits itself until done
+#   DPT_DRY_RUN=1 python -m dpt.launch.rl --config rl/rl_9b.yaml   # rendered command + pre-flight
+# =============================================================================
+defaults_from: rl_27b.yaml
+requires_model_line: qwen35_9b
+
+rl:
+  # 120 steps, not 420 (the user's decision, 2026-10-29): RL and the final eval must fit in campaign job 3532660,
+  # which ends 10-31 11:16, because an 8-node job queues ~3 days. Mixes and LR values stay; the stage boundaries
+  # (curriculum below) and the final LR phase are scaled by 120/420.
+  total_steps: 120
+  # The 9B-tuned learning rate from the report's screening (rl_9b_proxy.yaml). The 27B's 1e-6 was
+  # chosen because 2e-6 made the *27B* oscillate (A8); on 9B, 2e-6 was the tuned value.
+  lr_schedule: {base_lr: 2.0e-6, final_lr: 1.0e-6, final_phase_steps: 34}
+  microbatch: {memory_limit_gb: 36.0}       # 40 GB GPUs, 4 GB margin (Incident 4's rule)
+  # DP 3 (PP8 on 24 GPUs): verl needs prompts × 8 and each mini-batch × 8 divisible by 3, and 128 is not
+  # (timing run 3530168, 2026-10-26). 126, as for the SFT batch, is the closest value that passes (mini-batch 63).
+  prompts_per_step: 126
+
+# rl/curriculum.yaml's three stages and mixes, with the boundaries scaled from 0/120/300/420 to 0/34/86/120.
+# T3 (judge-scored) now enters at step 34, so the RL judge must be up by then.
+curriculum:
+  stages:
+    - {name: A_verifiable_warmup, start: 0, end: 34, mix: {t1_num: 0.50, t2_code: 0.25, t3_report: 0.00, t4_general: 0.25}}
+    - {name: B_add_open_ended, start: 34, end: 86, mix: {t1_num: 0.40, t2_code: 0.25, t3_report: 0.15, t4_general: 0.20}}
+    - {name: C_consolidate, start: 86, end: 120, mix: {t1_num: 0.35, t2_code: 0.25, t3_report: 0.15, t4_general: 0.25}}
+
+rewards:
+  # T2 hidden tests of the training tasks (dpt.data.gen.t2, written by data.slurm gen). The reward workers
+  # run the sandbox locally on the RL nodes (mode: local), so they read the tests from here.
+  t2_code:
+    sandbox:
+      hidden_tests_dir: ${project.paths.data_root}/gen/t2/hidden_tests
+
+rl_run:
+  run_name: rl${project.model.tag}_seed${project.seed}
+  init_checkpoint: ${project.paths.ckpt_root}/sft/sft${project.model.tag}_seed${rl_run.sft_seed}/hf_export
+  # No hard pool: the difficulty audit grades 20 problems per template, so only 26 came out 0/8 (the report had
+  # ~7,000). From step 150 the curriculum would draw each 100-146 times, 9.5% of all prompts. Without the file,
+  # every task's hard share is 0, auto-reweighting included (decided 2026-10-27).
+  train_files: ["${rl_run.data_dir}/rl_main.parquet"]
+  # Reward workers share the nodes' 128 cores with Ray and the T2 sandbox processes.
+  reward_workers: 24
+  # A 9B checkpoint with optimizer state is ~126 GB (the SFT pre-flight's: 18 GB model, 108 GB optimizer). Saving
+  # every 20 steps, on the dev steps, gives 6 checkpoints in 120 steps (~0.8 TB on $SCRATCH), each with a dev
+  # score for checkpoint selection. The 48 h job limit does not need save_freq: the trainer saves before the wall-clock
+  # deadline (dpt.launch.walltime). A crash loses at most 20 steps.
+  save_freq: 20
+
+verl:
+  # Transformer Engine chooses. On A100 at head_dim 256 it trains with flash-attn (in dpt-train since 2026-10-28; the
+  # unfused fallback runs out of memory above ~13K tokens). With the mask fix in dpt.verl_ext.patches every backend
+  # is correct; scripts/02_parity.sh step 4 checks it.
+  actor_rollout_ref.actor.megatron.override_transformer_config.attention_backend: auto
+  # The last pipeline stage's memory, as in configs/sft/sft_9b.yaml (same layout, same fixes, same reasons): Adam on
+  # the CPU with FP32 master weights there only, TE cross entropy for the MTP loss (verl's log-probs: fixes 2 and 3
+  # in dpt.verl_ext.patches), one decoder layer on the first and the last stage, and optimizer checkpoints in
+  # model space (verl's default bucket format fails to save on this layout). verl's own optimizer offload for the
+  # colocated rollout handles Megatron's HybridDeviceOptimizer (verl.utils.megatron_utils).
+  actor_rollout_ref.actor.optim.use_precision_aware_optimizer: true
+  +actor_rollout_ref.actor.optim.override_optimizer_config.optimizer_cpu_offload: true
+  +actor_rollout_ref.actor.optim.override_optimizer_config.optimizer_offload_fraction: 1.0
+  +actor_rollout_ref.actor.megatron.override_transformer_config.cross_entropy_loss_fusion: true
+  +actor_rollout_ref.actor.megatron.override_transformer_config.cross_entropy_fusion_impl: te
+  +actor_rollout_ref.actor.megatron.override_transformer_config.num_layers_in_first_pipeline_stage: 1
+  +actor_rollout_ref.actor.megatron.override_transformer_config.num_layers_in_last_pipeline_stage: 1
+  actor_rollout_ref.actor.megatron.dist_ckpt_optim_fully_reshardable: true
+  actor_rollout_ref.actor.megatron.distrib_optim_fully_reshardable_mem_efficient: true
+  # Rollout without MTP drafting (2026-10-29). With drafting on, verl puts vLLM to sleep at level 1, which keeps a CPU
+  # copy of every weight (~20 GB per replica, three per node). The last stage's node then ran out of host memory
+  # saving the step-1 checkpoint (Ray killed its vLLM servers) and again loading it on the resume. At level 2 the
+  # weights are dropped and the weight sync restores them. Outputs are unchanged (speculative decoding is lossless);
+  # generation is slower. The MTP head still trains, so serving can draft with it.
+  actor_rollout_ref.model.mtp.enable_rollout: false
+  # Compute nodes may have no outbound network: wandb logs offline (scripts/slurm/env.sh sets
+  # WANDB_MODE=offline; `wandb sync` from a login node). metrics.jsonl is always written.

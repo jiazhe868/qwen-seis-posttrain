@@ -1,0 +1,29 @@
+# =============================================================================
+# 9B proxy for ablation screening (report §消融: "先在同架构的 9B 小模型上跑").
+# One cluster node (8 × A100-80G). The 9B run should start from a 9B SFT checkpoint
+# trained with the same recipe (configs/sft/sft_9b_proxy.yaml) so the screening sees
+# the same post-SFT entropy regime as the 27B main line.
+#
+#   bash scripts/06_rl.sh --config rl/rl_9b_proxy.yaml --ablation A03_clip_high_0p2
+#
+# Trust 9B results for DIRECTION only. Numeric hyper-parameters (A8: learning rate) must be
+# re-checked on 27B.
+# =============================================================================
+defaults_from: rl_27b.yaml
+
+rl:
+  total_steps: 200
+  lr_schedule: {base_lr: 2.0e-6, final_lr: 1.0e-6}      # the 9B-tuned LR (does NOT transfer to 27B: A8)
+  microbatch: {memory_limit_gb: 76.0}
+
+rl_run:
+  run_name: rl9b_proxy_seed${project.seed}
+  init_checkpoint: ${project.paths.ckpt_root}/sft/sft9b_proxy_seed${rl_run.sft_seed}/hf_export
+
+verl:
+  trainer.nnodes: 1
+  trainer.n_gpus_per_node: 8
+  # 9B: 4 KV heads → TP ≤ 4; TP2 × DP4 keeps the per-GPU state small, no pipeline needed.
+  actor_rollout_ref.actor.megatron.tensor_model_parallel_size: 2
+  actor_rollout_ref.actor.megatron.pipeline_model_parallel_size: 1
+  actor_rollout_ref.rollout.tensor_model_parallel_size: 1   # 18 GB weights fit on one GPU → 8 replicas

@@ -1,0 +1,218 @@
+# =============================================================================
+# Stage 2: multi-task GRPO-family RL on the SFT checkpoint (report §阶段二, §工程设计).
+#
+#   bash scripts/06_rl.sh                               # 2×8 A100-80G, colocated
+#   bash scripts/06_rl.sh --ablation A08_lr_2e-6        # overlay from configs/rl/ablations/
+#   DPT_DRY_RUN=1 bash scripts/06_rl.sh                 # print the rendered command only
+#
+# Composition: project.yaml + hardware profile + rl/algorithm.yaml + rl/curriculum.yaml
+#            + rl/rewards.yaml + rl/monitoring.yaml + THIS FILE (+ ablation overlay).
+# Algorithm numbers live in rl/algorithm.yaml (key `rl.*`); this file only adds
+# run settings (`rl_run.*`) and maps everything onto verl keys (`verl.*`).
+#
+# Architecture of the run (README §7):
+#   verl v1 trainer, mode `dpt_colocate_async` = verl's colocate_async (training and
+#   vLLM share all 16 GPUs; partial rollout carries long generations into the next
+#   step) + our hooks:
+#     - zero-advantage groups dropped before old-logprob recompute (custom replay buffer)
+#     - task-aware advantages: group mean (no std), T3 std scaling, per-task loss
+#       normalization folded into advantage multipliers (loss_agg_mode=token-sum)
+#     - truncated responses masked out of loss and baseline
+#     - curriculum sampler (3 stages, hard pool at step 150, auto-reweighting)
+#     - alert engine with auto-pause, extra trainer state saved with every checkpoint
+# =============================================================================
+defaults_from_list:            # read by dpt.launch.rl (order matters; this file is merged last)
+  - rl/algorithm.yaml
+  - rl/curriculum.yaml
+  - rl/rewards.yaml
+  - rl/monitoring.yaml
+
+# Overrides of rl/rewards.yaml for the verl run: verl's DAPO reward manager applies the exact
+# token-counted overlong penalty, and the trainer detects truncation from the response mask.
+rewards:
+  length:
+    apply_penalty: false
+    truncation_from_estimate: false
+
+rl_run:
+  run_name: rl27b_seed${project.seed}
+  # Both RL seeds (reproducibility gate) start from the SAME SFT checkpoint; only RL randomness differs.
+  sft_seed: 1
+  init_checkpoint: ${project.paths.ckpt_root}/sft/sft27b_seed${rl_run.sft_seed}/hf_export   # SFT HF export
+  data_dir: ${project.paths.data_root}/v1                 # = data_pipeline.output_dir (publish stage)
+  train_files: ["${rl_run.data_dir}/rl_main.parquet", "${rl_run.data_dir}/rl_hard.parquet"]
+  dev_files: ["${rl_run.data_dir}/rl_dev.parquet"]       # in-loop dev curve (checkpoint selection = dev only)
+  output_dir: ${project.paths.ckpt_root}/rl/${rl_run.run_name}
+  max_prompt_length: 8192                                 # 8K prompt + 24K response = 32K hard cap (Incident 4)
+  save_freq: 10
+  dev_freq: 20                                            # aligned with the 20-step gold checks / audits
+  ppo_max_token_len_per_gpu: ${rl.microbatch.max_tokens_per_microbatch}
+  reward_workers: 16
+  logger: [console, wandb]
+
+# -----------------------------------------------------------------------------
+# Hydra overrides for `python -m verl.trainer.main_ppo model_engine=megatron`
+# (keys verified against verl 0.9.1; see docs/verl_integration.md for each one).
+# -----------------------------------------------------------------------------
+verl:
+  model_engine: megatron
+
+  # ---- trainer (v1) ---------------------------------------------------------
+  trainer.use_v1: true
+  trainer.v1.trainer_mode: dpt_colocate_async          # registered by dpt.verl_ext.register
+  # verl evicts a group when (step_now − step_submitted + 1) > threshold, i.e. it counts policy
+  # versions SPANNED. "staleness ≤ 1" (resumed once after a weight sync) therefore needs threshold 2;
+  # threshold 1 would evict every resumed partial rollout and silently bias against long answers.
+  trainer.v1.sampler.max_off_policy_threshold: ${add:${rl.partial_rollout.max_staleness},1}
+  trainer.v1.sampler.max_off_policy_strategy: drop
+  trainer.v1.sampler.custom_sampler.path: ${oc.env:DPT_REPO,.}/src/dpt/verl_ext/replay_buffer.py
+  trainer.v1.sampler.custom_sampler.name: ZeroAdvantageFilteringReplayBuffer
+  trainer.nnodes: ${hardware.nnodes}
+  trainer.n_gpus_per_node: ${hardware.gpus_per_node}
+  trainer.total_training_steps: ${rl.total_steps}
+  trainer.total_epochs: 1000                            # steps, not epochs, bound the run
+  trainer.save_freq: ${rl_run.save_freq}
+  trainer.test_freq: ${rl_run.dev_freq}
+  trainer.val_before_train: true
+  # Every dev validation is dumped to <step>.jsonl (prompt, response, Gemma's t3_rubric, ...): the eval-side
+  # judge-drift check reads it (dpt.eval.judge_drift). The trainer never reads it back.
+  trainer.validation_data_dir: ${rl_run.output_dir}/val_generations
+  trainer.default_local_dir: ${rl_run.output_dir}
+  trainer.resume_mode: auto
+  trainer.project_name: ${project.name}
+  trainer.experiment_name: ${rl_run.run_name}
+  trainer.logger: ${rl_run.logger}
+
+  # ---- data ------------------------------------------------------------------
+  data.train_files: ${rl_run.train_files}
+  data.val_files: ${rl_run.dev_files}
+  data.train_batch_size: ${rl.prompts_per_step}
+  data.max_prompt_length: ${rl_run.max_prompt_length}
+  data.max_response_length: ${rl.sampling.max_response}
+  data.filter_overlong_prompts: true
+  data.truncation: error
+  data.seed: ${project.seed}
+  # No prefetch: the curriculum sampler's state at a checkpoint then equals what was consumed
+  # (exact resume, Incident 2). Tokenizing one prompt is negligible next to a 16-min step.
+  data.dataloader_num_workers: 0
+  # Rollout prompts carry an explicit effort (never rely on the template default = xhigh).
+  # verl's schema declares apply_chat_template_kwargs as an (empty) struct: new keys need Hydra's "+".
+  +data.apply_chat_template_kwargs.reasoning_effort: ${rl.sampling.effort}
+  +data.apply_chat_template_kwargs.enable_thinking: true
+
+  # ---- model -----------------------------------------------------------------
+  actor_rollout_ref.model.path: ${rl_run.init_checkpoint}
+  actor_rollout_ref.model.external_lib: dpt.verl_ext.register     # registers our estimator in every worker
+  actor_rollout_ref.model.use_remove_padding: false               # GDN: no packed sequences → BSHD
+  actor_rollout_ref.model.use_fused_kernels: false                # auto-off with MTP / BSHD anyway
+  actor_rollout_ref.model.mtp.enable: true
+  actor_rollout_ref.model.mtp.enable_train: true                  # Incident 5: a frozen MTP head goes stale
+  actor_rollout_ref.model.mtp.enable_rollout: true                # MTP speculative decoding (A11)
+  actor_rollout_ref.model.mtp.mtp_loss_scaling_factor: 0.1
+  actor_rollout_ref.model.mtp.method: mtp
+  actor_rollout_ref.model.mtp.num_speculative_tokens: 1
+  # vLLM 0.24 has no per-request spec-decode stats, so verl cannot report rollout/spec_accept_rate.
+  # With stats logging on, the trainer reads vLLM's Prometheus counters instead
+  # (dpt.monitoring.spec_scrape). That feeds the Incident 5 alert.
+  actor_rollout_ref.rollout.disable_log_stats: false
+
+  # ---- actor (Megatron) ---------------------------------------------------------
+  actor_rollout_ref.actor.megatron.tensor_model_parallel_size: ${hardware.train.tp}
+  actor_rollout_ref.actor.megatron.pipeline_model_parallel_size: ${hardware.train.pp}
+  actor_rollout_ref.actor.megatron.context_parallel_size: ${hardware.train.cp}
+  actor_rollout_ref.actor.megatron.sequence_parallel: ${hardware.train.sequence_parallel}
+  actor_rollout_ref.actor.megatron.use_mbridge: true
+  actor_rollout_ref.actor.megatron.param_offload: true          # colocated: hand HBM to vLLM during rollout
+  actor_rollout_ref.actor.megatron.optimizer_offload: true      # (verl 0.9.1 has no separate grad_offload key)
+  actor_rollout_ref.actor.megatron.pad_bshd_to_minibatch_max: false
+  # Full logits for a 32K sequence are 248K × 32K. Logprobs are computed vocab-parallel over the TP4
+  # shards, and entropy (no-grad old-logprob pass only, see calculate_entropy) in 2K-token chunks.
+  # (verl 0.9.1 auto-disables its fused linear-CE kernel when MTP or BSHD padding is on, and the
+  # report's VERL_MEGATRON_MEM_EFFICIENT_CE env var does not exist in this version: docs/systems.md §3.)
+  actor_rollout_ref.actor.megatron.entropy_from_logits_with_chunking: true
+  actor_rollout_ref.actor.megatron.override_transformer_config.recompute_granularity: full
+  actor_rollout_ref.actor.megatron.override_transformer_config.recompute_method: uniform
+  actor_rollout_ref.actor.megatron.override_transformer_config.recompute_num_layers: 1
+  +actor_rollout_ref.actor.megatron.override_transformer_config.gradient_accumulation_fusion: ${hardware.train.gradient_accumulation_fusion}
+  actor_rollout_ref.actor.optim.lr: ${rl.lr_schedule.base_lr}
+  actor_rollout_ref.actor.optim.lr_warmup_steps: ${rl.lr_schedule.warmup_steps}
+  # 1e-6 constant, then down to 5e-7 over the last 120 steps (stage C). Megatron's WSD schedule
+  # (warmup → stable → decay) does this with a linear ramp instead of the report's step drop:
+  # the mean LR in stage C is 7.5e-7 rather than 5e-7. Use a step drop only if stage C regresses.
+  actor_rollout_ref.actor.optim.lr_decay_style: WSD
+  actor_rollout_ref.actor.optim.lr_decay_steps: ${rl.total_steps}
+  actor_rollout_ref.actor.optim.lr_wsd_decay_style: linear
+  actor_rollout_ref.actor.optim.lr_wsd_decay_steps: ${rl.lr_schedule.final_phase_steps}
+  actor_rollout_ref.actor.optim.min_lr: ${rl.lr_schedule.final_lr}
+  # Restore the scheduler state from the checkpoint on resume (verl's default re-initializes it,
+  # re-running warm-up and shifting the decay window: an Incident-2-class bug).
+  actor_rollout_ref.actor.optim.use_checkpoint_opt_param_scheduler: true
+  actor_rollout_ref.actor.optim.clip_grad: 1.0
+  actor_rollout_ref.actor.optim.weight_decay: 0.0
+  actor_rollout_ref.actor.clip_ratio_low: ${rl.loss.clip_low}
+  actor_rollout_ref.actor.clip_ratio_high: ${rl.loss.clip_high}
+  actor_rollout_ref.actor.clip_ratio_c: ${rl.loss.dual_clip_c}
+  # Fixed-constant normalization: the loss is a plain token SUM; the 1/B_k per-task constants are
+  # folded into the advantages by DomainRLTrainer (PPO-clip is positively homogeneous in A).
+  actor_rollout_ref.actor.loss_agg_mode: token-sum
+  actor_rollout_ref.actor.policy_loss.loss_mode: vanilla
+  actor_rollout_ref.actor.use_kl_loss: false                    # A1: KL = 0, no reference model
+  actor_rollout_ref.actor.entropy_coeff: 0.0
+  # No entropy in the UPDATE pass: entropy_coeff is 0 and entropy is a monitor only. verl's old-logprob
+  # pass computes it without grad (actor/entropy), and DomainRLTrainer derives per-task entropy from
+  # -log π_old. Computing it with grad also hits a verl 0.9.1 bug: with entropy_from_logits_with_chunking
+  # each chunk's custom backward edits the shared logits in place, and the next chunk's backward fails
+  # its version check (found by the smoke run). It also costs a full-logits clone (GBs at 32K).
+  actor_rollout_ref.actor.calculate_entropy: false
+  actor_rollout_ref.actor.ppo_mini_batch_size: ${div:${rl.prompts_per_step},${rl.num_updates_per_step}}   # 64 → 2 updates/step
+  actor_rollout_ref.actor.ppo_epochs: 1
+  actor_rollout_ref.actor.use_dynamic_bsz: false
+  actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu: 1       # 1 × ≤32K per micro-batch (memory plan)
+  actor_rollout_ref.actor.checkpoint.async_save: false
+
+  # ---- rollout (vLLM, colocated) --------------------------------------------
+  actor_rollout_ref.rollout.name: vllm
+  actor_rollout_ref.rollout.tensor_model_parallel_size: ${hardware.rollout.tp}
+  actor_rollout_ref.rollout.gpu_memory_utilization: ${hardware.rollout.gpu_memory_utilization}
+  actor_rollout_ref.rollout.n: ${rl.group_size}
+  actor_rollout_ref.rollout.temperature: ${rl.sampling.temperature}
+  actor_rollout_ref.rollout.top_p: ${rl.sampling.top_p}
+  actor_rollout_ref.rollout.top_k: -1
+  actor_rollout_ref.rollout.calculate_log_probs: true            # required for TIS + mismatch metrics
+  actor_rollout_ref.rollout.max_model_len: ${project.thinking.max_context}
+  actor_rollout_ref.rollout.enable_chunked_prefill: true
+  actor_rollout_ref.rollout.enable_prefix_caching: false         # Incident 3 (verl also resets on wake_up)
+  actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu: 1
+  actor_rollout_ref.rollout.val_kwargs.temperature: ${rl.sampling.temperature}
+  actor_rollout_ref.rollout.val_kwargs.top_p: ${rl.sampling.top_p}
+  actor_rollout_ref.rollout.val_kwargs.do_sample: true
+  actor_rollout_ref.rollout.val_kwargs.n: 4
+  # Incident 1: the GDN recurrent state must be FP32 on the rollout side (the model config already
+  # says mamba_ssm_dtype=float32; we pin it explicitly so an engine default can never override it).
+  +actor_rollout_ref.rollout.engine_kwargs.vllm.mamba_ssm_cache_dtype: float32
+
+  # ---- algorithm -------------------------------------------------------------
+  algorithm.adv_estimator: dpt_task_grpo                         # registered by dpt.verl_ext.register
+  algorithm.norm_adv_by_std_in_grpo: false                       # A2
+  algorithm.use_kl_in_reward: false
+  algorithm.filter_groups.enable: false                          # we SHRINK (no DAPO refill); see replay buffer
+  algorithm.rollout_correction.rollout_is: token                 # TIS (A4, Incident 1)
+  algorithm.rollout_correction.rollout_is_threshold: ${rl.tis.cap}
+  algorithm.rollout_correction.rollout_rs: seq_mean_k3           # whole-sequence mask on large mismatch
+  algorithm.rollout_correction.rollout_rs_threshold: ${rl.tis.seq_mask.threshold}
+  algorithm.rollout_correction.bypass_mode: false                # decoupled: recompute π_old, 3 policies
+
+  # ---- reward ----------------------------------------------------------------
+  reward.num_workers: ${rl_run.reward_workers}
+  reward.custom_reward_function.path: ${oc.env:DPT_REPO,.}/src/dpt/verl_ext/reward_fn.py
+  reward.custom_reward_function.name: compute_score
+  reward.reward_manager.name: dapo                               # DAPO manager = overlong buffer penalty
+  +reward.reward_kwargs.max_resp_len: ${rl.sampling.max_response}
+  +reward.reward_kwargs.overlong_buffer_cfg: {enable: true, len: "${sub:${rl.sampling.max_response},${rl.length.overlong_start}}", penalty_factor: "${rl.length.overlong_max_penalty}", log: true}   # 20K→24K linear, −0.5 at cap
+
+  # ---- Ray: make our package importable + registered in every process on both nodes ----------
+  +ray_kwargs.ray_init.runtime_env.env_vars.VERL_USE_EXTERNAL_MODULES: dpt.verl_ext.register
+  +ray_kwargs.ray_init.runtime_env.env_vars.PYTHONPATH: ${oc.env:DPT_REPO,.}/src
+  +ray_kwargs.ray_init.runtime_env.env_vars.DPT_REPO: ${oc.env:DPT_REPO,.}
+  +ray_kwargs.ray_init.runtime_env.env_vars.PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+  +ray_kwargs.ray_init.runtime_env.env_vars.CUDA_DEVICE_MAX_CONNECTIONS: "1"

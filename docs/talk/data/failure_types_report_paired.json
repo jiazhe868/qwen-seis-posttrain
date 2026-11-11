@@ -1,0 +1,39 @@
+{
+ "base_medium": {
+  "n": 98,
+  "rubric_score": 73.2,
+  "reports_with_concept_shortfall_pct": 71.4
+ },
+ "sft": {
+  "n": 99,
+  "rubric_score": 75.1,
+  "reports_with_concept_shortfall_pct": 69.7
+ },
+ "rl_seed1": {
+  "n": 100,
+  "rubric_score": 72.9,
+  "reports_with_concept_shortfall_pct": 74.0
+ },
+ "sft_minus_base": {
+  "n": 97,
+  "mean": 1.5,
+  "ci": [
+   -1.6,
+   4.3
+  ],
+  "better": 43,
+  "same": 24,
+  "worse": 30
+ },
+ "rl_seed1_minus_base": {
+  "n": 98,
+  "mean": -0.0,
+  "ci": [
+   -2.8,
+   2.6
+  ],
+  "better": 42,
+  "same": 22,
+  "worse": 34
+ }
+}

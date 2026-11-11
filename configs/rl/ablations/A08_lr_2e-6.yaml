@@ -1,0 +1,7 @@
+# A8: learning rate 2e-6 (best on 9B) vs 1e-6. (27B, 80 steps)
+# Result: 2e-6 gave 3× the entropy oscillation and D-Num stalled after step 60. Numeric
+# hyper-parameters do not transfer from 9B to 27B; only directions do.
+ablation: {id: A8, base_config: rl/rl_27b.yaml, steps: 80, metric: entropy_oscillation, decision: "1e-6"}
+rl:
+  total_steps: 80
+  lr_schedule: {base_lr: 2.0e-6, final_lr: 2.0e-6}

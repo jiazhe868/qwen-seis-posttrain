@@ -1,0 +1,12 @@
+# A4: truncated importance sampling on vs off. (27B, 250 steps)
+# Result: without TIS the run collapsed at step 180 (Incident 1: BF16 rollout state + a few tokens
+# with huge ratios dominating the gradient); with TIS it was stable throughout.
+# WARNING: this overlay reproduces a known collapse. Run it only with the alert engine armed, and
+# never from a checkpoint you intend to keep.
+ablation: {id: A4, base_config: rl/rl_27b.yaml, steps: 250, metric: stability, decision: "TIS on (cap 2.0)",
+           preflight_waivers: [tis]}
+rl: {total_steps: 250}
+verl:
+  algorithm.rollout_correction.rollout_is: null
+  algorithm.rollout_correction.rollout_rs: null
+  algorithm.rollout_correction.rollout_rs_threshold: null

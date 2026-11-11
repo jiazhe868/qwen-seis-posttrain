@@ -1,0 +1,17 @@
+{
+  "source": "Stage boundaries of campaign job 3532660 (8 gpu-a100 nodes), read from its logs and recorded in the run log (timeline, 'Where the campaign's 71.9 h went'). Times are US Central.",
+  "job_nodes": 8,
+  "su_per_node_hour": 3,
+  "segments": [
+    {"name": "baseline_eval", "kind": "planned", "start": "2026-10-27 11:16", "end": "2026-10-28 01:01", "note": "base model, main suite, 10-seed noise floor, D-Num pass@64"},
+    {"name": "sft_blocked", "kind": "lost", "start": "2026-10-28 01:01", "end": "2026-10-29 12:07", "note": "NFS lock hang, data bug, no attention kernel, last-stage memory, pre-flight, crash at step 50 (incidents 15-19)"},
+    {"name": "sft", "kind": "planned", "start": "2026-10-29 12:07", "end": "2026-10-29 14:26", "note": "206 steps"},
+    {"name": "export_fix", "kind": "lost", "start": "2026-10-29 14:26", "end": "2026-10-29 16:30", "note": "HF export (incident 21)"},
+    {"name": "sft_eval_and_gate", "kind": "planned", "start": "2026-10-29 16:30", "end": "2026-10-29 21:15", "note": "SFT evaluation and the RL-entry gate"},
+    {"name": "rl_launch_failures", "kind": "lost", "start": "2026-10-29 21:15", "end": "2026-10-29 22:50", "note": "one-node Ray, sandbox missing, host memory (incidents 22-24)"},
+    {"name": "rl", "kind": "planned", "start": "2026-10-29 22:50", "end": "2026-10-30 02:31", "note": "56 steps, paused by the log-ppl alert"},
+    {"name": "watcher_wait", "kind": "lost", "start": "2026-10-30 02:31", "end": "2026-10-30 03:21", "note": "the watcher's wait after the pause"},
+    {"name": "final_eval", "kind": "planned", "start": "2026-10-30 03:21", "end": "2026-10-30 07:31", "note": "final evaluation of RL step 20"},
+    {"name": "held_for_decision", "kind": "lost", "start": "2026-10-30 07:31", "end": "2026-10-30 11:09", "note": "held for a person's decision, then released"}
+  ]
+}

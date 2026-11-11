@@ -1,0 +1,77 @@
+{
+ "collected_at": "2026-11-07T12:48",
+ "t1_reward_vs_eval_grader": {
+  "base_medium": {
+   "n": 2400,
+   "TP": 2190,
+   "FP": 7,
+   "TN": 194,
+   "FN": 9,
+   "agreement": 0.9933333333333333,
+   "fp_share": 0.002916666666666667,
+   "fn_share": 0.00375,
+   "fpr": 0.03482587064676617,
+   "fnr": 0.004092769440654843,
+   "disagreements": {
+    "FN: eval ok / reward parse_fail": 8,
+    "FP: eval multiple_answers / reward ok": 7,
+    "FN: eval ok / reward multi_answer": 1
+   }
+  },
+  "sft": {
+   "n": 2400,
+   "TP": 2145,
+   "FP": 0,
+   "TN": 255,
+   "FN": 0,
+   "agreement": 1.0,
+   "fp_share": 0.0,
+   "fn_share": 0.0,
+   "fpr": 0.0,
+   "fnr": 0.0,
+   "disagreements": {}
+  },
+  "rl_seed1": {
+   "n": 2400,
+   "TP": 2140,
+   "FP": 0,
+   "TN": 260,
+   "FN": 0,
+   "agreement": 1.0,
+   "fp_share": 0.0,
+   "fn_share": 0.0,
+   "fpr": 0.0,
+   "fnr": 0.0,
+   "disagreements": {}
+  }
+ },
+ "t3_gemma_vs_luna": [
+  {
+   "threshold": 50.0,
+   "n": 141,
+   "TP": 63,
+   "FP": 75,
+   "TN": 3,
+   "FN": 0,
+   "agreement": 0.46808510638297873
+  },
+  {
+   "threshold": 70.0,
+   "n": 141,
+   "TP": 8,
+   "FP": 100,
+   "TN": 33,
+   "FN": 0,
+   "agreement": 0.2907801418439716
+  },
+  {
+   "threshold": 90.0,
+   "n": 141,
+   "TP": 1,
+   "FP": 42,
+   "TN": 98,
+   "FN": 0,
+   "agreement": 0.7021276595744681
+  }
+ ]
+}

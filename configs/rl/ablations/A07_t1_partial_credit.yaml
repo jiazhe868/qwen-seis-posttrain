@@ -1,0 +1,8 @@
+# A7: binary T1 reward vs partial credit by relative error. (9B proxy, 200 steps)
+# Result: partial credit raised *training* reward faster, but D-Num was 1.8 lower. The model learned
+# to give "roughly right" answers. At 27B the direction held and the gap shrank to 0.9.
+ablation: {id: A7, base_config: rl/rl_9b_proxy.yaml, steps: 200, metric: d_num_dev_gain, decision: "binary"}
+rl: {total_steps: 200}
+rewards:
+  t1_num:
+    partial_credit: {enabled: true, max_rel_err: 0.10}

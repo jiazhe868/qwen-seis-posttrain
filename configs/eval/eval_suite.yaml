@@ -1,0 +1,172 @@
+# =============================================================================
+# eval_suite.yaml: the fixed evaluation harness (dpt.eval.harness).
+#
+# Every model, base included, is evaluated with THIS file and only the CLI
+# flags --effort / --max-tokens / --extra-max-tokens changed. Protocol values
+# (temperature, top-p, effort, lengths, sample counts) are interpolated from
+# configs/project.yaml so that they are defined in exactly one place.
+#
+# Eval data lives under ${project.paths.eval_secure_root}, which training
+# processes cannot read. Each JSONL has a .manifest.json sidecar that the harness
+# verifies before scoring.
+# =============================================================================
+eval_suite:
+  endpoint: http://localhost:8000          # vLLM `serve` (OpenAI-compatible)
+  # completions = render prompts locally with the model's own chat template
+  #               (verified reasoning effort) and send raw text. Default.
+  # chat        = server-side template; requires a server WITHOUT --reasoning-parser.
+  mode: completions
+  tokenizer: ${project.model.base}
+  max_concurrency: 128                     # in-flight requests; vLLM batches them
+  request_timeout_s: 7200
+
+  sampling:
+    temperature: ${project.eval.temperature}
+    top_p: ${project.eval.top_p}
+    effort: ${project.eval.effort}
+    max_tokens: ${project.eval.max_response}
+
+  # Hidden tests run on the isolated CPU sandbox cluster. null = LocalTestRunner (dev only).
+  sandbox_endpoint: null
+
+  # Pairwise judges for D-Report, version pinned (a silent server-side model change shifts the score
+  # distribution). Every verdict is cached in <out>/d_report/judgments.<role>.jsonl.
+  judge:                                   # primary (the cluster: scripts/slurm/eval.slurm sets endpoint + model)
+    endpoint: null                         # e.g. http://judge.internal:8000
+    model: null
+    pinned_model_version: null
+    api_key_env: JUDGE_API_KEY
+    expert_blind_fraction: ${project.eval.sets.d_report.expert_blind_fraction}
+  # Second judge (project.judges.second), e.g. a hosted reasoning model through the OpenAI API. The
+  # request shape is a reasoning model's: no temperature, max_completion_tokens (includes hidden
+  # reasoning), reasoning_effort. Environment variables override the model line's values.
+  second_judge:
+    endpoint: ${oc.env:DPT_SECOND_JUDGE_URL,${project.judges.second.endpoint}}
+    model: ${oc.env:DPT_SECOND_JUDGE_MODEL,${project.judges.second.model}}
+    pinned_model_version: ${oc.env:DPT_SECOND_JUDGE_PIN,${project.judges.second.pinned_model_version}}
+    api_key_env: ${project.judges.second.api_key_env}
+    require_api_key: true                  # no key here → skipped (pending), not an error
+    probe: true                            # unreachable (no internet on this node) → skipped
+    temperature: null
+    max_tokens_field: max_completion_tokens
+    max_tokens: ${project.judges.second.max_tokens}
+    extra_body: {reasoning_effort: "${project.judges.second.effort}"}
+    timeout_s: 900
+    retries: 6
+  pairwise:
+    gate_judge: ${project.judges.gate_judge}   # which win rate the gates read (primary | second | min)
+    max_unparsed_rate: 0.05                # more unparsed verdicts than this → no score (they count as ties)
+    max_concurrency: 8                     # items judged in parallel per judge
+    # Blind review (dpt.eval.blind_review): n_first pairs, then n_extra more only if the reviewer's win rate
+    # differs from a judge's by more than extra_if_gap points. n_first null = expert_blind_fraction of items.
+    blind_review: ${project.eval.sets.d_report.blind_review}
+
+  # Automatic checks of the drafted D-Fresh / D-Report items (dpt.eval.autocheck): the judge endpoint above
+  # (Gemma on the cluster) with these request settings. Gemma thinks before every reply; the parser skips it.
+  autocheck:
+    checker:
+      max_tokens: 28672                    # thinking counts against it. Prompt + this must fit the judge's
+                                           # 40,960-token context (serve.slurm); a cut-off reply is not used
+      timeout_s: 1800
+      extra_body: {chat_template_kwargs: {enable_thinking: true}}
+    max_concurrency: 32                    # items checked in parallel (one request in flight each)
+    fresh:
+      solves: 4                            # independent solutions per problem
+      min_agree: 1                         # matching solutions needed to keep it (1 = keep hard problems)
+      adjudicate: true                     # settle disagreements: two worked solutions, both orders
+      solve_temperature: 0.6               # solves and adjudication
+      code_rel_tol: 1.0e-3                 # solve() must reproduce the stated answer this closely
+      n_keep: ${project.eval.sets.d_fresh.n_items}
+      min_items: 40                        # fewer → nothing is written: draft more topics
+    report:
+      votes: 3                             # independent answer-then-check passes; the majority decides
+      vote_temperature: 0.6
+      min_criteria: 3
+      n_keep: ${project.eval.sets.d_report.n_items}
+      min_items: 80
+
+  bootstrap: {n_boot: 2000, seed: 0}
+
+  # ---------------------------------------------------------------- domain sets
+  sets:
+    d_num:
+      path: ${project.paths.eval_secure_root}/d_num.jsonl
+      grader: numeric
+      metric: avg@k
+      samples: ${project.eval.sets.d_num.samples}            # avg@8
+      task: t1_num
+      # The prompt requires a unit; training (rewards.t1_num.require_unit) and the dev gold grader are
+      # strict too. The same policy everywhere, so "omitted the unit" is never right in one place and
+      # wrong in another. Every model, base included, is scored under it.
+      grader_kwargs: {missing_unit: strict}
+    d_code:
+      path: ${project.paths.eval_secure_root}/d_code.jsonl
+      grader: code
+      metric: pass@1
+      samples: ${project.eval.sets.d_code.samples}           # pass@1 averaged over 4 samples
+      task: t2_code
+    d_report:
+      path: ${project.paths.eval_secure_root}/d_report.jsonl
+      grader: pairwise                                       # needs --reference-run <base_medium dir>
+      samples: ${project.eval.sets.d_report.samples}
+      task: t3_report
+    d_fresh:
+      path: ${project.paths.eval_secure_root}/d_fresh.jsonl  # written after 2026-08-14 (post-release)
+      grader: numeric
+      grader_kwargs: {missing_unit: strict}
+      metric: avg@k
+      samples: ${project.eval.sets.d_fresh.samples}
+      task: t1_num
+    # Harder held-out numeric slice (2026-10-27; the base 9B scores 91.6 on D-Num): eight families of kinds no
+    # training family has (dpt.data.gen.seismology_hard), wording checked by GPT-6 Luna as for D-Num. Not in the
+    # report's set list or any gate; scored beside them.
+    d_num_hard:
+      path: ${project.paths.eval_secure_root}/d_num_hard.jsonl
+      grader: numeric
+      grader_kwargs: {missing_unit: strict}
+      metric: avg@k
+      samples: ${project.eval.sets.d_num.samples}
+      task: t1_num
+
+  # ---------------------------------------------------------------- general 5
+  # Question text already contains the options/instructions; no task prompt is added.
+  general:
+    gpqa_diamond:
+      path: ${project.paths.eval_secure_root}/general/gpqa_diamond.jsonl
+      grader: choice
+      samples: 4
+    mmlu_pro_2k:
+      path: ${project.paths.eval_secure_root}/general/mmlu_pro_2k.jsonl
+      grader: choice
+      samples: 1
+      relative_only: true          # base memorization probe hit 6.2% (baseline 0.3%): read deltas only
+    ifeval:
+      path: ${project.paths.eval_secure_root}/general/ifeval.jsonl
+      grader: ifeval
+      samples: 1
+    # The newest LiveCodeBench release on Hugging Face (v6) ends in April 2025, so nothing postdates the
+    # model (checked 2026-10-21). Its 2025 problems may be in the base's pretraining data: read deltas only.
+    livecodebench_post_2025_01:
+      path: ${project.paths.eval_secure_root}/general/livecodebench_post_2025_01.jsonl
+      relative_only: true
+      grader: code
+      samples: 4
+    tool_calling:
+      path: ${project.paths.eval_secure_root}/general/tool_calling.jsonl
+      grader: toolcall
+      samples: 1
+
+  # ---------------------------------------------------------------- safety regression
+  refusal:
+    path: ${project.paths.eval_secure_root}/safety/refusal_regression.jsonl
+    grader: refusal
+    samples: 1
+
+  # ---------------------------------------------------------------- layer-3 diagnostics
+  # 200 D-Num items with numerically perturbed inputs and recomputed answers.
+  perturbation:
+    path: ${project.paths.eval_secure_root}/d_num_perturbed.jsonl
+    grader: numeric
+    metric: avg@k
+    samples: 8
+    task: t1_num

@@ -1,0 +1,3 @@
+{"uid": "pub-001", "question": "A cyclist rides at a constant 18 km per hour for 2.5 hours and then walks the bike for another 4 km. How many kilometres does the cyclist cover in total?", "answer": {"value": 49, "unit": "km"}}
+{"uid": "pub-002", "question": "Which layer of the Earth lies directly beneath the crust and above the outer core, and what is its approximate thickness in kilometres?", "answer": null}
+{"uid": "pub-003", "question": "A rectangular garden is 12 metres long and 7 metres wide. A path one metre wide runs around the outside of the garden. What is the area of the path in square metres?", "answer": {"value": 42, "unit": "m^2"}}

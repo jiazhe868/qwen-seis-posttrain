@@ -1,0 +1,52 @@
+# =============================================================================
+# Stage 1 on the 9B main line: full-parameter SFT of Qwen3.5-9B (README).
+#
+#   sbatch scripts/slurm/sft.slurm                     # 8 gpu-a100 nodes, ~5-8 h
+#   DPT_DRY_RUN=1 bash scripts/04_sft.sh --config sft/sft_9b.yaml   # print the rendered command only
+#
+# Same recipe as the 27B (sft_27b.yaml: 2 epochs, 25% self-distilled replay, cosine LR, MTP head
+# trained); only the model and the layout change. The layout comes from the hardware profile
+# (slurm_3xa100_40g: TP1 × PP8 × DP3), so SFT and RL share their memory behaviour.
+# =============================================================================
+defaults_from: sft_27b.yaml
+requires_model_line: qwen35_9b      # base model, arch and gates come from configs/model/qwen35_9b.yaml
+
+sft:
+  run_name: sft${project.model.tag}_seed${project.seed}
+  base_model: ${project.model.base}
+  # verl's SFT trainer feeds global_batch // DP conversations per DP rank and silently drops the
+  # remainder: 128 on DP3 would really be 126. Say 126 so the logged config is what runs.
+  global_batch_conversations: 126
+
+verl_sft:
+  # verl's Megatron engine defaults to `flash`, which fails outright where flash-attn is missing (2026-10-28: "No dot
+  # product attention backend"). `auto` lets Transformer Engine choose, as RL (rl_9b.yaml) and the train-forward
+  # parity check (scripts/02_parity.sh step 4) do. On A100 at head_dim 256 it picks flash-attn (in dpt-train since
+  # 2026-10-28); its only fallback there, unfused attention, runs out of memory above ~13K tokens.
+  engine.override_transformer_config.attention_backend: auto
+  # --- memory of the last pipeline stage (measured 2026-10-28 on an A100, before any 9B step ran) -----------
+  # At TP1 stage 7 holds the 248,320-word output layer, the MTP layer and MTP's own copy of the 1.0B-parameter
+  # embedding: 3.14B parameters, 29.3 GiB of fixed state, and the FP32 logits copies of the two losses took
+  # 2.38 MiB per token. Rows above ~3.5K tokens did not fit (28% of the mix). Same data, loss and optimizer
+  # math, less memory:
+  #  * Adam on the CPU (Megatron's HybridDeviceOptimizer). With the precision-aware path the FP32 master
+  #    weights live only there; every dtype stays FP32 (optim/megatron.yaml defaults). −11.7 GiB on stage 7.
+  #  * Both losses through Transformer Engine's cross entropy (FP32 math on the BF16 logits): the MTP loss
+  #    through these two keys, verl's log-probs through dpt.verl_ext.patches (fix 2). 0.94 MiB per token.
+  #  * One decoder layer on the first and the last stage, five on each middle stage (4 everywhere before).
+  # Stage 7 then holds 13.9 GiB of fixed state (2.49B parameters × 6 bytes) plus 21.7 GiB of loss at the longest
+  # row (20,841 tokens, measured), of 39.5 GiB. The 8-node pre-flight on the 12 longest rows (2026-10-29) also
+  # needed fix 3 in dpt.verl_ext.patches (BF16 logits out of Megatron's Float16Module) and then peaked at 37.0 GiB
+  # reserved by PyTorch, 39.4 GiB in total with CUDA context and NCCL buffers.
+  optim.use_precision_aware_optimizer: true
+  +optim.override_optimizer_config.optimizer_cpu_offload: true
+  +optim.override_optimizer_config.optimizer_offload_fraction: 1.0
+  +engine.override_transformer_config.cross_entropy_loss_fusion: true
+  +engine.override_transformer_config.cross_entropy_fusion_impl: te
+  +engine.override_transformer_config.num_layers_in_first_pipeline_stage: 1
+  +engine.override_transformer_config.num_layers_in_last_pipeline_stage: 1
+  # Optimizer checkpoints in model space, gathered over Gloo on the CPU, where the CPU optimizer keeps its state.
+  # verl's default (dp_reshardable, one flat tensor per gradient bucket) fails to save on this layout: "Failed to
+  # validate global plan", the bucket shards overrun the bucket by 128 elements (pre-flight, 2026-10-29).
+  engine.dist_ckpt_optim_fully_reshardable: true
+  engine.distrib_optim_fully_reshardable_mem_efficient: true

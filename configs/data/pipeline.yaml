@@ -1,0 +1,164 @@
+# =============================================================================
+# Data pipeline config (dpt.data.pipeline). Composed on top of project.yaml +
+# the hardware profile (see dpt.common.config.load_config).
+#
+#   python -m dpt.data.pipeline --config data/pipeline.yaml                  # full run (needs vLLM servers)
+#   python -m dpt.data.pipeline --config data/pipeline.yaml --offline \
+#          data_pipeline.output_dir=/tmp/toy                                 # toy run, no GPUs, fakes
+#   python -m dpt.data.pipeline --config data/pipeline.yaml --stages verify,difficulty,publish  # resume
+#
+# Every threshold below is explained in docs/data_pipeline.md / docs/contamination.md.
+# Change a threshold → bump data_pipeline.version so outputs never mix.
+# =============================================================================
+data_pipeline:
+  version: v1
+  seed: ${project.seed}
+  output_dir: ${project.paths.data_root}/${data_pipeline.version}
+
+  inputs:
+    # Output of the layout-aware OCR / extraction service (one candidate per line).
+    # The toy fixtures are used by default so `--offline` works out of the box.
+    rl_candidates:
+      - examples/toy_data/rl_candidates.jsonl
+    # Protected collections. Real eval sets live under ${project.paths.eval_secure_root};
+    # only the decontam stage (run as the eval-authorized account) reads them.
+    eval_sets:
+      d_num: examples/toy_data/eval/d_num.jsonl
+      d_code: examples/toy_data/eval/d_code.jsonl
+      d_report: examples/toy_data/eval/d_report.jsonl
+      d_fresh: examples/toy_data/eval/d_fresh.jsonl
+    public_benchmarks:
+      public_mix: examples/toy_data/public_benchmarks.jsonl
+    # When set, every *.jsonl in this directory is a protected collection and replaces the map above.
+    public_benchmarks_dir: null
+    # Other problem banks to cross-dedup against (higher priority than rl_candidates).
+    reference_banks: {}
+    sft_subsets:
+      domain_reasoning: examples/toy_data/sft/domain_reasoning.jsonl
+      tool_traj: examples/toy_data/sft/tool_traj.jsonl
+      self_distill: examples/toy_data/sft/self_distill.jsonl
+      report: examples/toy_data/sft/report.jsonl
+
+  ingest:
+    parser: preparsed_jsonl
+    # Allow-list; anything else (including a missing license) is dropped. Fail closed.
+    # internal-generated: our generators (dpt.data.gen); CC-BY-SA-3.0: databricks-dolly-15k (T4 prompts).
+    license_allowlist: [CC-BY-4.0, CC-BY-SA-3.0, CC-BY-SA-4.0, CC0-1.0, MIT, Apache-2.0, BSD-3-Clause,
+                        public-domain, internal-expert, internal-generated]
+
+  quality:
+    ngram_n: 4
+    max_ngram_repetition: 0.30         # SFT loss-spike lesson (OCR loops score 0.6–0.95)
+    min_chars: 20
+    max_chars: 200000
+    max_replacement_char_frac: 0.01
+    min_repetition_tokens: 50
+
+  dedup:
+    shingle_k: 5                       # char 5-grams
+    num_perm: 128
+    threshold: 0.8                     # Jaccard; within bank and across banks
+    skip_programmatic: true            # generated problems (meta.generator): exact dedup only within the bank
+    seed: ${project.seed}
+
+  decontam:
+    ngram_n: 13
+    minhash_threshold: 0.5             # aggressive on purpose (missed contamination is costlier)
+    num_perm: 128
+    shingle_k: 5
+    embed_threshold: 0.85
+    embed_top_k: 5
+    answer_min_params: 2
+    answer_sig_digits: 4
+    teacher_min_hits: 1
+    ngram_max_df: 10                   # n-grams in >10 checked texts are boilerplate (templates, instructions)
+    judge_concurrency: 96              # paraphrase-judge calls in flight (the teacher is otherwise idle by then)
+    # One canary per internal eval file; generate with dpt.data.decontam.make_canary("<set>/<version>").
+    canaries:
+      - DPT-CANARY-45436cc4-07bc-5176-a0b1-f7e962238c0f   # make_canary("toy_eval/v1")
+    audit_sample: 200
+    audit_dir: ${data_pipeline.output_dir}/secure_audit   # point at secure storage in production
+    seed: ${project.seed}
+
+  verify:
+    # all = verify every numeric problem; audit = per template (answer_verify.AuditConfig): a sample of
+    # each template's instances, and the template is kept or dropped whole. The cluster uses audit (data.slurm).
+    mode: all
+    audit: {per_group: 20, min_accept: 0.3, max_contested: 0.15, max_perturbation: 0.0}
+    family_samples: 8
+    min_family_agreement: 0.625        # 5 of 8 samples must agree before a family "votes"
+    require_solver: {t1_num: true, t4_general: false}
+    max_tokens: 16384
+    families:                          # two strong models from *different* families than the base
+      - {name: family_a, base_url: "http://localhost:8101/v1", model: "family-a-model"}
+      - {name: family_b, base_url: "http://localhost:8102/v1", model: "family-b-model"}
+
+  difficulty:
+    # all = every problem; audit = per group (difficulty.DifficultyAuditConfig): 20 instances of each
+    # template / kind / source, the group dropped, kept or sent to the hard pool whole. The cluster: audit.
+    # audit_all = the audit, then every problem of the groups not dropped (per-problem pass rates, 2026-11-07).
+    mode: all
+    audit: {per_group: 20, drop_share: 0.9, hard_share: 0.9}
+    n_samples: 8
+    effort: medium                     # must match RL rollout settings
+    max_tokens: ${project.thinking.rl_max_response}
+    correct_threshold: {t1_num: 1.0, t2_code: 1.0, t3_report: 0.9, t4_general: 1.0}
+    drop_all_correct: true             # 8/8 = zero advantage in GRPO
+    hard_pool_if_none_correct: true    # 0/8 → hard pool, joins RL after step 150
+    skip_tasks: []
+    # Problems in flight on one base server. A problem waits for the longest of its 8 replies behind every other
+    # one: bank replies average ~16K tokens, and one A100 then generates ~1,300 tok/s, so ~50 min at 32
+    # (2026-10-25). At 64 the wait reached the old 30 min timeout and most requests were re-sent from scratch.
+    max_concurrency: 32
+    seed: ${project.seed}
+
+  publish:
+    effort: ${project.thinking.train_effort}
+    # Held-out dev split for in-loop validation / checkpoint selection (≈300 of 60K problems).
+    # Checkpoints are chosen on dev only; the D-* test sets are never touched during training.
+    dev_fraction: 0.005
+    # 0.5% of the bank's 1,193 T3 problems is 6, too few for the judge-drift check. 12 is every T3 dev candidate the
+    # SFT mix excludes; the other tasks are above it (2026-10-27).
+    dev_min_per_task: 12
+    # Toy bank only (scripts/01_data.sh --smoke): too small to hold out a dev split, so rl_dev is a
+    # relabeled copy of rl_main. That tests the dev-only gold-grader path. Never true for real data.
+    dev_copy_if_empty: false
+    # true: draw the dev split only from <output_dir>/rl_dev_candidates.jsonl (pipeline --dev-candidates, written
+    # after verify), which the SFT mix excludes, so the mix need not wait for the difficulty pass.
+    dev_candidates: false
+
+  probe:                               # optional stage: base-model memorization probes
+    collections: [public_mix]
+    prefix_frac: 0.5
+    k_words: 20
+    match_frac: 0.8
+
+  backends:
+    # timeout_s: seconds a request may take, the server's queue included (difficulty.max_concurrency).
+    base:  {base_url: "http://localhost:8000/v1", model: "${project.model.base}", timeout_s: 14400}
+    # local: true embeds in-process (backends.LocalEmbedder; pooling last for Qwen3-Embedding) instead of
+    # calling an embedding server.
+    embed: {base_url: "http://localhost:8200/v1", model: "embedding-model", local: false, pooling: last}
+    judge: {base_url: "http://localhost:8300/v1", model: "judge-model"}
+    # Render prompts locally with the base tokenizer and call /completions (preferred).
+    tokenizer: ${project.model.base}
+    # Verification threads and requests in flight per server. A problem waits for the longest of its 4
+    # teacher replies (~30 min at 15 tok/s each on the shared H100), so throughput is requests in flight /
+    # latency: 256 (run in the teacher's job, not on a login node, which allows 300 threads per user).
+    max_concurrency: 256
+
+  sft:
+    self_distill_token_share: 0.25
+    buckets: [4096, 8192, 16384, 32768]
+    max_length: ${project.thinking.max_context}
+    micro_batch_size: 2
+    pad_to_multiple_of: 128
+    padding_overhead_target: 0.08
+    self_distill_generated_by: ${project.model.base}
+    tokenizer: ${project.model.base}
+    offline_chat_template: examples/toy_data/qwen38_chat_template.jinja
+    # Sampling may start before verification ends: keep samples of problems in the verify stage's output and
+    # drop those of the RL dev split (pipeline.filter_by_problem). null / [] = no filter.
+    keep_problems_from: null           # e.g. <output_dir>/stages/04_verify.jsonl
+    exclude_problems_from: []          # e.g. [<output_dir>/rl_dev.jsonl]
+    seed: ${project.seed}

@@ -1,0 +1,129 @@
+# =============================================================================
+# project.yaml: the single source of truth.
+#
+# Every number in this file comes from the project report. Code never hard-codes
+# them; stage configs reference them with ${project.*} interpolation. If you
+# change a gate or a budget, change it HERE, in a commit of its own, and before
+# looking at test-set results (gates are fixed before the project starts).
+# =============================================================================
+project:
+  name: qwen38-domain-posttrain
+  seed: 1                      # seed 1 = delivered run; seed 2 = reproducibility run
+  repro_seeds: [1, 2]
+
+  # ---------------------------------------------------------------------------
+  # Models
+  # ---------------------------------------------------------------------------
+  model:
+    base: Qwen/Qwen3.8-27B              # 64 layers: 48 Gated DeltaNet + 16 gated attention, MTP head, vision tower
+    # Same-architecture small model used for ablation screening (report: "9B 小模型").
+    # Qwen3.5-9B shares the hybrid GDN/attention design. Swap it for a Qwen3.8 small
+    # variant if one is published.
+    proxy_9b: Qwen/Qwen3.5-9B
+    # Tiny same-family model for end-to-end smoke tests on the 4×A100-40GB workstation.
+    smoke: Qwen/Qwen3.5-0.8B
+    # Architecture facts used by the planner and the sanity checks (from the model card).
+    arch:
+      num_layers: 64
+      num_linear_attn_layers: 48        # Gated DeltaNet
+      num_full_attn_layers: 16          # gated attention, every 4th layer
+      hidden_size: 5120
+      ffn_hidden_size: 17408
+      attn_q_heads: 24
+      attn_kv_heads: 4                  # caps training TP at 4 (TP>4 replicates KV heads)
+      attn_head_dim: 256
+      gdn_v_heads: 48
+      gdn_qk_heads: 16
+      gdn_head_dim: 128
+      vocab_size: 248320                # padded; confirmed on the Qwen3.8-27B model card
+      params_billion: 27.0
+      native_context: 262144
+
+  # ---------------------------------------------------------------------------
+  # Thinking / length policy. Decided BEFORE RL (report §基座模型).
+  # ---------------------------------------------------------------------------
+  thinking:
+    train_effort: medium                # SFT data rendering + RL rollouts
+    eval_efforts: [medium, xhigh]       # base is reported at both
+    max_context: 32768                  # project limit (native 262K is out of scope)
+    rl_max_response: 24576              # 24K hard cap during RL
+    rl_overlong_start: 20480            # linear penalty from 20K → 24K ...
+    rl_overlong_max_penalty: 0.5        # ... reaching -0.5 at the cap
+    eval_max_response: 32768
+    eval_base_xhigh_extra_max_response: 65536   # base@xhigh re-scored at 64K; report the higher
+
+  # ---------------------------------------------------------------------------
+  # Paths. Relative paths resolve against the repo root; profiles override roots.
+  # ---------------------------------------------------------------------------
+  # Paths default to <repo>/... (DPT_REPO is set by the launchers); override with env vars on
+  # the cluster, e.g. DPT_DATA_ROOT=/nvme/dpt/data (local NVMe) and checkpoints on shared NFS.
+  paths:
+    data_root: ${oc.env:DPT_DATA_ROOT,${oc.env:DPT_REPO,.}/data}        # pipeline outputs (manifested)
+    raw_root: ${oc.env:DPT_RAW_ROOT,${oc.env:DPT_REPO,.}/data/raw}      # untrusted inputs (PDF, code docs)
+    ckpt_root: ${oc.env:DPT_CKPT_ROOT,${oc.env:DPT_REPO,.}/checkpoints}
+    eval_root: ${oc.env:DPT_EVAL_ROOT,${oc.env:DPT_REPO,.}/eval_results}
+    # Eval sets are stored separately with restricted read permission; training
+    # processes run as a user that cannot read this directory (report §数据).
+    eval_secure_root: /secure/eval_sets
+
+  # ---------------------------------------------------------------------------
+  # Ship gates: fixed before the project starts; each must clear the noise floor.
+  # Consumed by dpt.eval.gates. "delta_vs" names the reference row.
+  # ---------------------------------------------------------------------------
+  gates:
+    d_num:      {metric: avg@8,  rule: ">=", ref: base_xhigh, delta: 8.0}
+    d_code:     {metric: pass@1, rule: ">=", ref: base_xhigh, delta: 10.0}
+    d_report:   {metric: winrate_vs_base, rule: ">=", value: 60.0}
+    # Gain ratio vs base(medium): (60.3-44.7)/(71.4-52.1) = 0.81 in the report.
+    d_fresh:    {metric: avg@8,  rule: "gain_ratio>=", ref: base_medium, of: d_num, value: 0.60}
+    general:    {metric: mean_delta_5, rule: ">=", ref: base_medium, value: -1.0}
+    safety:     {metric: refusal_rate_delta_pp, rule: "abs<=", ref: base_medium, value: 2.0}
+    cost:       {metric: mean_output_tokens_ratio, rule: "<=", ref: base_medium, value: 1.3}
+    repro:      {metric: seed_abs_diff_d_num, rule: "<=", value: 2.0}
+
+  # Gate for entering RL after SFT (report §进入 RL 的门槛).
+  rl_entry_gate:
+    domain_beats_base: [d_num, d_code, d_report]   # each strictly above base (medium)
+    general_mean_delta_min: -1.5
+    pass_at_16_not_below_base: true                # keeps exploration headroom for RL
+
+  # ---------------------------------------------------------------------------
+  # Evaluation protocol (report §评测协议).
+  # ---------------------------------------------------------------------------
+  eval:
+    temperature: 1.0
+    top_p: 1.0
+    effort: medium
+    max_response: ${project.thinking.eval_max_response}
+    ci_level: 0.95
+    sets:
+      d_num:    {n_items: 600, metric: avg@8,  samples: 8, expected_ci: 1.6}
+      d_code:   {n_items: 300, metric: pass@1, samples: 4, expected_ci: 2.4}
+      d_report: {n_items: 200, metric: winrate_vs_base, samples: 1, both_orders: true,
+                 expert_blind_fraction: 0.30, expected_ci: 4.0,
+                 blind_review: {n_first: null, n_extra: 0, extra_if_gap: 15.0}}   # null: the fraction above
+      d_fresh:  {n_items: 150, metric: avg@8,  samples: 8, expected_ci: 3.1,
+                 written_after: "2026-08-14"}  # after the base model release date
+    general: [gpqa_diamond, mmlu_pro_2k, ifeval, livecodebench_post_2025_01, tool_calling]
+    noise_floor:
+      repeats: 10                      # same checkpoint, 10 seeds
+    # Benchmarks with base-model memorization evidence are reported as deltas only.
+    relative_only: [mmlu_pro_2k]
+
+  # ---------------------------------------------------------------------------
+  # Judges. The primary judge is served next to training (endpoint "judge"): D-Report pairwise, the
+  # T3 reward, and an answer-verification family. The optional second judge, of another family, judges
+  # D-Report only and never touches training. Model lines set them; unset → D-Report stays pending and
+  # its gate fails closed.
+  # ---------------------------------------------------------------------------
+  judges:
+    primary:
+      hf_id: null
+    second:
+      endpoint: null
+      model: null
+      pinned_model_version: null
+      api_key_env: null
+      effort: null
+      max_tokens: 2048
+    gate_judge: primary                # primary | second | min (= the lower win rate: both must clear)

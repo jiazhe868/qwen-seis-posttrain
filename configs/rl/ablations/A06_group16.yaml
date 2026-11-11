@@ -1,0 +1,4 @@
+# A6: 16 samples per prompt instead of 8. (9B proxy, 200 steps)
+# Result: +0.6 D-Num for 2× generation cost → 8.
+ablation: {id: A6, base_config: rl/rl_9b_proxy.yaml, steps: 200, metric: d_num_dev_gain, decision: "8"}
+rl: {total_steps: 200, group_size: 16}

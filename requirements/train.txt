@@ -1,0 +1,23 @@
+# Training / rollout / eval-serving stack, the versions dpt.verl_ext was verified against
+# (verl 0.9.1 source; see docs/verl_integration.md). Install on BOTH cluster nodes, ideally
+# from the same container image. Upgrading any of these means re-running scripts/05_rl_smoke.sh.
+-r core.txt
+verl[verl-core,mcore]==0.9.1
+vllm==0.24.0
+torch==2.11.0
+transformers==5.9.0
+megatron-bridge==0.6.2           # verl's wheel does not pin it; 0.6.2 has every API verl imports
+megatron-core==0.19.2            # released with megatron-bridge 0.6.2; needs Python ≥ 3.12
+transformer-engine==2.20.2       # cu12 core wheel + transformer_engine_torch built for SM80 (scripts/env/build_train_local.sh)
+flash-attn==2.8.3                # TE's training attention on A100 at head_dim 256; built from source for SM80 (same script)
+TransferQueue>=0.1.10
+flash-linear-attention>=0.5.0     # Triton GDN kernels; ~2× slower HF path without it
+ray[default]>=2.41
+tensordict>=0.8.0,<=0.10.0,!=0.9.0
+torchdata
+numpy>=2.0
+wandb
+# NVIDIA Apex with C++/CUDA extensions (gradient_accumulation_fusion=true in the cluster profile) is
+# not on PyPI; use the verl/NeMo container image, or build: pip install -v --no-build-isolation
+#   --config-settings '--build-option=--cpp_ext' --config-settings '--build-option=--cuda_ext' git+https://github.com/NVIDIA/apex
+accelerate                       # device_map="auto" for reference scoring / HF export checks
