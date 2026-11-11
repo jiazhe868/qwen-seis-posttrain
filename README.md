@@ -17,53 +17,55 @@ The arrows carry the data that trained the next model.</p>
 
 ## Summary
 
-A strong open model is the usual starting point for a domain assistant: fine-tune it on domain data, then
+The usual recipe for a domain model starts from a strong open model: fine-tune it on domain data, then
 reinforce what works. Qwen3.5-9B is already strong at textbook seismology. On D-Num, 300 numerical problems
-frozen before training, it is right on 91.6% of its samples and right at least once in 8 tries on 99.7% of
-the problems. Its failures are mostly answers cut off at the 32K-token limit (4.6% of samples) and malformed
-answers (2.3%); only 1.5% give a wrong value. The headroom is in cost, not in knowledge: within 8K tokens,
-only 13% of its samples are right (§3.3).
+frozen before training, it is right on 91.6% of its samples, and on 99.7% of the problems it is right at
+least once in 8 tries. Most of its failures are answers cut off at the 32K-token limit (4.6% of samples) or
+malformed answers (2.3%), and 1.5% give a wrong value. So the room to improve is in how many tokens it
+needs: within 8K tokens, 13% of its samples are right (§3.3).
 
 A saturated test cannot show progress. Therefore, before any training result existed, I froze a harder
 slice, D-Num-hard: 160 problems from 8 problem kinds that never appear in training. The base scores 62.0
 on it, and two receiver-function kinds sit near 0%; on one of them, 159 of 160 samples run to the token
 limit (§3.4).
 
-Supervised fine-tuning (SFT) on 13,095 conversations (44.1M tokens), mostly solutions written by a
-Qwen3.8-27B teacher to problems a solver had checked, teaches the teacher's shorter style. Mean answers
-fall from 14.7K to 9.5K tokens and most sets improve: D-Num-hard +6.1, D-Fresh +8.1, D-Code +5.8,
-GPQA Diamond +14.7, LiveCodeBench +14.3. D-Num falls 2.2 points, more than its 10-seed noise
-(SD 0.46), because the fine-tuned model gives more wrong values (§5.4).
+Supervised fine-tuning (SFT) on 13,095 conversations (44.1M tokens) teaches the model the teacher's
+shorter style. Most of the conversations are solutions written by a Qwen3.8-27B teacher to problems a
+solver had checked. Mean answers fall from 14.7K to 9.5K tokens, and most sets improve: D-Num-hard +6.1,
+D-Fresh +8.1, D-Code +5.8, GPQA Diamond +14.7, LiveCodeBench +14.3. D-Num falls 2.2 points, which is
+outside its 10-seed noise (SD 0.46). The drop comes from wrong values, which become more common after
+SFT (§5.4).
 
 Reinforcement learning (RL) with GRPO-style group advantages then trains on 36,884 problems of four kinds:
-numeric problems checked by a solver, code checked by hidden tests, reports scored by an LLM judge against
+numeric problems checked by a solver, code checked by hidden tests, reports scored by an LLM judge with
 rubrics, and general instructions checked by programs. The problems had been filtered for difficulty
-with the base model, but the SFT model is much stronger: in the first 20 steps, 87% of the numeric and
-code groups had all 8 samples right and gave no gradient (§6.3).
+with the base model. After SFT the model was much stronger, so in the first 20 steps 87% of the numeric
+and code groups had all 8 samples right, and those groups gave no gradient (§6.3).
 
 The first 20 steps taught the model to finish its reasoning: on the dev set, numeric accuracy rose from
-92.0 to 97.3 at a 16K-token cap. After that the answers kept shortening on every task, until numeric and
-code accuracy reached zero at step 52 and a train/rollout mismatch alert stopped the run at step 56. The
-obvious explanation, that one task rewarded short answers, does not hold: within each step, right and
-wrong answers were about equally long. The cause is still open (§6.4).
+92.0 to 97.3 at a 16K-token cap. After that the answers kept getting shorter on every task. Numeric and
+code accuracy reached zero at step 52, and a train/rollout mismatch alert stopped the run at step 56. I
+first suspected that one task rewarded short answers. The training logs ruled that out: within each
+step, right and wrong answers were about equally long. The cause is still open (§6.4).
 
-Step 20, picked on the dev curve, keeps SFT's accuracy with 41% fewer tokens (5.6K against 9.5K):
-D-Num-hard 70.1, D-Fresh +4.6, GPQA +2.9. It trades unfinished answers for wrong ones: on D-Num-hard its
-unfinished answers fall from 361 to 211 of 1,280 and its wrong values rise from 46 to 161 (§7.1). It also
-refuses less: 7.7 points fewer of the should-refuse prompts even under a broad detector, mostly unsafe
-prompts worded like harmless ones (§7.4).
+Step 20, picked on the dev curve, keeps SFT's accuracy and uses 41% fewer tokens (5.6K per answer, down
+from 9.5K): D-Num-hard 70.1, D-Fresh +4.6, GPQA +2.9. It leaves fewer answers unfinished and gives more
+wrong values: on D-Num-hard, unfinished answers fall from 361 to 211 of 1,280, and wrong values rise from
+46 to 161 (§7.1). It also refuses less. Even under a broad detector, its refusals of should-refuse
+prompts fall by 7.7 points, mostly on unsafe prompts worded like harmless ones (§7.4).
 
 The report reward depends on a judge, so I scored the same reports with a second judge that never
-touched training. The two disagree. The reward judge (Gemma) prefers the SFT model's reports to the
-base's, 86% against 49% for the second judge (GPT-6 Luna). At a pass mark of 70, Gemma passes 100 of the
-133 reports Luna fails, and the rubrics it applies are compound: 91% of their 5,765 criteria join several
-claims. RL did not learn to please the judge; the gap between the judges narrowed (§6.5).
+touched training. The two judges disagree. The reward judge (Gemma) gives the SFT model's reports an 86%
+win rate over the base's, and the second judge (GPT-6 Luna) gives them 49%. At a pass mark of 70,
+Gemma passes 100 of the 133 reports that Luna fails. The rubrics Gemma applies are also compound: 91% of
+their 5,765 criteria join several claims. During RL the gap between the two judges narrowed, so RL did
+not learn to please the judge (§6.5).
 
-Labelling every failure gives two different pictures. Numerical failures are mostly execution: unfinished
-answers whose method is right. The exception is two receiver-function kinds, where every model uses the
-wrong relation, a knowledge gap. Report shortfalls are mostly missing or wrong science, and neither SFT
-nor RL changed them (§7.2). Therefore, mid-training is not the next step for the numbers; for reports,
-the cheapest test is knowledge-dense SFT data (§8.2).
+Next I labelled every failure, and the numbers and the reports turned out to fail for different reasons.
+Numerical failures are mostly execution: unfinished answers whose method is right. Two receiver-function
+kinds are a knowledge gap, because there every model uses the wrong relation. Report shortfalls are
+mostly missing or wrong science, and neither SFT nor RL changed them (§7.2). Therefore, mid-training is
+not the next step for the numbers. For the reports, the cheapest test is knowledge-dense SFT data (§8.2).
 
 Most of the month went to systems. The one 8-node job ran 71.9 hours: 28.7 of them ran the planned stages,
 and 43.2 went to incidents, waits and holds, 35.1 of those before SFT could start (§9.2). A 9B model on
@@ -87,7 +89,7 @@ left a test or a guard; the ones worth learning from are in [PITFALLS.md](PITFAL
 13. [Repository layout](#13-repository-layout)
 14. [Regenerate figures](#14-regenerate-figures)
 
-[PITFALLS.md](PITFALLS.md) collects the failures met while building this pipeline and the checks that now
+[PITFALLS.md](PITFALLS.md) collects the failures met in building this pipeline and the checks that now
 catch them.
 
 ---
@@ -134,14 +136,15 @@ with the same prompts and settings (§3.2); no number is copied from elsewhere. 
 D-Report, which gets its own figure (§6.5). Source: `docs/talk/data/run.json`.
 
 SFT changed the most. It shortened the answers by a third and lifted every set where the base had run
-out of tokens: 38% of the base's GPQA answers and 61% of its LiveCodeBench answers were cut off at 32K,
-against 17% and 29% for SFT (`docs/talk/data/failure_types.json`, `cut_off_32k`). D-Num moved the other
-way, because SFT gives more wrong values (§5.4).
+out of tokens. The share of GPQA answers cut off at 32K fell from 38% to 17%, and for LiveCodeBench from
+61% to 29% (`docs/talk/data/failure_types.json`, `cut_off_32k`). D-Num fell, because SFT gives more wrong
+values (§5.4).
 
-RL changed the length again, not the accuracy: 41% fewer tokens than SFT at the same scores on most sets,
-D-Fresh +4.6 and GPQA +2.9 the only gains outside the intervals. D-Num-hard rose 2.0 points over SFT,
-which is inside the noise ([−0.8, +4.8], paired). Two of the eight ship gates fixed before RL pass, general
-capability and cost; the D-Num gate (base + 8, i.e. 99.6) was out of reach by construction (§3.5).
+RL shortened the answers again and left the accuracy about the same. The tokens per answer fell by
+another 41%, and most sets kept their scores. The gains outside the intervals are D-Fresh +4.6 and
+GPQA +2.9. D-Num-hard rose by another 2.0 points, which is inside the noise ([−0.8, +4.8], paired). Of
+the eight ship gates fixed before RL, two pass: general capability and cost. The D-Num gate (base + 8,
+i.e. 99.6) was out of reach by construction (§3.5).
 
 D-Report shows no gain under the judge that never touched training, and refusal fell for real (§7.4).
 
@@ -151,12 +154,13 @@ D-Report shows no gain under the judge that never touched training, and refusal 
 
 Each bar splits one model's samples into four outcomes (%): right, unfinished (the reasoning never closed
 within 32K tokens), a wrong value, and a format failure (several answers, none, or a missing unit). The
-grader counts only the final answer.
+grader reads the final answer and nothing else.
 
-On D-Num the base fails mostly by not finishing; SFT and RL fail mostly with wrong values. On D-Num-hard the
-same trade is larger: unfinished answers fall from 33% (base) to 28% (SFT) to 16% (RL), while wrong values
-rise from 1% to 4% to 13%. **Post-training here mostly changed when the model stops thinking, and a model
-that stops earlier is wrong more often.** §7 asks what kind of error these wrong values are.
+On D-Num, most of the base's failures are unfinished answers, and most of SFT's and RL's failures are wrong
+values. D-Num-hard shows the same shift on a larger scale: unfinished answers fall from 33% (base) to 28%
+(SFT) to 16% (RL), and wrong values rise from 1% to 4% to 13%. **Post-training here mostly changed when the
+model stops thinking, and a model that stops earlier is wrong more often.** §7 asks what kind of error these
+wrong values are.
 
 ---
 
@@ -200,11 +204,12 @@ The full sequence, with the time of each step, is the table in
 
 ### 3.1 Why the tests come first
 
-The usual order is to train and then look for a test that shows the gain. Every later number depends on
-the test, so here the order is reversed. The sets were built and frozen (content hashes, canaries) on
-2026-10-22/23, before the RL bank and the SFT mix were built, so that decontamination could check against
-them. Nothing was added afterwards except D-Num-hard, frozen on 10-27 before any SFT result existed (§3.4). Training never sees an item, a family or
-a rubric of a test set: the numeric families are split into training and held-out families in the code
+The usual order is to train first and then look for a test that shows the gain. Every later number depends
+on the test, so here the tests came first. The sets were built and frozen (content hashes, canaries) on
+2026-10-22/23, before the RL bank and the SFT mix were built, so that decontamination could check the
+training data for overlap with them. The one set added afterwards is D-Num-hard, frozen on 10-27 before any
+SFT result existed (§3.4). Training never sees an item, a family or a rubric of a test set. The numeric
+families are split into training and held-out families in the code
 (`split="heldout"` in `src/dpt/data/gen/families.py`; the held-out definitions themselves are not
 published, see Data & licensing), and a test enforces that the eval package never imports the reward code
 (`tests/eval/test_independence.py`).
@@ -219,18 +224,18 @@ published, see Data & licensing), and a test enforces that the eval package neve
 | general | 5 sets | GPQA Diamond, MMLU-Pro (2K), IFEval, LiveCodeBench after 2025-01, tool calling | public | per benchmark |
 | refusal | 650 | 300 should-refuse prompts (JailbreakBench, XSTest unsafe), 350 benign controls | — | refusal rate |
 
-Two perturbed twins of the numeric sets (280 items, numbers changed) are kept as contamination probes. There
-are no domain experts in this month's plan: GPT-6 Luna drafted D-Fresh and D-Report, Gemma checked them,
-and a 20-pair blind review by a person is prepared but not yet done (`dpt.eval.blind_review`). Every
-reference in this project is therefore a program or a model, never a human label (§8.1).
+Two perturbed twins of the numeric sets (280 items, numbers changed) are kept as contamination probes. This
+month's plan has no domain experts. GPT-6 Luna drafted D-Fresh and D-Report, Gemma checked them, and a
+20-pair blind review by a person is prepared and has not been done yet (`dpt.eval.blind_review`). So every
+reference in this project is a program or a model, and none is a human label (§8.1).
 
 ### 3.2 The decoding and scoring contract
 
 Every model, the base included, is re-run in one harness (`src/dpt/eval/harness.py`) with the same rendered
 prompt, temperature 1.0, top-p 1.0, reasoning effort medium and at most 32K output tokens, with a seed per
-item. Only the final answer is graded; an answer whose reasoning never closes fails, and the truncation rate
-is reported for every set. The numeric grader (`dpt.eval.graders.numeric`) is a separate implementation
-from the T1 reward, with strict units; on the same answers the two agree on 99.3–100% (§6.5).
+item. Only the final answer is graded. An answer whose reasoning never closes fails, and the truncation rate
+is reported for every set. The numeric grader (`dpt.eval.graders.numeric`) is written separately from the
+T1 reward and is strict about units. On the same answers the two agree on 99.3–100% (§6.5).
 
 ### 3.3 The base model nearly saturates D-Num
 
@@ -241,27 +246,27 @@ budget, every run of a model pooled (`dpt.eval.budget`; the dotted line is RL's 
 vote over k samples on D-Num (`scripts/talk/research_1110.py`).
 
 The base scores 91.6 on D-Num with one sample, 99.7% with at least one right answer in 8, and 99.6% by a
-majority vote of 8. Measured that way the set is solved. Measured by cost it is not: only 13.4% of the
-base's samples are right within 8K tokens and 55.4% within 16K, and a right answer costs 17.7K output
-tokens on average, for one- to three-step textbook calculations. SFT and RL move the whole curve to the
-left: within 8K tokens they are right on 60.0% and 74.6% of samples.
+majority vote of 8. Measured by accuracy, the set is solved. The next question is cost: within 8K tokens,
+13.4% of the base's samples are right, and within 16K, 55.4%. A right answer costs 17.7K output tokens on
+average, for one- to three-step textbook calculations. SFT and RL move the whole curve to the left: within
+8K tokens, SFT is right on 60.0% of samples and RL on 74.6%.
 
 **On a strong base model, the first thing post-training buys is efficiency.** The number to watch for
-this set is accuracy at a budget, not accuracy at the cap.
+this set is accuracy at a budget, because at the cap the set is already solved.
 
 ### 3.4 A harder slice, frozen before any result
 
-A test that the base already passes cannot show whether training helps. On 10-27, before any SFT result,
-I added D-Num-hard: 8 held-out problem kinds of three or more steps (receiver-function Moho depth and H-κ
-Vp/Vs, rays in a velocity gradient, Mw from a spectral plateau, distance from a ground-motion model,
-rupture length from directivity, Coulomb stress change), 20 problems each. Every solver was checked against
-an independent computation (forward models, ray integrals by quadrature, a rotated stress tensor), and the
-slice was chosen by family, never by which items a model failed.
+A test that the base already passes cannot show whether training helps. Therefore, on 10-27, before any
+SFT result, I added D-Num-hard: 8 held-out problem kinds of three or more steps (receiver-function Moho
+depth and H-κ Vp/Vs, rays in a velocity gradient, Mw from a spectral plateau, distance from a ground-motion
+model, rupture length from directivity, Coulomb stress change), 20 problems each. Every solver was checked
+with an independent computation (forward models, ray integrals by quadrature, a rotated stress tensor). The
+slice was chosen by family, and which items a model failed played no part in the choice.
 
 The base scores 62.0 there. A third of its samples never finish within 32K tokens, and a right answer costs
-41.6K tokens. Two receiver-function families sit at 0%: on H-κ, 159 of 160 samples ran to the cap; on Moho
-depth, the few that finished used the difference of the P and S ray-path times instead of the plane-wave
-delay $`H\left(\sqrt{1/v_s^2-p^2}-\sqrt{1/v_p^2-p^2}\right)`$, which puts the Moho 6–19% too deep.
+41.6K tokens. Two receiver-function families sit at 0%. On H-κ, 159 of 160 samples ran to the cap. On Moho
+depth, the few that finished used the difference of the P and S ray-path times, which puts the Moho 6–19%
+too deep. The right relation is the plane-wave delay $`H\left(\sqrt{1/v_s^2-p^2}-\sqrt{1/v_p^2-p^2}\right)`$.
 
 ### 3.5 Noise floor and gates
 
@@ -269,20 +274,20 @@ Ten runs of the base on D-Num with different seeds span 91.1–92.5 (SD 0.46; me
 largest 1.42; `docs/talk/data/run.json`, `eval.noise_floor`). A difference smaller than about 1.4 points is noise.
 
 Two kinds of gate decide what happens next, both fixed in advance:
-- **The RL-entry gate** (after SFT). At the D-Num ceiling a strict "SFT above base" check would be decided
-  by noise, and a failed gate used to end the 8-node job, whose next slot took about three days. So, on
-  10-27 and before any SFT result, I made it noise-aware: D-Num may not fall below base by more than the
-  combined 95% interval (~1.4 points), D-Code and D-Report must beat base, and a failure holds the job for
-  a person's go or stop instead of ending it. SFT failed it (D-Num −2.2; D-Report not above base under the
-  lower judge), and the go had been given in advance.
+- **The RL-entry gate** (after SFT). At the D-Num ceiling, a strict "SFT above base" check would be
+  decided by noise. A failed gate also used to end the 8-node job, and the next slot took about three
+  days. So, on 10-27 and before any SFT result, I made the gate noise-aware. D-Num may fall below base by
+  at most the combined 95% interval (~1.4 points), D-Code and D-Report must beat base, and a failure now
+  holds the job until a person says go or stop. SFT failed it (D-Num −2.2; D-Report not above base under
+  the lower judge), and the go had been given in advance.
 - **Eight ship gates** (after RL), with the thresholds of the reference plan this project started from.
   Two pass: general capability (+7.5, allowed down to −1.0) and cost (0.38× the base's tokens, allowed up
-  to 1.3×). D-Num needed base + 8, i.e. 99.6, which no model can reach on a saturated set; that was known
-  before RL, and a new threshold has to be fixed before the next run's results, not after.
+  to 1.3×). D-Num needed base + 8, i.e. 99.6, which no model can reach on a saturated set. That was known
+  before RL. A new threshold has to be fixed before the next run's results exist.
 
 Caveats, plainly:
 - D-Num-hard rests on 160 problems from 8 families, and two families decide much of its spread (§8.1).
-- D-Fresh has 60 problems, written and checked by models only.
+- D-Fresh has 60 problems, and models alone wrote and checked them.
 - Everything is measured at one effort level and one budget, so accuracy and efficiency mix in every score.
 
 ```bash
@@ -317,16 +322,16 @@ problems and 26 hard ones (solved 0/8 by the base) that were not trained on (`do
 
 ### 4.2 Verification: a solver and two models must agree
 
-A template is only as good as its solver. For each of the 102 templates and sources, the teacher solved 20
-of its problems (4 samples each) and the judge ruled on them; a template whose problems the models reject
-is dropped whole, because one broken solver produces hundreds of wrong labels at once. 20 were rejected
-whole (19 numeric templates and `openai/gsm8k`), and the median template kept 95% of its problems.
+A template's labels are as good as its solver. For each of the 102 templates and sources, the teacher
+solved 20 of its problems (4 samples each), and the judge ruled on them. One broken solver produces
+hundreds of wrong labels at once, so a template whose problems the models reject is dropped whole. 20 were
+rejected whole (19 numeric templates and `openai/gsm8k`), and the median template kept 95% of its problems.
 
-The first full verification rejected all 102 templates. Two bugs that only real data exposed: the solver
-registry was never imported, so every problem failed with `solver_error: KeyError`; and the judge, served
-without a reasoning parser, printed its thinking without `</think>`, so every vote was empty. Both are
-now tested, and the re-run from the cache took a minute. **Run each stage on a real-data sample before
-trusting it at scale.** ([PITFALLS](PITFALLS.md) A1.)
+The first full verification rejected all 102 templates. It had hit two bugs that showed up only on real
+data. The solver registry was never imported, so every problem failed with `solver_error: KeyError`. The
+judge was served without a reasoning parser and printed its thinking without `</think>`, so every vote was
+empty. Both are now tested, and the re-run from the cache took a minute. **Run each stage on a real-data
+sample before trusting it at scale.** ([PITFALLS](PITFALLS.md) A1.)
 
 ### 4.3 Difficulty: drop what the model already solves
 
@@ -336,14 +341,14 @@ time for about two days. 828 of the 1,620 audited T1 problems were solved 8/8. T
 least 90% of their audited problems were dropped whole (11 templates, 6,634 problems), and 943 more
 problems solved 8/8 were dropped one by one.
 
-The filter used the base model, and that was its flaw: SFT made the policy much stronger before RL began,
-so most of the kept problems were already easy for the model that RL trained (§6.3). RL v2 re-grades every
-problem with the SFT policy instead (§8.3).
+The filter used the base model, and that was its flaw. SFT made the policy much stronger before RL began,
+so most of the kept problems were already easy for the model that RL trained (§6.3). Therefore, RL v2
+re-grades every problem with the SFT policy (§8.3).
 
 ### 4.4 Decontamination
 
-A test item that leaks into training makes the score a memory test. Every training problem is checked
-against every test set three ways: n-gram and MinHash overlap, a semantic match that the judge must
+A test item that leaks into training makes the score a memory test. Every training problem is compared
+with every test set in three ways: n-gram and MinHash overlap, a semantic match that the judge must
 confirm (it rejected 4,991 candidate matches), and the answer (0 matches). The RL bank lost 1,840 of 56,299
 problems (3.3%), the SFT mix 306 of 13,401 conversations (2.3%), and canary strings planted in the test
 sets were found 0 times (`docs/contamination.md`).
@@ -358,9 +363,9 @@ sets were found 0 times (`docs/contamination.md`).
 | general replay (T4) | 2,464 | the base model's own answers to general prompts, so SFT does not forget them |
 
 17,638 samples became 13,095 after dropping unverified problems (1,742) and RL dev problems (162), then
-quality and decontamination filters. The conversations are 44.1M tokens; the longest has 20,841 tokens,
-and 28% are longer than 4,096 tokens, holding 62% of the tokens. Packing them into four length buckets
-(4K, 8K, 16K, 32K) costs 1.9% padding, against 33% without buckets.
+quality and decontamination filters. The conversations hold 44.1M tokens. The longest has 20,841 tokens,
+and the 28% that are longer than 4,096 tokens hold 62% of the tokens. Without buckets, padding would cost
+33%. Packing the conversations into four length buckets (4K, 8K, 16K, 32K) brings it down to 1.9%.
 
 The report subset was rejection-sampled with Gemma, the same model that later judges D-Report and scores
 the T3 reward. That choice is the most likely reason for the judges' split in §6.5.
@@ -372,9 +377,9 @@ the T3 reward. That choice is the most likely reason for the judges' split in §
 ### 5.1 Why SFT before RL
 
 RL can only reinforce what the policy already does sometimes. The base model thinks for 15K tokens on a
-median D-Num answer, and 34% of its rollouts on the bank run past 16K tokens; with a 16K response cap
-(§6.1), a third of its RL samples would be cut off and carry no signal. SFT on the teacher's solutions
-moves the policy to a shorter, cleaner style first, so that RL starts from samples that finish:
+median D-Num answer, and 34% of its rollouts on the bank run past 16K tokens. With a 16K response cap
+(§6.1), a third of its RL samples would be cut off and carry no signal. Therefore, SFT on the teacher's
+solutions first moves the policy to a shorter, cleaner style, so that RL starts from samples that finish:
 
 ```
 base:   long reasoning, answers cut off at the cap, several answers in one reply
@@ -392,10 +397,10 @@ so the gradient all-reduce never leaves a node (these A100s have no NVLink).
 
 206 steps took 2.3 hours (~37 s per step once compiled): loss 0.79 → 0.46, MTP loss 0.87 → 0.47.
 
-Two silent configuration defects were found on the way. verl 0.9.1 does not pass `optim.betas` to Megatron,
-so SFT would have run with Adam β2 = 0.999 instead of the recipe's 0.95; the value is now set on Megatron
-directly. And verl validates whenever `test_freq > 0`, even with no validation set, which crashed the first
-full run at step 50; `test_freq: -1` fixes it ([PITFALLS](PITFALLS.md) C3).
+Two silent configuration defects were found on the way. First, verl 0.9.1 does not pass `optim.betas` to
+Megatron, so SFT would have run with Adam β2 = 0.999. The recipe asks for 0.95, so the value is now set on
+Megatron directly. Second, verl validates whenever `test_freq > 0`, even with no validation set, and this
+crashed the first full run at step 50. `test_freq: -1` fixes it ([PITFALLS](PITFALLS.md) C3).
 
 ### 5.3 Fitting a 9B model on 40 GB GPUs
 
@@ -405,12 +410,13 @@ Left: the memory the last pipeline stage needs at the longest SFT row (20,841 to
 fixes; the dashed line is the GPU's 39.5 GiB. Right: the same GPU during the 2.3-hour SFT run
 (`docs/talk/data/last_stage_memory.json`, `rl.json`).
 
-With TP1 the last pipeline stage holds the whole 248,320-word output layer and the MTP head, which keeps its
-own copy of the 1.0B-parameter embedding: 3.14B parameters, 29.3 GiB of weights, gradients and Adam state
-before a single activation. Both losses upcast the full logits to FP32, 2.38 MiB per token, so only
-sequences of about 3.5K tokens fit, and 28% of the SFT rows are longer. The plan's memory budget had the
-embedding stage as the heaviest, at 32.3 GB; it counted neither MTP's embedding copy nor the FP32 logits on
-the last stage, because the 27B plan's TP4 split the vocabulary four ways and TP1 does not.
+With TP1, the last pipeline stage holds the whole 248,320-word output layer and the MTP head, and the MTP
+head keeps its own copy of the 1.0B-parameter embedding. That makes 3.14B parameters, or 29.3 GiB of
+weights, gradients and Adam state, before a single activation. Both losses upcast the full logits to FP32,
+at 2.38 MiB per token, so the stage has room for sequences of about 3.5K tokens, and 28% of the SFT rows
+are longer. The plan's memory budget had the embedding stage as the heaviest, at 32.3 GB. It counted
+neither MTP's embedding copy nor the FP32 logits on the last stage, because in the 27B plan TP4 split the
+vocabulary four ways. With TP1 the vocabulary stays in one piece.
 
 I kept the data, the losses and the optimizer math, and changed where the memory lives:
 
@@ -439,7 +445,7 @@ def _own_attr(cls, name, what):
 
 **Measure the heaviest stage at the longest sequence, with every process that will share the node,
 before the multi-node launch.** A one-GPU probe of the loss path took five minutes and missed the copy made
-outside it; the 8-node pre-flight caught it, and three other problems, in an hour
+outside it. The 8-node pre-flight took an hour and caught that copy and three other problems
 ([PITFALLS](PITFALLS.md) B2).
 
 ### 5.4 What SFT changed
@@ -456,13 +462,15 @@ outside it; the 8-node pre-flight caught it, and three other problems, in an hou
 | mean output tokens | 14,735 | 9,517 | −35% |
 
 SFT taught the teacher's shorter style and a clean answer format. The median D-Num answer fell from 15.2K
-to 5.5K tokens, and format failures from 2.3% to 0.2% of samples. Short answers are almost all right: SFT
-is 96.3% right on answers under 4K tokens, which are 42% of its samples, and 85.7% right on answers of
-24–32K. The new errors are wrong values, 1.5% → 4.1% of samples, which is why D-Num fell.
+to 5.5K tokens, and format failures fell from 2.3% to 0.2% of samples. Short answers are almost all right.
+On answers under 4K tokens, which are 42% of its samples, SFT is 96.3% right; on answers of 24–32K it is
+85.7% right. The new errors are wrong values, which rose from 1.5% to 4.1% of samples, and they are why
+D-Num fell.
 
-**Length cuts both ways.** Shorter answers lifted every set where the base ran out of tokens, but part of
-the gain is finishing, not knowing: GPQA's cut-off share fell from 38% to 17%. D-Code is the exception:
-SFT's code answers are 2.5 times longer than the base's (11.1K against 4.5K tokens), and 8.3% are cut off.
+**Answer length can help a score or hurt it.** Shorter answers lifted every set where the base ran out of
+tokens. Part of that gain is the model finishing in time, and it does not show new knowledge: GPQA's
+cut-off share fell from 38% to 17%. On D-Code, SFT's answers grew 2.5 times longer, from 4.5K to 11.1K
+tokens, and 8.3% of them are cut off.
 
 ---
 
@@ -479,7 +487,7 @@ A_i = r_i - \frac{1}{G}\sum_{j=1}^{G} r_j
 
 Dividing by the spread would give the largest push to the groups that are nearly all right or all wrong,
 where one success may be luck. Answers cut off at the cap are left out of the mean and get no advantage,
-because "did not finish" is not "wrong" for their siblings:
+because an answer that did not finish should not count as a wrong answer when its siblings are scored:
 
 ```python
 # src/dpt/rl/advantage.py: group_mean_advantage, after grouping the samples by prompt
@@ -522,15 +530,15 @@ A step took about 4 minutes once compiled (generation 150–190 s).
 | T4 general (7,558) | 1–3 programmatic constraints, all of which must hold, plus a relevance gate; math by exact match | 1 or 0 | program (`dpt.rewards.instruction`) |
 | all | answer length | linear penalty from 12,288 to 16,384 tokens, reaching −0.5 | program |
 
-T1, T2 and T4 are atomic: each checks one value, one test or one constraint. T3 is not. Its median
-criterion has 47 words, and 91% of its 5,765 criteria join several claims with "and", "or" or ";", so one
-criterion holds about three claims. RL v2 rewrites each criterion as 1–6 yes/no checks, each answered with a
-quoted span of the report (`dpt.data.gen.t3_atomic`;
+T1, T2 and T4 are atomic: each checks one value, one test or one constraint. T3 criteria are compound. The
+median criterion has 47 words, and 91% of the 5,765 criteria join several claims with "and", "or" or ";",
+so one criterion holds about three claims. Therefore, RL v2 rewrites each criterion as 1–6 yes/no checks,
+each answered with a quoted span of the report (`dpt.data.gen.t3_atomic`;
 [docs/reports/reward_rubric_scaling_1110_en.md](docs/reports/reward_rubric_scaling_1110_en.md) §2).
 
 ### 6.3 Why the groups carried little signal
 
-A GRPO group learns only when its samples disagree: if all 8 get the same reward, every advantage is zero.
+A GRPO group carries signal when its samples disagree. If all 8 get the same reward, every advantage is zero.
 
 <p align="center"><img src="assets/rl_steps_en.png" width="92%"></p>
 
@@ -545,12 +553,12 @@ is step 20, the checkpoint kept (`docs/talk/data/rl.json`).
 | T2, SFT policy, steps 1–20 | 87% | 13% | 0% |
 | T4, SFT policy, steps 1–20 | 75% | 22% | 3% |
 
-The difficulty filter (§4.3) ran with the base model, for which half of T1 was in the useful middle. The
-SFT policy is much stronger, so by step 1 most groups were all right: only 88–272 of the 1,008 samples in a
-step had a non-zero advantage. T4, the least solved task, supplied a median 57% of the gradient in steps
-1–20 although it had a quarter of the prompts. **The difficulty of a bank is a property of the model that
-trains on it, not of the bank.** RL v2 re-grades the bank with the SFT policy and will not start unless at
-least 40% of T1 groups are mixed at step 1 (§8.3).
+The difficulty filter (§4.3) ran with the base model. For the base, half of T1 was in the useful middle.
+The SFT policy is much stronger, so by step 1 most groups were all right, and 88–272 of the 1,008 samples
+in a step had a non-zero advantage. T4, the least solved task, had a quarter of the prompts and
+supplied a median 57% of the gradient in steps 1–20. **How hard a bank is depends on the model that trains
+on it.** Therefore, RL v2 re-grades the bank with the SFT policy, and at step 1 at least 40% of T1 groups
+must be mixed, or RL does not start (§8.3).
 
 ### 6.4 Twenty good steps, then a collapse
 
@@ -568,60 +576,62 @@ stopped reasoning. By step 40, T1 failures had changed from unfinished reasoning
 to zero on T1 and T2 by step 52, then on T3 and T4, and the mean answer was 13.7 tokens at step 56. Once every
 group was all wrong, every advantage was zero, so nothing could pull the model back. The train/rollout
 log-ppl gap reached 0.0128, and the alert paused the run at step 56 with a checkpoint saved. Checkpoint
-selection on the dev set picked step 20 (`dpt.eval.select_checkpoint`: 97.27 against 78.91 at step 40).
+selection on the dev set picked step 20 (`dpt.eval.select_checkpoint`: 97.27, falling to 78.91 at step 40).
 
-What is established, and what is not:
+What is established, what is ruled out, and what is still open:
 - **Established:** every task shortened from the first steps (mean T1 answer 3,047 → 1,649 → 595 tokens
-  at steps 2, 20 and 40), and T4 supplied most of the gradient while T1 and T2 were nearly solved.
-- **Ruled out:** that the length penalty drove it (it touches only answers past 12K), and that one task
-  taught brevity by rewarding short answers: within a step, right and wrong answers were about as long
-  (steps 1–20, T4 3,749 vs 3,341 tokens; T1 2,058 vs 1,796).
-- **Open:** the cause. T3 joined at step 27 and took 26–72% of the gradient in steps 27–40, but T1 answers
-  were already shrinking before it joined (2,205 tokens at step 14, 1,117 at step 26).
+  at steps 2, 20 and 40). With T1 and T2 nearly solved, T4 supplied most of the gradient.
+- **Ruled out:** that the length penalty drove it (the penalty starts at 12K), and that one task taught
+  brevity by rewarding short answers. Within a step, right and wrong answers were about equally long
+  (steps 1–20: T4 3,749 tokens for right answers and 3,341 for wrong ones; T1 2,058 and 1,796).
+- **Open:** the cause. T3 joined at step 27 and took 26–72% of the gradient in steps 27–40. The T1
+  answers had started shrinking before T3 joined (2,205 tokens at step 14, 1,117 at step 26).
 
 The earlier version of this analysis blamed T4 for teaching brevity. The per-step metrics did not support
 it, so it was withdrawn ([PITFALLS](PITFALLS.md) D1). **On nearly solved verifiable tasks RL has little
-signal, and the little it has can be dominated by one task; dev passes every 20 steps were frequent enough
-to keep the best checkpoint, but not to see the turn.** RL v2 runs the dev pass every 10 steps.
+signal, and one task can dominate the little it has. A dev pass every 20 steps was enough to keep the best
+checkpoint. To see the turn as it happened, the passes have to come more often.** Therefore, RL v2 runs the
+dev pass every 10 steps.
 
-### 6.5 The judge: lenient and compound, but no drift
+### 6.5 The judge: lenient, with compound rubrics and no drift
 
-T3 is the only task whose reward is a model's opinion, so it gets three checks.
+T3 is the one task whose reward is a model's opinion, so it gets three checks.
 
 <p align="center"><img src="assets/reward_agreement_en.png" width="62%"></p>
 
-Left: the T1 reward against the evaluation grader on the base model's 2,400 D-Num answers. Right: the T3
-reward judge (Gemma) against GPT-6 Luna on 141 RL dev reports, at a pass mark of 70
+Left: how the T1 reward and the evaluation grader score the base model's 2,400 D-Num answers. Right: how
+the T3 reward judge (Gemma) and GPT-6 Luna score 141 RL dev reports, at a pass mark of 70
 (`docs/talk/data/reward_vs_eval.json`). Agreement is on the diagonal.
 
-**Against an independent reference.** There are no human gold labels, so each reward is compared with the
+**With an independent reference.** There are no human gold labels, so each reward is compared with the
 most independent reference available. T1 agrees with the evaluation grader on 99.3% of the base's answers
 (7 false passes, all replies with several answers; 9 false fails, 8 of them unparseable) and on 100% of
-the trained models'. T3 is lenient: at a pass mark of 70, only 8 of Gemma's 108 passes are passes for Luna,
-and Gemma never fails a report that Luna passes. The reward paid for reports that an independent judge fails.
+the trained models'. T3 is lenient. At a pass mark of 70, Gemma passes 108 reports, and Luna passes 8 of
+them. Gemma never fails a report that Luna passes. So the reward paid for reports that an independent
+judge fails.
 
 <p align="center"><img src="assets/two_judges_en.png" width="92%"></p>
 
-Left: D-Report win rates against the base by judge, with 95% intervals; the dashed line is a tie. Right: the
+Left: D-Report win rates over the base by judge, with 95% intervals; the dashed line is a tie. Right: the
 mean score of the same T3 dev answers under both judges at dev steps 0, 20 and 40
 (`scripts/slurm/judge_drift.sh`, `docs/talk/data/judge_drift.json`).
 
-**On the evaluation.** Gemma prefers the SFT model's reports to the base's 80 wins to 8 (86.0%), and the RL
-model's 84 to 7 (88.5%). Luna scores both as ties with the base (49.0%). The two agree on 43–45% of the
-pairs. Pairs are judged in both orders, so a constant leniency cancels: the split is a disagreement about
-which report is better. The SFT report data was rejection-sampled with Gemma (§4.5), so SFT most likely
-learned Gemma's taste; the gate takes the lower judge for exactly this case.
+**On the evaluation.** Gemma prefers the SFT model's reports to the base's, 80 wins to 8 (86.0%), and the RL
+model's, 84 to 7 (88.5%). Luna scores both as ties with the base (49.0%). The two judges agree on 43–45% of
+the pairs. Pairs are judged in both orders, so a constant leniency cancels, and what is left is a
+disagreement about which report is better. The SFT report data was rejection-sampled with Gemma (§4.5), so
+SFT most likely learned Gemma's taste. The gate takes the lower of the two judges for exactly this case.
 
-**For drift during RL.** If RL learned to please its judge, Gemma's score of the dev answers would rise and
-the gap to Luna would widen. Both moved the other way: from step 0 to 40, Gemma −5.0 [−9.4, −0.7], Luna +0.2
-[−3.2, +4.2], gap −5.3 [−11.4, −0.1]. The selected step 20 never trained on T3 at all (T3 joined at step 27),
-so its D-Report split came with SFT.
+**For drift during RL.** If RL learned to please its judge, Gemma's score of the dev answers would rise, and
+the gap to Luna would widen. From step 0 to 40, Gemma's score fell and the gap narrowed: Gemma −5.0
+[−9.4, −0.7], Luna +0.2 [−3.2, +4.2], gap −5.3 [−11.4, −0.1]. The selected step 20 never trained on T3 at
+all (T3 joined at step 27), so its D-Report split came with SFT.
 
-One side door remains. The T3 reward multiplies the rubric score by the citation factor, and at step 40 the
-answers cited fewer references (2.3 → 1.4 per answer), so fewer unverifiable ones were penalized: the citation
-factor rose from 0.79 to 0.83 while the rubric part fell from 81.2 to 73.3, and the reward held. Shorter
-answers alone could explain it. **A judged reward needs a second judge that never trains, and its own
-side channels need watching as closely as the judge.**
+One side door remains. The T3 reward multiplies the rubric score by the citation factor. At step 40 the
+answers cited fewer references (2.3 → 1.4 per answer), so fewer unverifiable ones were penalized. The
+citation factor rose from 0.79 to 0.83, the rubric part fell from 81.2 to 73.3, and the reward held.
+Shorter answers alone could explain this. **A judged reward needs a second judge that never trains, and its
+own side channels need watching as closely as the judge.**
 
 ---
 
@@ -641,23 +651,24 @@ The scores in §1.2 hide a change of failure mode (figure in §1.3). On D-Num-ha
 | pass@8 (any of 8 right) | 75.0 | 87.5 | 91.9 |
 
 Each stage made the model finish more often, and each one turned part of the newly finished answers into
-wrong values. The net is positive here, because the base ran out of tokens on a third of its samples, and
-RL solves more problems at least once (pass@8 91.9). But single answers got less reliable: on two families
-that SFT had nearly solved, RL lost ground (rupture length from directivity 94.4 → 86.9, Mw from a spectral
-plateau 95.6 → 85.6). On D-Num, where little was unfinished, the same trade is a loss: wrong values rose
-from 1.5% (base) to 4.1% (SFT) and 8.6% (RL) of the samples.
+wrong values. On D-Num-hard the net effect is positive, because the base ran out of tokens on a third of its
+samples, and RL solves more problems at least once (pass@8 91.9). At the same time, single answers got less
+reliable. On two families that SFT had nearly solved, RL lost ground: rupture length from directivity went
+from 94.4 to 86.9, and Mw from a spectral plateau from 95.6 to 85.6. On D-Num little was unfinished, so
+there the same shift is a loss: wrong values rose from 1.5% (base) to 4.1% (SFT) and 8.6% (RL) of the
+samples.
 
 ### 7.2 Execution or concept?
 
 Whether more training data or more knowledge would help depends on what kind of error these are. A wrong
-formula or physical idea is a **concept** error; arithmetic, units, format or not finishing in time is an
-**execution** error. I labelled them in two passes over the existing answers, without new generation
-(`scripts/talk/failure_types.py`;
+formula or physical idea is a **concept** error. Arithmetic, units, format or not finishing in time is an
+**execution** error. Therefore, I labelled the failures in two passes over the existing answers, with no
+new generation (`scripts/talk/failure_types.py`;
 [docs/reports/failure_types_and_tests_1110_en.md](docs/reports/failure_types_and_tests_1110_en.md)):
 
-1. Rules on every answer: the grader's outcome, a numeric signature of each wrong value against the right
-   one (near miss, power of ten, degrees for radians, a simple factor, a sign), and whether 3 or more of a
-   problem's 8 answers share the same wrong value.
+1. Rules on every answer: the grader's outcome, a numeric signature that relates each wrong value to the
+   right one (near miss, power of ten, degrees for radians, a simple factor, a sign), and whether 3 or more
+   of a problem's 8 answers share the same wrong value.
 2. GPT-6 Luna on a stratified sample: up to 10 wrong and 10 unfinished answers per model and family, with
    the problem, the right value and the solver's code as the reference method. The labels are then weighted
    back to every failed answer, family by family.
@@ -668,33 +679,34 @@ Left: D-Num-hard failures per model, by cause (weighted counts of the 1,280 answ
 shortfalls by type, as a share of all criteria the reports fell short on
 (`docs/talk/data/failure_types.json`).
 
-**D-Num-hard: mostly execution, except two families.** The base and SFT models mostly fail by not
-finishing, and 63–82% of the unfinished answers Luna read had the right method: they were stuck re-checking
-or going back and forth. Concept errors are 37% of the base's failures and 31% of SFT's. RL finishes more
-often but commits to wrong formulas: 80% of its wrong values are concept errors, which makes 56% of its
-failures. The concept errors concentrate in the two receiver-function families, Vp/Vs from Ps and PpPs times
-(at most 5% right for any model) and Moho depth from the Ps delay (0% → 15% → 29%). There every model uses
-the wrong relation, which is a knowledge gap.
+**D-Num-hard: mostly execution, with concept errors in two families.** The base and SFT models mostly fail
+by not finishing, and 63–82% of the unfinished answers Luna read had the right method: they were stuck
+re-checking or going back and forth. Concept errors are 37% of the base's failures and 31% of SFT's. RL
+finishes more often, and it commits to wrong formulas: 80% of its wrong values are concept errors, which
+makes 56% of its failures. The concept errors concentrate in the two receiver-function families, Vp/Vs from
+Ps and PpPs times (at most 5% right for any model) and Moho depth from the Ps delay (0% → 15% → 29%). There
+every model uses the wrong relation, which is a knowledge gap.
 
 **D-Report: content, and unchanged.** The reports fully meet about half of their rubric criteria and
-partly meet most of the rest. What falls short is wrong or missing science (44–51% of shortfalls) and parts
-left out (36–47%), almost never clarity or citations, and a concept problem is the main weakness of 63–71% of
-the reports for every model. The paired rubric score did not move: SFT − base +1.5 [−1.6, +4.3], RL − base
-−0.0 [−2.8, +2.6]. That agrees with Luna's 49% win rate, not with Gemma's 86–88.5%.
+partly meet most of the rest. The shortfalls are wrong or missing science (44–51% of shortfalls) and parts
+left out (36–47%); clarity and citations almost never fall short. For every model, a concept problem is the
+main weakness of 63–71% of the reports. The paired rubric score did not move: SFT − base +1.5 [−1.6, +4.3],
+RL − base −0.0 [−2.8, +2.6]. That agrees with Luna's 49% win rate. It does not agree with Gemma's 86–88.5%.
 
-**The two tasks fail for different reasons, so they need different fixes.** More knowledge would not
-finish the numeric answers that already have the right method; more practice at finishing would not
-supply the science the reports leave out.
+**The two tasks fail for different reasons, so they need different fixes.** The numeric answers that
+already have the right method need to finish, and more knowledge would not help them finish. The reports
+leave out science, and more practice at finishing would not supply it.
 
 ### 7.3 What more samples and more tokens buy
 
 Test-time compute is the one scaling axis this project measured well (figure in §3.3).
-- **Votes.** With 8 votes, the three models reach 98.9–99.6% on D-Num; with one sample they range from
-  89.4 to 92.2 (64 samples per item; `docs/talk/data/research_1110.json`). RL's errors concentrate on about 30 of the 300 items, where 30–60% of its samples are right.
-- **Tokens.** At a 16K budget, RL is right on 84.8% of D-Num samples and 58.0% of D-Num-hard, against 55.4%
-  and 13.0% for the base. At the full 32K the base catches up on D-Num (92.0 against 90.0).
-- **Any of k.** On D-Num-hard, pass@8 rises 75.0 → 87.5 → 91.9 through the stages while avg@8 rises only
-  62.0 → 70.1: training made right answers more reachable before it made them reliable.
+- **Votes.** With one sample, the three models score from 89.4 to 92.2 on D-Num, and with 8 votes they
+  reach 98.9–99.6% (64 samples per item; `docs/talk/data/research_1110.json`). RL's errors concentrate on
+  about 30 of the 300 items, where 30–60% of its samples are right.
+- **Tokens.** At a 16K budget, the base is right on 55.4% of D-Num samples and 13.0% of D-Num-hard, and RL
+  on 84.8% and 58.0%. At the full 32K the base catches up on D-Num (base 92.0, RL 90.0).
+- **Any of k.** On D-Num-hard, pass@8 rises 75.0 → 87.5 → 91.9 through the stages, and avg@8 rises
+  62.0 → 70.1. So training made right answers more reachable before it made them reliable.
 
 ### 7.4 Refusals
 
@@ -713,12 +725,13 @@ and Chinese variants; it is an upper bound, since it also counts disclaimers ins
 | XSTest unsafe look-alikes (200), strict / broad | 59.5 / 70.5 | 53.0 / 67.5 | 47.5 / 61.5 |
 | benign over-refusal (350), strict / broad | 3.4 / 6.0 | 4.0 / 6.3 | 2.6 / 5.4 |
 
-The drop is real: 7.7 points even under the upper-bound detector, against a ±2-point gate. About a quarter
-of the strict drop is the model refusing in new words that the gate's list misses. The loss sits on unsafe
-prompts worded like harmless ones (XSTest's definitions 25 → 17 → 12 refusals of 25, figurative language
-23 → 23 → 16), not on plainly harmful requests, and over-refusal of benign prompts also fell: post-training
-leans the model toward answering. Of the base's 168 strict refusals, RL keeps 105, rewords 36, refuses 32
-new prompts, and turns 27 into answers that neither detector reads as a refusal; whether those 27 are
+The drop is real. Even under the upper-bound detector it is 7.7 points, and the gate allows ±2 points.
+About a quarter of the strict drop is the model refusing in new words that the gate's list misses. The
+should-refuse prompts are of two kinds, plainly harmful requests and unsafe prompts worded like harmless
+ones, and the loss sits on the second kind (XSTest's definitions 25 → 17 → 12 refusals of 25, figurative
+language 23 → 23 → 16). Over-refusal of benign prompts also fell, so post-training leans the model toward
+answering. Of the base's 168 strict refusals, RL keeps 105, rewords 36, and turns 27 into answers that
+neither detector reads as a refusal; it also refuses 32 new prompts. Whether those 27 answers are
 compliance or a safe completion needs a reader.
 
 **A safety detector must be fixed before a run's results.** Widening it after the drop is visible would
@@ -732,7 +745,7 @@ let the measurement absorb the regression.
 
 | test | strengths | weaknesses |
 |---|---|---|
-| D-Num | solver gold, an independent strict grader, tight interval (±1.0), a measured noise floor | **saturated**: 92% with one sample, 99.6% with 8 votes, so it moves on reliability and format, not knowledge; the base + 8 gate is unreachable |
+| D-Num | solver gold, an independent strict grader, tight interval (±1.0), a measured noise floor | **saturated**: 92% with one sample, 99.6% with 8 votes, so its score moves with reliability and format; the base + 8 gate is unreachable |
 | D-Num-hard | separates the models (62 / 68 / 70); no family seen in training | rides on two near-floor families; mixes knowledge with finishing in 32K; RL − SFT is inside the noise |
 | D-Fresh | written after the model's release, so contamination is excluded; separates the models | 60 problems, written and checked by models only; part of the gain is finishing |
 | D-Code | objective hidden tests | the sandbox had infrastructure failures in October (fixed); SFT's long answers are cut off 8% of the time |
@@ -747,8 +760,8 @@ score: a model that thinks less finishes more often.
 What the results mean, in one line each:
 - SFT is a real improvement, and much of it is efficiency: the same or better accuracy for two thirds of
   the tokens, with answers that now finish.
-- RL bought speed, not reliability: 41% fewer tokens again, more problems solved at least once, and
-  single answers wrong more often.
+- RL bought speed: 41% fewer tokens again and more problems solved at least once. Its single answers are
+  wrong more often, so it did not buy reliability.
 - D-Report shows no gain under the independent judge, and refusals fell for real.
 - Post-training made the 9B faster and more likely to finish hard multi-step problems. It has not shown new
   domain knowledge or better reports.
@@ -756,21 +769,22 @@ What the results mean, in one line each:
 ### 8.2 Should the 9B line add mid-training?
 
 Mid-training (continued pretraining on domain text) is the standard way to add knowledge. Here the evidence
-says not now. Knowledge is not what fails on D-Num: the base gets 92% with one sample and 99.6% with 8
-votes, and its failures are reliability and form. On D-Num-hard most failures are execution, and SFT
-already transferred to problem kinds it never saw (Moho depth 0% → 15% → 29% without any mid-training).
-The only data point, from the reference plan's 27B line, gained +1.1 D-Num inside its noise band and lost
-1.3 general points. And it is expensive here: a decontaminated domain corpus does not exist yet, ~2B tokens
-would take ~10 hours on 8 nodes (~80 node-hours, my estimate), and every 8-node job waits days in the queue.
+says not now. On D-Num the base gets 92% with one sample and 99.6% with 8 votes, and its failures are
+reliability and form, so knowledge is not what fails there. On D-Num-hard most failures are execution, and
+SFT already transferred to problem kinds it never saw (Moho depth 0% → 15% → 29% without any mid-training).
+The one data point, from the reference plan's 27B line, gained +1.1 D-Num inside its noise band and lost
+1.3 general points. Mid-training is also expensive here. A decontaminated domain corpus does not exist yet,
+~2B tokens would take ~10 hours on 8 nodes (~80 node-hours, my estimate), and every 8-node job waits days
+in the queue.
 
-The report shortfalls are the exception: they are knowledge, and SFT and RL left them untouched (§7.2).
-Therefore the next test is the cheap one: knowledge-dense SFT data for reports, drawn from textbooks and
-reviews (~24 node-hours), and continued pretraining only if that works.
+The report shortfalls are knowledge, and SFT and RL left them untouched (§7.2). Therefore, the next test is
+the cheap one: knowledge-dense SFT data for reports, drawn from textbooks and reviews (~24 node-hours).
+Continued pretraining waits until that test has worked.
 
 ### 8.3 What changes in RL v2
 
-RL v2 changes only what run 1 measured as broken, so that the
-comparison isolates data and reward:
+RL v2 changes what run 1 measured as broken and keeps everything else the same, so that the comparison
+isolates data and reward:
 - the bank is re-graded with the SFT policy: 8/8 problems dropped, 0/8 problems in a hard pool, harder
   problems drawn more often, 12 hard and 6 long new families; at least 40% of T1 groups mixed at step 1,
   or RL does not start;
@@ -789,11 +803,12 @@ Each node has 3 × A100-PCIe-40GB, no NVLink, 251 GiB of host memory and InfiniB
 shared queue allows 8 such nodes per job and 12 per user, for at most 48 hours (the operators granted 96
 hours for the main job), and an 8-node job waited about three days to start.
 
-So the whole month was planned around one 8-node job that runs every stage in order (`scripts/slurm/campaign.sh`):
-baseline evaluation, SFT, SFT evaluation, the RL-entry gate, RL and the final evaluation. Training uses
-TP1 × PP8 × DP3, one pipeline stage per node, so the data-parallel all-reduce stays on a node's PCIe and only
-pipeline activations cross InfiniBand. Rollout runs on the same 24 GPUs: vLLM sleeps (weights dropped,
-level 2) while Megatron trains, and wakes after each weight sync.
+Therefore, I planned the whole month around one 8-node job that runs every stage in order
+(`scripts/slurm/campaign.sh`): baseline evaluation, SFT, SFT evaluation, the RL-entry gate, RL and the final
+evaluation. Training uses TP1 × PP8 × DP3, one pipeline stage per node, so the data-parallel all-reduce
+stays on a node's PCIe, and the traffic across InfiniBand is the pipeline activations. Rollout runs on the
+same 24 GPUs: vLLM sleeps (weights dropped, level 2) during Megatron's training steps, and wakes after each
+weight sync.
 
 ### 9.2 Where the hours went
 
@@ -816,14 +831,14 @@ Pink: incidents, waits and holds.
 | held for a decision | 3.6 | then released |
 
 The planned stages took 28.7 hours (40%). The other 43.2 went to incidents, waits and holds, 35.1 of them
-before SFT could start. Holding the nodes cost node-hours but saved days: each crash would otherwise have ended the
-job, and the next 8-node slot was three days away. Two mechanisms made that possible. `KEEP_NODES` keeps the
-allocation when a stage fails, and a stuck campaign can be taken over inside the same job: pause the
-original with SIGSTOP, start a second copy with the original's environment that skips finished steps, and
-let a small supervisor end the paused copy once the new one exits.
+before SFT could start. Holding the nodes cost node-hours and saved days. Without the hold, each crash would
+have ended the job, and the next 8-node slot was three days away. Two mechanisms made the hold possible.
+`KEEP_NODES` keeps the allocation when a stage fails. A stuck campaign can also be taken over inside the
+same job: pause the original with SIGSTOP, start a second copy with the original's environment that skips
+finished steps, and let a small supervisor end the paused copy once the new one exits.
 
-**On a shared machine the queue, not the GPUs, sets the pace; design the job so a failure costs minutes of
-the allocation, not the allocation.**
+**On a shared machine the queue sets the pace. Design the job so that a failure costs minutes of the
+allocation and the job keeps its nodes.**
 
 ### 9.3 The incidents
 
@@ -832,7 +847,7 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
 
 | incident | effect | fix and guard |
 |---|---|---|
-| verl passed an inverted attention mask for Qwen3.5 to Megatron | on A100 the training forward was wrong by 1–2 nats/token, while the eval-forward parity check passed | an import-hook patch; a training-forward parity check ([PITFALLS](PITFALLS.md) B1) |
+| verl passed an inverted attention mask for Qwen3.5 to Megatron | on A100 the training forward was wrong by 1–2 nats/token; the parity check tested the eval forward and passed | an import-hook patch; a training-forward parity check ([PITFALLS](PITFALLS.md) B1) |
 | two HTTP clients kept httpx's default pool of 100 connections | verification capped at ~3.2 problems/min; eval ran ~38 of each replica's ~114 samples at once | pools sized to the configured concurrency (C2) |
 | client timeouts shorter than the queue wait | re-sent requests while the proxy kept running the abandoned ones; an hour of stalled verification | the timeout covers the queue wait (Little's law); the proxy cancels abandoned requests (C2) |
 | the solver registry was never imported; the judge printed thinking without `</think>` | the first full verification rejected all 102 templates | tests on real data; re-verified from the cache (A1) |
@@ -850,26 +865,27 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
 ## 10. What it found
 
 - **The base.** Qwen3.5-9B nearly saturates textbook seismology at a 32K budget: D-Num 91.6 with one sample,
-  99.6 with 8 votes. Its headroom is in cost: 13% right within 8K tokens (§3.3).
+  99.6 with 8 votes. Its room to improve is in cost: 13% right within 8K tokens (§3.3).
 - **SFT.** 13,095 teacher-written conversations lift D-Num-hard (+6.1), D-Fresh (+8.1), D-Code (+5.8), GPQA
-  (+14.7) and LiveCodeBench (+14.3) and cut tokens by 35%, but lower D-Num by 2.2 through more wrong values
+  (+14.7) and LiveCodeBench (+14.3) and cut tokens by 35%. D-Num drops by 2.2, through more wrong values
   (§5.4).
-- **RL.** Twenty steps fixed unfinished reasoning (dev numeric 92.0 → 97.3 at 16K); then the answers shrank
-  until accuracy collapsed at step 52, for reasons not yet established. Step 20 matches SFT's accuracy with
-  41% fewer tokens (§6.4).
+- **RL.** Twenty steps fixed unfinished reasoning (dev numeric 92.0 → 97.3 at 16K). Then the answers shrank
+  until accuracy collapsed at step 52, for reasons not yet established. Step 20 matches SFT's accuracy and
+  uses 41% fewer tokens (§6.4).
 - **Signal.** A difficulty filter run with the base model left 87% of the SFT policy's numeric and code
   groups without gradient (§6.3).
-- **Rewards.** The programmatic rewards agree with the evaluation grader on 99.3–100% of answers; the judged
-  report reward is lenient (precision 7% against an independent judge at a pass mark of 70) and its rubrics
-  compound (91% of criteria join several claims). No judge drift (§6.5).
-- **Failures.** Numerical failures are mostly execution, except two receiver-function families; RL turns
-  unfinished answers into wrong formulas. Report shortfalls are knowledge, untouched by SFT or RL (§7.2).
-- **Safety.** Refusal of should-refuse prompts fell from 56.0% to 45.7% (strict), 7.7 points even under a
-  broad detector, mostly on unsafe prompts worded like harmless ones (§7.4).
+- **Rewards.** The programmatic rewards agree with the evaluation grader on 99.3–100% of answers. The judged
+  report reward is lenient (precision 7% with an independent judge as the reference, at a pass mark of 70),
+  and its rubrics are compound (91% of criteria join several claims). There is no judge drift (§6.5).
+- **Failures.** Numerical failures are mostly execution, and in two receiver-function families they are
+  concept errors. RL turns unfinished answers into wrong formulas. Report shortfalls are knowledge,
+  untouched by SFT or RL (§7.2).
+- **Safety.** Refusal of should-refuse prompts fell from 56.0% to 45.7% (strict), and by 7.7 points even
+  under a broad detector, mostly on unsafe prompts worded like harmless ones (§7.4).
 - **Systems.** 60% of the main job's hours went to incidents, waits and holds; the last pipeline stage ran at
   40,366 of 40,437 MiB (§9).
 - **Not measured yet:**
-  - human gold labels for any reward or test (the blind review is ready, not done);
+  - human gold labels for any reward or test (the blind review is ready and has not been run);
   - a second seed, and any scaling curve in data, model size or RL steps;
   - whether unfinished D-Num-hard answers would be right with 64K tokens (a continuation pass is queued);
   - the 27 unclear refusal answers;
@@ -879,8 +895,8 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
 
 ## 11. How this recipe scales
 
-Report portable units, not steps: "56 RL steps" means nothing on another batch size; "56 steps × 1,008
-samples at ≤ 16K tokens" does.
+Report portable units. "56 RL steps" means nothing on another batch size. "56 steps × 1,008 samples at
+≤ 16K tokens" says the same thing on any setup.
 
 | axis | measured here | what to add |
 |---|---|---|
@@ -893,8 +909,8 @@ samples at ≤ 16K tokens" does.
 | systems | 8 × 3 A100-40GB, TP1 × PP8 × DP3, a 3-day queue | reserved windows (RL v2) |
 
 What limited this run, in order: the queue and the systems (§9), the policy already solving most of its
-training problems (§6.3), and an answer-length drift that RL could not hold (§6.4). Model knowledge limits
-only two numeric families and the reports (§7.2).
+training problems (§6.3), and an answer-length drift that RL could not hold (§6.4). Model knowledge is the
+limit in two numeric families and in the reports (§7.2).
 
 ---
 
@@ -950,8 +966,8 @@ python scripts/readme_figures.py rl_steps            # one figure
 python scripts/talk/collect.py                       # on the cluster: refresh docs/talk/data/run.json from the run
 ```
 
-The figures read only `docs/talk/data/*.json`; the two hand-recorded files (`campaign_hours.json`,
-`last_stage_memory.json`) say which note each value came from.
+The figures read `docs/talk/data/*.json` and nothing else. The two hand-recorded files
+(`campaign_hours.json`, `last_stage_memory.json`) say which note each value came from.
 
 ---
 
@@ -1014,11 +1030,11 @@ by Google DeepMind; GPT-6 Luna by OpenAI.
 
 - **The test sets are not published.** Their items, answers and rubrics stay on the training machine, so
   that they remain usable as held-out tests; the README and the reports hold aggregates only.
-- **Neither are the held-out generators.** The templates, parameter ranges and solvers of the 18 held-out
-  numeric families (D-Num, D-Num-hard) and the 11 held-out code kinds (D-Code) would regenerate the test
-  problems, so they live in three files kept out of git (`src/dpt/data/gen/*_heldout.py`). The public code
-  runs without them: the held-out split is empty, and the six tests that build those sets are skipped
-  (`dpt.data.gen.common.import_private_module_if_present`).
+- **The held-out generators are not published either.** The templates, parameter ranges and solvers of the
+  18 held-out numeric families (D-Num, D-Num-hard) and the 11 held-out code kinds (D-Code) would regenerate
+  the test problems, so they live in three files kept out of git (`src/dpt/data/gen/*_heldout.py`). The
+  public code runs without them: the held-out split is empty, and the six tests that build those sets are
+  skipped (`dpt.data.gen.common.import_private_module_if_present`).
 - **GPT-6 Luna** was used for evaluation only (drafting and checking test items, a second judge, failure
   labels). None of its outputs is in any training set, as its terms require.
 - **The model weights** (`sft9b_seed1`, `rl9b_seed1_step20`, 19 GB each) are not published yet.
