@@ -62,8 +62,10 @@ their 5,765 criteria join several claims. During RL the gap between the two judg
 not learn to please the judge (§6.5).
 
 Next I labelled every failure, and the numbers and the reports turned out to fail for different reasons.
-Numerical failures are mostly execution: unfinished answers whose method is right. Two receiver-function
-kinds are a knowledge gap, because there every model uses the wrong relation. Report shortfalls are
+Numerical failures are mostly execution: unfinished answers whose method is right. To test that, I let
+every answer that was cut off at 32K continue to 64K tokens. The SFT model then answers 83.9% of D-Num-hard
+right, RL step 20 77.5% and the base 69.8% (§7.3). Two receiver-function kinds stay unsolved for the base,
+which is a knowledge gap. The SFT model solves about half of them once it has room. Report shortfalls are
 mostly missing or wrong science, and neither SFT nor RL changed them (§7.2). Therefore, mid-training is
 not the next step for the numbers. For the reports, the cheapest test is knowledge-dense SFT data (§8.2).
 
@@ -649,6 +651,7 @@ The scores in §1.2 hide a change of failure mode (figure in §1.3). On D-Num-ha
 | format (several answers, none, unit) | 51 | 1 | 11 |
 | mean tokens per answer | 25.8K | 19.1K | 14.2K |
 | pass@8 (any of 8 right) | 75.0 | 87.5 | 91.9 |
+| right with 64K tokens (§7.3) | 69.8% | 83.9% | 77.5% |
 
 Each stage made the model finish more often, and each one turned part of the newly finished answers into
 wrong values. On D-Num-hard the net effect is positive, because the base ran out of tokens on a third of its
@@ -684,8 +687,9 @@ by not finishing, and 63–82% of the unfinished answers Luna read had the right
 re-checking or going back and forth. Concept errors are 37% of the base's failures and 31% of SFT's. RL
 finishes more often, and it commits to wrong formulas: 80% of its wrong values are concept errors, which
 makes 56% of its failures. The concept errors concentrate in the two receiver-function families, Vp/Vs from
-Ps and PpPs times (at most 5% right for any model) and Moho depth from the Ps delay (0% → 15% → 29%). There
-every model uses the wrong relation, which is a knowledge gap.
+Ps and PpPs times (at most 5% right for any model at 32K) and Moho depth from the Ps delay (0% → 15% → 29%).
+At 32K, most answers there use the wrong relation. With 64K tokens the SFT model solves 40.0% and 54.4% of
+them, and the base still solves almost none (§7.3). So the two families are a knowledge gap for the base model.
 
 **D-Report: content, and unchanged.** The reports fully meet about half of their rubric criteria and
 partly meet most of the rest. The shortfalls are wrong or missing science (44–51% of shortfalls) and parts
@@ -707,6 +711,31 @@ Test-time compute is the one scaling axis this project measured well (figure in 
   on 84.8% and 58.0%. At the full 32K the base catches up on D-Num (base 92.0, RL 90.0).
 - **Any of k.** On D-Num-hard, pass@8 rises 75.0 → 87.5 → 91.9 through the stages, and avg@8 rises
   62.0 → 70.1. So training made right answers more reachable before it made them reliable.
+- **Twice the room.** I let every D-Num-hard answer that was cut off at 32K continue to 64K tokens, with the
+  same model and the same sampling. A 64K sample is the same as a 32K sample up to token 32K, so this costs a
+  quarter of a fresh run (`scripts/talk/numhard_continue.py`, `docs/talk/data/numhard_64k.json`).
+
+<p align="center"><img src="assets/d_num_hard_at_64k_en.png" width="92%"></p>
+
+Outcomes of the 1,280 D-Num-hard answers per model, at the eval's 32K budget and at 64K.
+
+| answers cut off at 32K | base | SFT | RL step 20 |
+|---|---|---|---|
+| cut off at 32K | 421 | 361 | 211 |
+| right at 64K | 100 | 202 | 95 |
+| a wrong value at 64K | 148 | 92 | 85 |
+| still unfinished at 64K | 151 | 65 | 30 |
+| a format failure at 64K | 22 | 2 | 1 |
+
+With room to finish, the SFT model is the most accurate of the three: 83.9% right at 64K, then RL step 20 at
+77.5% and the base at 69.8%. More than half of SFT's cut-off answers were on their way to the right value. A
+quarter of the base's were, and 151 of them run out of room again at 64K. RL's answers rarely run out of room,
+and its wrong values stay: on rupture length, Mw and the ray range in a gradient it scores the same at both
+budgets. The receiver-function families move for the trained models: Vp/Vs from 3.8% to 40.0% and Moho depth
+from 15.0% to 54.4% for SFT. The base stays at 0.0% and 0.6%.
+
+**A model that thinks longer can be the more accurate one; one budget hides that.** The order at 32K, RL first,
+comes from how soon each model finishes.
 
 ### 7.4 Refusals
 
@@ -746,7 +775,7 @@ let the measurement absorb the regression.
 | test | strengths | weaknesses |
 |---|---|---|
 | D-Num | solver gold, an independent strict grader, tight interval (±1.0), a measured noise floor | **saturated**: 92% with one sample, 99.6% with 8 votes, so its score moves with reliability and format; the base + 8 gate is unreachable |
-| D-Num-hard | separates the models (62 / 68 / 70); no family seen in training | rides on two near-floor families; mixes knowledge with finishing in 32K; RL − SFT is inside the noise |
+| D-Num-hard | separates the models (62 / 68 / 70); no family seen in training | rides on two near-floor families; mixes knowledge with finishing in 32K, and at 64K the SFT model leads (§7.3); RL − SFT is inside the noise at 32K |
 | D-Fresh | written after the model's release, so contamination is excluded; separates the models | 60 problems, written and checked by models only; part of the gain is finishing |
 | D-Code | objective hidden tests | the sandbox had infrastructure failures in October (fixed); SFT's long answers are cut off 8% of the time |
 | D-Report | a realistic task; a second judge that never trains; both orders; a length-matched subset | the judges disagree on 55–57% of pairs; one sample per question; no human gold |
@@ -771,7 +800,8 @@ What the results mean, in one line each:
 Mid-training (continued pretraining on domain text) is the standard way to add knowledge. Here the evidence
 says not now. On D-Num the base gets 92% with one sample and 99.6% with 8 votes, and its failures are
 reliability and form, so knowledge is not what fails there. On D-Num-hard most failures are execution, and
-SFT already transferred to problem kinds it never saw (Moho depth 0% → 15% → 29% without any mid-training).
+SFT already transferred to problem kinds it never saw: with 64K tokens the SFT model solves 54.4% of the
+Moho-depth problems, and the base 0.6%, without any mid-training (§7.3).
 The one data point, from the reference plan's 27B line, gained +1.1 D-Num inside its noise band and lost
 1.3 general points. Mid-training is also expensive here. A decontaminated domain corpus does not exist yet,
 ~2B tokens would take ~10 hours on 8 nodes (~80 node-hours, my estimate), and every 8-node job waits days
@@ -877,9 +907,11 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
 - **Rewards.** The programmatic rewards agree with the evaluation grader on 99.3–100% of answers. The judged
   report reward is lenient (precision 7% with an independent judge as the reference, at a pass mark of 70),
   and its rubrics are compound (91% of criteria join several claims). There is no judge drift (§6.5).
-- **Failures.** Numerical failures are mostly execution, and in two receiver-function families they are
-  concept errors. RL turns unfinished answers into wrong formulas. Report shortfalls are knowledge,
+- **Failures.** Numerical failures are mostly execution. In two receiver-function families the base model
+  lacks the method. RL turns unfinished answers into wrong formulas. Report shortfalls are knowledge,
   untouched by SFT or RL (§7.2).
+- **Budget.** With 64K tokens on D-Num-hard the SFT model answers 83.9% right, RL step 20 77.5% and the base
+  69.8%. More than half of SFT's cut-off answers were on their way to the right value (§7.3).
 - **Safety.** Refusal of should-refuse prompts fell from 56.0% to 45.7% (strict), and by 7.7 points even
   under a broad detector, mostly on unsafe prompts worded like harmless ones (§7.4).
 - **Systems.** 60% of the main job's hours went to incidents, waits and holds; the last pipeline stage ran at
@@ -887,7 +919,6 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
 - **Not measured yet:**
   - human gold labels for any reward or test (the blind review is ready and has not been run);
   - a second seed, and any scaling curve in data, model size or RL steps;
-  - whether unfinished D-Num-hard answers would be right with 64K tokens (a continuation pass is queued);
   - the 27 unclear refusal answers;
   - the cause of the RL collapse.
 
@@ -904,7 +935,7 @@ Report portable units. "56 RL steps" means nothing on another batch size. "56 st
 | RL compute | 56 steps × 1,008 samples, ~3.7 h on 8 nodes; good to step 20 | a second seed; a run that survives past step 20 |
 | model size | 9B only (the 27B line does not fit 40 GB GPUs for RL) | the 27B on 80 GB GPUs, or 4B as a cheap probe |
 | mid-training | none (§8.2) | a small token sweep, only after knowledge-dense SFT data is tried |
-| test-time compute | budgets 2K–32K and votes 1–64 on D-Num; budgets on D-Num-hard (§7.3) | one more effort level; 64K on D-Num-hard |
+| test-time compute | budgets 2K–32K and votes 1–64 on D-Num; budgets up to 64K on D-Num-hard (§7.3) | one more effort level |
 | evaluation | 770 domain items, one budget, model-made references | human gold for ~100 reports and ~200 numeric edge cases |
 | systems | 8 × 3 A100-40GB, TP1 × PP8 × DP3, a 3-day queue | reserved windows (RL v2) |
 
@@ -961,7 +992,7 @@ qwen-seis-posttrain/
 ## 14. Regenerate figures
 
 ```bash
-python scripts/readme_figures.py                     # all 12 figures, English and Chinese → assets/
+python scripts/readme_figures.py                     # all 13 figures, English and Chinese → assets/
 python scripts/readme_figures.py rl_steps            # one figure
 python scripts/talk/collect.py                       # on the cluster: refresh docs/talk/data/run.json from the run
 ```

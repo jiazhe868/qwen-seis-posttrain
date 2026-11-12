@@ -1,0 +1,201 @@
+{
+ "collected_at": "2026-11-11T19:02",
+ "budget": 65536,
+ "rows": {
+  "base_medium": {
+   "answers": 1280,
+   "missing_continuations": 0,
+   "at_32k_pct": {
+    "right": 62.0,
+    "unfinished": 32.9,
+    "format": 4.0,
+    "wrong_value": 1.2
+   },
+   "at_64k_pct": {
+    "right": 69.8,
+    "wrong_value": 12.7,
+    "unfinished": 11.8,
+    "format": 5.7
+   },
+   "unfinished_at_32k_became": {
+    "unfinished": 151,
+    "wrong_value": 148,
+    "format": 22,
+    "right": 100
+   },
+   "extra_tokens_median": 23945,
+   "families_64k_pct": {
+    "coulomb_stress_change": {
+     "right": 96.9,
+     "format": 3.1
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "unfinished": 57.5,
+     "wrong_value": 35.6,
+     "format": 6.9
+    },
+    "gmpe_distance_for_pga": {
+     "right": 96.2,
+     "format": 3.8
+    },
+    "gradient_ray_range": {
+     "right": 87.5,
+     "wrong_value": 5.6,
+     "format": 4.4,
+     "unfinished": 2.5
+    },
+    "gradient_ray_travel_time": {
+     "right": 86.2,
+     "format": 11.2,
+     "unfinished": 1.9,
+     "wrong_value": 0.6
+    },
+    "moho_depth_from_ps_delay": {
+     "wrong_value": 59.4,
+     "unfinished": 31.9,
+     "format": 8.1,
+     "right": 0.6
+    },
+    "mw_from_spectral_plateau": {
+     "right": 91.9,
+     "format": 7.5,
+     "unfinished": 0.6
+    },
+    "rupture_length_from_directivity": {
+     "right": 98.8,
+     "format": 0.6,
+     "wrong_value": 0.6
+    }
+   }
+  },
+  "sft": {
+   "answers": 1280,
+   "missing_continuations": 0,
+   "at_32k_pct": {
+    "right": 68.1,
+    "unfinished": 28.2,
+    "wrong_value": 3.6,
+    "format": 0.1
+   },
+   "at_64k_pct": {
+    "right": 83.9,
+    "wrong_value": 10.8,
+    "unfinished": 5.1,
+    "format": 0.2
+   },
+   "unfinished_at_32k_became": {
+    "right": 202,
+    "wrong_value": 92,
+    "format": 2,
+    "unfinished": 65
+   },
+   "extra_tokens_median": 15671,
+   "families_64k_pct": {
+    "coulomb_stress_change": {
+     "right": 99.4,
+     "wrong_value": 0.6
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "right": 40.0,
+     "wrong_value": 31.2,
+     "unfinished": 28.8
+    },
+    "gmpe_distance_for_pga": {
+     "right": 96.2,
+     "wrong_value": 3.1,
+     "format": 0.6
+    },
+    "gradient_ray_range": {
+     "right": 95.6,
+     "wrong_value": 3.8,
+     "format": 0.6
+    },
+    "gradient_ray_travel_time": {
+     "right": 93.1,
+     "unfinished": 3.1,
+     "wrong_value": 3.1,
+     "format": 0.6
+    },
+    "moho_depth_from_ps_delay": {
+     "right": 54.4,
+     "wrong_value": 36.9,
+     "unfinished": 8.8
+    },
+    "mw_from_spectral_plateau": {
+     "right": 97.5,
+     "wrong_value": 2.5
+    },
+    "rupture_length_from_directivity": {
+     "right": 95.0,
+     "wrong_value": 5.0
+    }
+   }
+  },
+  "rl_seed1": {
+   "answers": 1280,
+   "missing_continuations": 0,
+   "at_32k_pct": {
+    "right": 70.1,
+    "unfinished": 16.5,
+    "wrong_value": 12.6,
+    "format": 0.9
+   },
+   "at_64k_pct": {
+    "right": 77.5,
+    "wrong_value": 19.2,
+    "unfinished": 2.3,
+    "format": 0.9
+   },
+   "unfinished_at_32k_became": {
+    "right": 95,
+    "wrong_value": 85,
+    "unfinished": 30,
+    "format": 1
+   },
+   "extra_tokens_median": 12838,
+   "families_64k_pct": {
+    "coulomb_stress_change": {
+     "right": 96.2,
+     "wrong_value": 2.5,
+     "format": 1.2
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "wrong_value": 46.9,
+     "right": 36.2,
+     "unfinished": 15.6,
+     "format": 1.2
+    },
+    "gmpe_distance_for_pga": {
+     "right": 95.6,
+     "wrong_value": 3.8,
+     "format": 0.6
+    },
+    "gradient_ray_range": {
+     "right": 88.1,
+     "wrong_value": 11.2,
+     "format": 0.6
+    },
+    "gradient_ray_travel_time": {
+     "right": 86.9,
+     "wrong_value": 11.2,
+     "format": 1.2,
+     "unfinished": 0.6
+    },
+    "moho_depth_from_ps_delay": {
+     "wrong_value": 50.6,
+     "right": 44.4,
+     "format": 2.5,
+     "unfinished": 2.5
+    },
+    "mw_from_spectral_plateau": {
+     "right": 85.6,
+     "wrong_value": 14.4
+    },
+    "rupture_length_from_directivity": {
+     "right": 86.9,
+     "wrong_value": 13.1
+    }
+   }
+  }
+ }
+}

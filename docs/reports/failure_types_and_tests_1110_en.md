@@ -15,6 +15,9 @@ Code and data:
 
 ## Short answers
 
+- **Update 2026-11-11 (§8): D-Num-hard with 64K tokens.** Every answer cut off at 32K was allowed to continue. The
+  SFT model then answers 83.9% right, RL step 20 77.5% and the base 69.8%. The two receiver-function families stay
+  unsolved for the base model only: with room to finish, the SFT model solves 40.0% and 54.4% of them.
 - **D-Num-hard: most failures are execution, not missing knowledge,** except in two families, and except for RL's
   wrong answers.
   - The base and SFT models mostly fail by **not finishing within 32K tokens**: 33% and 28% of their answers.
@@ -24,7 +27,7 @@ Code and data:
   - The RL model finishes more often, but it **commits to wrong formulas**: 12.6% of its answers are wrong values,
     and 80% of those are concept errors. That makes 56% of its failures concept errors.
   - The concept errors concentrate in **two receiver-function families**: Vp/Vs from Ps and PpPs times, and Moho
-    depth from the Ps delay. No model gets more than 5% and 29% right there.
+    depth from the Ps delay. At 32K no model gets more than 5% and 29% right there (§8 has the 64K results).
 - **D-Report: the shortfalls are content, and neither SFT nor RL changed them.**
   - The reports fully meet about half of their rubric criteria and partly meet most of the rest.
   - What falls short is **wrong or missing science (44–51% of shortfalls) and parts left out (36–47%)**, almost never
@@ -285,3 +288,63 @@ off after its thinking closed, which is why the base model's D-Num-hard value (3
 | D-Report: **human calibration** (the 20-pair blind review, then ~100 per-criterion labels); keep the gate on the lower judge; report the length-matched subset | Judges disagree on 55–57% of pairs; Gemma prefers trained models' style | a reviewer's time |
 | Replace the refusal word lists with a **judge-read refusal check** (Luna, eval-only), at least for the 27 unclear answers | The word lists differ by ~20 points | small API cost |
 | Revise the **ship gates** before RL v2 starts | Two gates cannot be met by design | your decision |
+
+## 8. Update (2026-11-11): D-Num-hard with 64K tokens
+
+§7 proposed scoring the hard set at a second budget. This is that run. A sample drawn with a 64K budget is the same
+as one drawn with a 32K budget up to token 32K, because the budget does not change sampling. So every answer that
+finished within 32K keeps its outcome, and every answer that was cut off gets the rest of its reasoning from the same
+model, at temperature 1 and top-p 1, graded by the same grader (`scripts/talk/numhard_continue.py`). The three models
+needed 993 continuations. They used a median of 23.9K, 15.7K and 12.8K extra tokens (base, SFT, RL step 20). The
+three 2-node jobs took 1.9, 1.7 and 1.0 hours. Counts only: `docs/talk/data/numhard_64k.json`.
+
+![D-Num-hard at 32K and 64K](../../assets/d_num_hard_at_64k_en.png)
+
+*Figure 8. Outcomes of the 1,280 D-Num-hard answers per model, at the eval's 32K budget and at 64K.*
+
+| | base | SFT | RL step 20 |
+|---|---|---|---|
+| right at 32K | 62.0% | 68.1% | 70.1% |
+| right at 64K | 69.8% | **83.9%** | 77.5% |
+| answers cut off at 32K | 421 | 361 | 211 |
+| … right at 64K | 100 | 202 | 95 |
+| … a wrong value at 64K | 148 | 92 | 85 |
+| … still unfinished at 64K | 151 | 65 | 30 |
+| … a format failure at 64K | 22 | 2 | 1 |
+| wrong values at 64K, all answers | 12.7% | 10.8% | 19.2% |
+
+What this shows:
+1. **With room to finish, the SFT model is the most accurate of the three.** It answers 83.9% right at 64K. More
+   than half of its cut-off answers (202 of 361) were on their way to the right value. RL step 20 reaches 77.5% and
+   the base 69.8%. So the order at 32K, RL first, comes from how soon each model finishes.
+2. **The base model's long answers often do not converge.** A quarter of its cut-off answers (100 of 421) come out
+   right. Another 151 run out of room again at 64K, and 148 end with a wrong value.
+3. **RL's wrong values are answers it has already committed to.** Its answers rarely run out of room at 64K (2.3%).
+   On the families SFT nearly solves, RL stays at the same score at both budgets, and its remaining errors there are
+   almost all wrong values: rupture length 86.9%, Mw 85.6%, ray range in a gradient 88.1%. More room does not change an answer
+   the model has already given.
+4. **The receiver-function families are partly solvable for the trained models.** With 64K tokens the SFT model
+   answers 40.0% of the Vp/Vs problems right (3.8% at 32K) and 54.4% of the Moho-depth problems (15.0%). RL step 20
+   reaches 36.2% and 44.4%. The base stays at 0.0% and 0.6%, with 57.5% and 31.9% of its answers still unfinished.
+   So these two families are a knowledge gap for the base model. For the SFT model they were mostly a budget problem,
+   and about a third of its answers there are still wrong values.
+
+| family | base, 32K → 64K | SFT, 32K → 64K | RL step 20, 32K → 64K |
+|---|---|---|---|
+| Vp/Vs from Ps and PpPs | 0.0 → 0.0 | 3.8 → 40.0 | 5.0 → 36.2 |
+| Moho depth from the Ps delay | 0.0 → 0.6 | 15.0 → 54.4 | 28.8 → 44.4 |
+| rays in a gradient: travel time | 61.2 → 86.2 | 51.2 → 93.1 | 74.4 → 86.9 |
+| rays in a gradient: range | 66.9 → 87.5 | 91.2 → 95.6 | 88.1 → 88.1 |
+| Mw from a spectral plateau | 80.6 → 91.9 | 95.6 → 97.5 | 85.6 → 85.6 |
+| rupture length from directivity | 97.5 → 98.8 | 94.4 → 95.0 | 86.9 → 86.9 |
+| Coulomb stress change | 93.1 → 96.9 | 98.8 → 99.4 | 96.2 → 96.2 |
+| distance from a ground-motion model | 96.2 → 96.2 | 95.0 → 96.2 | 95.6 → 95.6 |
+
+What this changes in the sections above:
+- §2 and §4 called the two receiver-function families a knowledge gap for every model. That holds for the base
+  model. The SFT model knows enough to solve about half of them when it can finish.
+- §6 said RL bought speed and lost reliability. The 64K pass agrees: with room to finish, the SFT model is 6.4
+  points more accurate than RL step 20, and RL's extra wrong values stay.
+- §7's row on the receiver-function families: report them per model and at both budgets. They test the base
+  model's knowledge and the trained models' budget.
+- For RL v2: score D-Num-hard at 32K and at 64K, and keep the wrong-value monitor from §7.

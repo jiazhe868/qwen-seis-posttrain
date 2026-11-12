@@ -12,6 +12,7 @@ nanogpt-seis-posttrain PITFALLS F2, where figures drifted away from the logs the
                                      (written on the cluster by scripts/talk/collect.py)
 - docs/talk/data/rl.json             per-step RL metrics and GPU memory samples (scripts/talk/collect_rl.py)
 - docs/talk/data/reward_vs_eval.json, judge_drift.json, refusal.json, failure_types.json, research_1110.json
+- docs/talk/data/numhard_64k.json   D-Num-hard with a 64K budget (scripts/talk/numhard_continue.py)
 - docs/talk/data/campaign_hours.json and last_stage_memory.json: values measured by hand during the
   run, each with the note it came from (the run log)
 
@@ -196,6 +197,7 @@ def load_all_result_files() -> dict:
         "judge_drift": load_result_file("judge_drift.json"),
         "refusal": load_result_file("refusal.json"),
         "failure_types": load_result_file("failure_types.json"),
+        "numhard_64k": load_result_file("numhard_64k.json"),
         "research_1110": load_result_file("research_1110.json"),
         "campaign_hours": load_result_file("campaign_hours.json"),
         "last_stage_memory": load_result_file("last_stage_memory.json"),
@@ -410,6 +412,48 @@ def outcome_shares(reasons: dict) -> dict:
     right, unfinished, wrong = reasons.get("ok", 0), reasons.get("no_think_end", 0), reasons.get("wrong_value", 0)
     return {"right": 100 * right / total, "unfinished": 100 * unfinished / total,
             "wrong_value": 100 * wrong / total, "format": 100 * (total - right - unfinished - wrong) / total}
+
+
+def draw_d_num_hard_at_64k(results: dict, language: str) -> None:
+    """D-Num-hard outcomes at the eval's 32K budget and at 64K, for each model.
+
+    The 64K outcome continues every answer that was cut off at 32K, with the same model and sampling
+    (scripts/talk/numhard_continue.py): a 64K sample is the same as a 32K sample up to token 32K.
+    """
+    text = label_text[language]
+    budget_rows = results["numhard_64k"]["rows"]
+    outcome_order = ("right", "unfinished", "wrong_value", "format")
+    figure, axes = plt.subplots(figsize=(12.4, 4.4))
+    row_positions, row_labels = [], []
+    for model_index, model in enumerate(model_keys):
+        group_top = model_index * 3.0
+        axes.text(-1.0, group_top - 0.75, text["model"][model], ha="left", va="center", fontsize=13,
+                  fontweight="bold", color=ink_color, clip_on=False)
+        for budget_index, (budget_key, budget_label) in enumerate((("at_32k_pct", "32K"), ("at_64k_pct", "64K"))):
+            row_position = group_top + budget_index
+            row_positions.append(row_position)
+            row_labels.append(budget_label)
+            shares = budget_rows[model][budget_key]
+            segment_left = 0.0
+            for outcome in outcome_order:
+                share = shares.get(outcome, 0.0)
+                axes.barh(row_position, share, left=segment_left, height=0.68, color=outcome_color[outcome],
+                          edgecolor=page_color, linewidth=1.2)
+                if share >= 4.0:
+                    label_color = ink_color if outcome == "right" else page_color
+                    axes.text(segment_left + share / 2, row_position, f"{share:.0f}", ha="center", va="center",
+                              fontsize=11.5, color=label_color)
+                segment_left += share
+    axes.set_yticks(row_positions, row_labels)
+    axes.invert_yaxis()
+    axes.set_xlim(0, 100)
+    axes.set_xticks([0, 25, 50, 75, 100])
+    axes.tick_params(axis="y", length=0)
+    axes.spines["left"].set_visible(False)
+    legend_handles = [plt.Rectangle((0, 0), 1, 1, color=outcome_color[outcome]) for outcome in outcome_order]
+    axes.legend(legend_handles, [text["outcome"][outcome] for outcome in outcome_order],
+                ncol=4, loc="lower left", bbox_to_anchor=(0.0, 1.0), handlelength=1.0, columnspacing=1.4)
+    save_figure(figure, "d_num_hard_at_64k", language)
 
 
 def draw_where_samples_go(results: dict, language: str) -> None:
@@ -751,6 +795,7 @@ figure_drawers = {
     "results_by_stage": draw_results_by_stage,
     "test_time_compute": draw_test_time_compute,
     "where_samples_go": draw_where_samples_go,
+    "d_num_hard_at_64k": draw_d_num_hard_at_64k,
     "bank_funnel": draw_bank_funnel,
     "last_stage_memory": draw_last_stage_memory,
     "rl_steps": draw_rl_steps,

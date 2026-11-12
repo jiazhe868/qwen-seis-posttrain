@@ -876,7 +876,7 @@
    "sft_eval": "2026-10-29T21:16"
   }
  },
- "collected_at": "2026-11-11T12:17",
+ "collected_at": "2026-11-11T18:17",
  "compute": {
   "balance": {
    "available_su": 4755,
@@ -1520,15 +1520,15 @@
     "submit": "2026-11-10T15:02:43"
    },
    {
-    "elapsed_s": 0,
+    "elapsed_s": 986,
     "end": "Unknown",
     "id": "3573599",
     "name": "dpt-nh64k",
     "nodes": 2,
     "partition": "gpu-a100-dev",
-    "start": "Unknown",
-    "state": "PENDING",
-    "su": 0.0,
+    "start": "2026-11-11T18:00:57",
+    "state": "RUNNING",
+    "su": 1.64,
     "submit": "2026-11-10T23:12:47"
    }
   ],
