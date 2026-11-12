@@ -195,3 +195,18 @@ def test_best_drop_pauses_on_the_first_dev_pass_after_the_turn():
         {"name": "dev_best_drop", "kind": "best_drop", "metric": "dev/d_num", "max_drop": 3.0, "action": "pause"}]})
     again.rules[0].load_state_dict(state)
     assert again.rules[0].best["dev/d_num"] == 97.3                    # the best survives a resume
+
+
+def test_best_drop_with_better_low_pauses_when_wrong_values_rise_above_their_lowest():
+    """Run 1's T1 dev answers with a wrong value: 2.1%, 1.8%, 17.8% at steps 0, 20, 40 (val_generations)."""
+    from dpt.monitoring.alerts import AlertManager
+
+    spec = {"name": "dev_t1_wrong_value_rise", "kind": "best_drop", "better": "low", "metric": "dev/t1_wrong_value",
+            "max_drop": 3.0, "action": "pause"}
+    mgr = AlertManager.from_config({"rules": [], "extra_rules": [spec]})
+    assert mgr.evaluate(0, {"dev/t1_wrong_value": 2.1}) == []
+    assert mgr.evaluate(20, {"dev/t1_wrong_value": 1.8}) == []
+    assert mgr.evaluate(30, {"dev/t1_wrong_value": 4.5}) == []          # 2.7 above the lowest: within the limit
+    fired = mgr.evaluate(40, {"dev/t1_wrong_value": 17.8})
+    assert [a.severity for a in fired] == ["pause"] and "above its best 1.8" in fired[0].message
+    assert mgr.rules[0].best["dev/t1_wrong_value"] == 1.8

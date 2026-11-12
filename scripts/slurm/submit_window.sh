@@ -6,6 +6,11 @@
 #                                                      #   final eval on the RL nodes once RL ends (afterany)
 # Without a reservation (the normal gpu-a100 queue); options after the mode go to sbatch, e.g. -t 48:00:00:
 #   scripts/slurm/submit_window.sh data-queue [sbatch options]   # window 1 as a plain 2-node job
+#   scripts/slurm/submit_window.sh rl-build-queue                # RL v2 as ONE self-contained 8-node job for 48 h:
+#     rl_v2_queue.slurm → rl_v2_job.sh builds bank v2 first if it is missing, then RL v2, then the final eval. No bank
+#     check at submission, so it can wait in the queue while window 1 does (2026-11-11).
+#   scripts/slurm/submit_window.sh sft-v2-queue                  # job 2 as ONE 8-node job for 48 h (2026-11-12):
+#     sft_v2_queue.slurm → sft_v2_job.sh: SFT v2 from SFT v1 on the knowledge rows, its eval, RL v3, the final eval
 #   scripts/slurm/submit_window.sh rl-queue                      # window 2 as ONE heterogeneous job: rl_fallback.slurm,
 #     8 gpu-a100 nodes + 1 judge node (the cluster allows at most 8 gpu-a100 nodes per job). DPT_FB_TIME (default 24:00:00)
 #     is both components' limit; DPT_JUDGE_PARTITION (default gpu-a100, or gpu-a100-small) the judge node's queue.
@@ -22,7 +27,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source scripts/slurm/env.sh
 source scripts/slurm/lib.sh
-WHAT="${1:?data | rl | data-queue | rl-queue}"
+WHAT="${1:?data | rl | data-queue | rl-queue | rl-build-queue | sft-v2-queue}"
 ACCT="${DPT_ACCOUNT:-PROJ}"; EVAL_MIN=$(( ${DPT_EVAL_H:-4} * 60 ))
 read -r DATA JUDGE_ID <<< "$(python - <<'PY'
 from dpt.common.config import load_config
@@ -65,8 +70,23 @@ case "${WHAT}" in
       scripts/slurm/rl_fallback.slurm
     tlog "RL window in the queue: job ${RLFB} (8 gpu-a100 nodes + 1 ${JP} judge node: judge, RL, final eval)"
     exit 0 ;;
+  rl-build-queue)
+    (( $# == 1 )) || tdie "rl-build-queue takes no sbatch options: set DPT_FB_TIME"
+    time_limit="${DPT_FB_TIME:-48:00:00}"
+    # one plain 8-node job: an 8 + 1 heterogeneous job in gpu-a100 is refused, because the QOS counts both parts
+    # against its 8-node limit ("Job violates accounting/QOS policy", 2026-11-11). RL v2 trains no judged task, so
+    # it needs no judge; the final eval serves its own judge on one of the 8 nodes.
+    submit RLV2 -A "${ACCT}" -p gpu-a100 -N 8 -t "${time_limit}" scripts/slurm/rl_v2_queue.slurm
+    tlog "RL v2 in the queue: job ${RLV2} (8 gpu-a100 nodes, ${time_limit}: bank v2 if missing, RL v2, final eval)"
+    exit 0 ;;
+  sft-v2-queue)
+    (( $# == 1 )) || tdie "sft-v2-queue takes no sbatch options: set DPT_FB_TIME"
+    time_limit="${DPT_FB_TIME:-48:00:00}"
+    submit SFTV2 -A "${ACCT}" -p gpu-a100 -N 8 -t "${time_limit}" scripts/slurm/sft_v2_queue.slurm
+    tlog "job 2 in the queue: job ${SFTV2} (8 gpu-a100 nodes, ${time_limit}: SFT v2, eval, RL v3, final eval)"
+    exit 0 ;;
   data|rl) ;;
-  *) tdie "unknown window ${WHAT}: data | rl | data-queue | rl-queue" ;;
+  *) tdie "unknown window ${WHAT}: data | rl | data-queue | rl-queue | rl-build-queue" ;;
 esac
 
 RES="${2:?reservation name}"

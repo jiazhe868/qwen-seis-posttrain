@@ -353,27 +353,76 @@ def test_campaign_slurm_waits_for_the_ready_marker(tmp_path):
     assert r.returncode != 0 and "not ready" in r.stdout + r.stderr
 
 
+def _plain(out):
+    """The dry-run lines with printf %q's backslashes removed, so remote commands read as typed."""
+    return [line.replace("\\", "") for line in out.splitlines()]
+
+
+def _model_servers(out, row, max_model_len):
+    """The serve_vllm.sh lines of one row at one max_model_len (40960: the 32K eval; 67584: the 64K continuations)."""
+    return [line for line in _plain(out) if "serve_vllm.sh" in line and f"'{row}' " in line
+            and f" {max_model_len} 1 " in line]
+
+
+def _served(lines, host, name):
+    return [line for line in lines if f"StrictHostKeyChecking=no {host} " in line and "serve_vllm.sh" in line
+            and f"' {name} " in line]
+
+
 def test_data_window_runs_every_server_and_client_on_its_own_two_nodes(tmp_path):
-    """Bank v2's data phase for a reservation (2026-11-09): the teacher (FP8, TP2) and Gemma on node 1, the SFT model ×3 on
-    node 2, clients on node 1, then the SFT model on node 1 for the new problems, the merge, publish and check."""
+    """Bank v2's data phase as a 2-node job (window 1): the teacher (FP8, TP2) and Gemma on node 1, the SFT model ×3
+    on node 2, every client and proxy on node 1. In phase B node 1 serves the SFT model too, and the SFT proxy,
+    which listed node 1's replicas from the start, sends them work (2026-11-11)."""
     r = _run("data_window.slurm", [], tmp_path, DPT_SLURM_NODES="node01-001 node01-002")
     assert r.returncode == 0, r.stderr
-    out = r.stdout
-    assert "CUDA_VISIBLE_DEVICES=0\\,1" in out and "Qwen/Qwen3.8-27B-FP8 teacher 8000 40960 2" in out   # 2 GPUs
-    assert "judge_v 8100 40960 1" in out and "CUDA_VISIBLE_DEVICES=2" in out
-    remote = [line for line in out.splitlines() if "node01-002" in line and "serve_vllm.sh" in line]
-    assert len(remote) == 3 and all("sft_audit" in line and "DPT_GDN_MODEL=1" in line for line in remote)
+    out, lines = r.stdout, _plain(r.stdout)
+    teacher = _served(lines, "node01-001", "teacher")
+    assert len(teacher) == 1 and "CUDA_VISIBLE_DEVICES=0,1" in teacher[0] and "teacher 8010 40960 2" in teacher[0]
+    judge = _served(lines, "node01-001", "judge_v")
+    assert len(judge) == 1 and "CUDA_VISIBLE_DEVICES=2" in judge[0] and "DPT_SERVE_DP=1" in judge[0]
+    assert len(_served(lines, "node01-002", "sft")) == 3
+    assert all("DPT_GDN_MODEL=1" in line for line in _served(lines, "node01-002", "sft"))
+    assert "--port 8000 --backend http://node01-001:8010 " in out and "--port 8100 --backend http://node01-001:8110 " in out
+    sft_proxy = next(line for line in lines if "--port 8200" in line)
+    assert sft_proxy.count("--backend") == 6 and "http://node01-001:8003" in sft_proxy     # node 1's replicas, for phase B
     for env in ("DPT_BANK_NAME=hard", "DPT_BANK_NAME=long", "DPT_BANK_NAME=v2a", "DPT_BANK_NAME=v2new",
                 "DPT_BANK_NAME=v2pub", "t3_atomic.slurm"):
         assert env in out, env
+    node1_sft = [i for i, line in enumerate(lines) if line in _served(lines, "node01-001", "sft")]
+    assert len(node1_sft) == 3 and min(node1_sft) > out.count("\n", 0, out.index("DPT_BANK_NAME=hard"))
     assert out.index("DPT_BANK_NAME=v2new") > out.index("DPT_BANK_NAME=hard")      # phase B after phase A
+    assert "DPT_DIFFICULTY_CONCURRENCY=96 " in out and "DPT_DIFFICULTY_CONCURRENCY=192 " in out
     assert "--name rl_bank.difficulty" in out and "--t3-map" in out and "bank_merge check" in out
-    assert "sft_new 8301" in out and "DPT_GDN_MODEL=1" in out
+    assert "--t3-not-trained" not in out
+    pin = next(line for line in lines if "bank_merge pin-dev" in line)                 # run 1's dev split, converted
+    assert "/v1/rl_dev.jsonl" in pin and "--t3-map" in pin
+    assert out.index("DPT_BANK_NAME=v2pub") < out.index("bank_merge pin-dev") < out.index("bank_merge check")
 
 
-def test_data_window_needs_two_nodes(tmp_path):
+def test_data_window_on_eight_nodes_with_two_teacher_nodes_and_no_t3(tmp_path):
+    """Inside RL v2's job (2026-11-11): 2 teacher nodes behind one teacher proxy, 6 nodes of the SFT model, no atomic
+    T3 rubrics, and both difficulty passes sized to the replicas they use."""
+    nodes = " ".join(f"node01-00{i}" for i in range(1, 9))
+    r = _run("data_window.slurm", [], tmp_path, DPT_SLURM_NODES=nodes, DPT_DATA_TEACHER_NODES="2", DPT_DATA_SKIP_T3="1")
+    assert r.returncode == 0, r.stderr
+    out, lines = r.stdout, _plain(r.stdout)
+    for h in ("node01-001", "node01-002"):
+        assert len(_served(lines, h, "teacher")) == 1 and len(_served(lines, h, "judge_v")) == 1
+        assert len(_served(lines, h, "sft")) == 3                                 # in phase B
+    for i in range(3, 9):
+        assert len(_served(lines, f"node01-00{i}", "sft")) == 3 and not _served(lines, f"node01-00{i}", "teacher")
+    assert next(line for line in lines if "--port 8000" in line).count("--backend") == 2
+    assert next(line for line in lines if "--port 8200" in line).count("--backend") == 24
+    assert "t3_atomic.slurm" not in out and "--t3-map" not in out and "--t3-not-trained" in out
+    assert "bank_merge pin-dev" in out
+    assert "DPT_DIFFICULTY_CONCURRENCY=576 " in out and "DPT_DIFFICULTY_CONCURRENCY=768 " in out
+
+
+def test_data_window_needs_a_node_for_the_sft_model(tmp_path):
     r = _run("data_window.slurm", [], tmp_path, DPT_SLURM_NODES="node01-001")
     assert r.returncode != 0 and "needs 2 nodes" in r.stderr
+    r = _run("data_window.slurm", [], tmp_path, DPT_SLURM_NODES="node01-001 node01-002", DPT_DATA_TEACHER_NODES="2")
+    assert r.returncode != 0 and "needs 3 nodes" in r.stderr
 
 
 def test_final_eval_window_evaluates_rl_v2_on_the_rl_nodes(tmp_path):
@@ -386,7 +435,13 @@ def test_final_eval_window_evaluates_rl_v2_on_the_rl_nodes(tmp_path):
     out = r.stdout
     assert "scancel 777" in out and "dpt.rewards.sandbox_server" in out and "sbx.sif" in out
     assert "rl9b_v2_seed1/global_step_120" in out and "export_hf.sh" in out
-    assert sum(1 for line in out.splitlines() if "serve_vllm.sh" in line and "rl_v2_seed1" in line) == 21
+    assert len(_model_servers(out, "rl_v2_seed1", 40960)) == 21                 # the 32K eval on the 7 workers
+    assert len(_model_servers(out, "rl_v2_seed1", 67584)) == 24                 # 64K continuations on all 8 nodes
+    for s_ in ("d_num_hard", "d_fresh"):
+        assert f"dpt.eval.budget continue --set {s_} --row rl_v2_seed1" in out
+    assert ("dpt.eval.budget compare --rows sft,rl_seed1,rl_v2_seed1,sft_v2_seed1,rl_v3_seed1,base_medium "
+            "--baseline sft") in "\n".join(_plain(out))
+    assert out.index("budget compare") < out.index("07_final_eval.sh --report-only")
     assert sum(1 for line in out.splitlines() if "serve_vllm.sh" in line and "judge" in line) == 3
     assert "--sets d_num\\,d_code\\,d_report\\,d_fresh\\,general\\,refusal" in out and "--sets d_num_hard" in out
     assert "--samples-override 64" not in out                           # k64 only when asked for
@@ -466,8 +521,8 @@ def test_rl_fallback_runs_judge_rl_and_final_eval_in_one_job(tmp_path):
     assert not any("node01-009" in line and "--address=" in line for line in lines)
     assert "DRY: python -m dpt.launch.rl --config rl/rl_9b_v2.yaml" in out and "sbatch" not in out
     assert "(15600 s before the job's limit)" in err                    # 4 h of final eval + 20 min
-    models = [line for line in lines if "serve_vllm.sh" in line and "rl_v2_seed1" in line]
-    assert len(models) == 24 and not any("node01-001" in line for line in models)
+    models = _model_servers(out, "rl_v2_seed1", 40960)
+    assert len(models) == 24 and not any("node01-001 " in line for line in models)
     assert out.index("DRY: python -m dpt.launch.rl") < out.index("dpt.rewards.sandbox_server")   # eval after RL
     assert "scancel" not in out and "DPT_FINAL_CANDIDATE=rl_v2_seed1" in out
     assert "final eval: done" in err
@@ -492,7 +547,7 @@ def test_rl_fallback_with_a_one_gpu_judge_node(tmp_path):
     lines = r.stdout.splitlines()
     judge = [line for line in lines if "serve_vllm.sh" in line and "gemma-4-26B-A4B-it-FP8-dynamic" in line]
     assert sum("node930-002" in line for line in judge) == 1 and sum("node01-001" in line for line in judge) == 3
-    models = [line for line in lines if "serve_vllm.sh" in line and "rl_v2_seed1" in line]
+    models = _model_servers(r.stdout, "rl_v2_seed1", 40960)
     assert len(models) == 21 and not any("node930-002" in line for line in models)
     assert "final eval: done" in r.stderr
 
@@ -513,6 +568,108 @@ def test_submit_window_queue_modes_need_no_reservation(tmp_path):
             "scripts/slurm/rl_fallback.slurm") in r.stdout
     r = _run("submit_window.sh", ["rl-queue"], tmp_path, DPT_JUDGE_PARTITION="gpu-a100-small", DPT_FB_TIME="30:00:00")
     assert ": -A PROJ -p gpu-a100-small -N 1 -t 30:00:00 scripts/slurm/rl_fallback.slurm" in r.stdout
+
+
+def test_submit_window_rl_build_queue_needs_no_bank_yet(tmp_path):
+    """RL v2 as one self-contained job (2026-11-11): queued before bank v2 exists, because the job builds it."""
+    r = _run("submit_window.sh", ["rl-build-queue"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    # one plain 8-node job: gpu-a100's QOS counts the parts of a heterogeneous job together (refused at 8 + 1)
+    assert "DRY: sbatch -A PROJ -p gpu-a100 -N 8 -t 48:00:00 scripts/slurm/rl_v2_queue.slurm" in r.stdout
+    assert " : " not in r.stdout.split("DRY: sbatch", 1)[1].split("\n", 1)[0]       # no second job part
+    r = _run("submit_window.sh", ["rl-build-queue", "-t", "1:00:00"], tmp_path)
+    assert r.returncode != 0 and "takes no sbatch options" in r.stderr
+
+
+EIGHT = " ".join(f"node01-00{i}" for i in range(1, 9))
+
+
+def _fake_squeue(tmp_path, window_1_ids=""):
+    """squeue that lists window 1 (dpt-datawin) for `-n dpt-datawin` and nothing else."""
+    fake = tmp_path / "bin"
+    fake.mkdir(exist_ok=True)
+    (fake / "squeue").write_text('#!/bin/bash\n[[ " $* " == *" -n dpt-datawin "* ]] && '
+                                 f'printf "%s" "{window_1_ids}"\nexit 0\n')
+    (fake / "squeue").chmod(0o755)
+    return f"{fake}:{os.environ['PATH']}"
+
+
+def test_rl_v2_queue_waits_for_the_go_ahead_and_then_runs_the_job_script(tmp_path):
+    """The batch script is frozen at submission, so it only hands over to rl_v2_job.sh, read when the job starts."""
+    text = (REPO / "scripts" / "slurm" / "rl_v2_queue.slurm").read_text()
+    assert "rl_v2_job.ready" in text and "exec bash scripts/slurm/rl_v2_job.sh" in text
+    assert "#SBATCH -t 48:00:00" in text and "#SBATCH -N 8" in text
+    assert "placeholder" not in (REPO / "scripts" / "slurm" / "rl_v2_job.sh").read_text()
+    r = _run("rl_v2_queue.slurm", [], tmp_path, DPT_SLURM_NODES="node01-001 node01-002")   # a dry run skips the wait
+    assert r.returncode != 0 and "RL v2 needs 8 nodes" in r.stderr
+
+
+def test_rl_v2_job_builds_the_bank_tests_24k_trains_and_evaluates(tmp_path):
+    """RL v2's job with no bank yet (2026-11-11): window 1 is stopped, the bank is built on all 8 nodes (2 teacher
+    nodes, no T3), the dev split loses its T3 rows, the 24K test runs one forced full-length step, RL v2 runs at
+    the cap it chose without a judge, and the final eval runs on the same nodes."""
+    (tmp_path / "sbx.sif").write_text("")
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, "3571166"))
+    out = r.stdout
+    # a dry run of rl.slurm never records a clean stop, so RL "ends" with exit 1 and the final eval still runs
+    assert "final eval: done" in r.stderr and "done: RL exit 1, final eval finished" in r.stderr, r.stderr
+    assert "DRY: scancel 3571166" in out
+    assert out.index("scancel 3571166") < out.index("DPT_BANK_NAME=hard")       # stopped before the build starts
+    assert "--t3-not-trained" in out and "t3_atomic.slurm" not in out
+    assert "bank_merge without-task --task t3_report" in out and "rl_dev_no_t3" in out
+    test = next(line for line in out.splitlines() if "rl9b_v2_seed1_memtest24k" in line and "dpt.launch.rl" in line)
+    for arg in ("project.thinking.rl_max_response=24576", "verl.actor_rollout_ref.model.mtp.enable_train=false",
+                "verl.actor_rollout_ref.rollout.ignore_eos=true", "rl.filtering.drop_zero_advantage_groups=false",
+                "rl.prompts_per_step=6", "rl.total_steps=1", "rl_run.save_freq=-1"):
+        assert arg in test, arg
+    train = [line for line in out.splitlines() if line.startswith("DRY: python -m dpt.launch.rl --config rl/rl_9b_v2.yaml")
+             and "memtest" not in line]
+    assert len(train) == 1 and "project.thinking.rl_max_response=24576" in train[0]   # dry: the test "passes"
+    assert out.index("rl9b_v2_seed1_memtest24k") < out.index(train[0]) < out.index("rl9b_v2_seed1/global_step_120")
+    assert "sbatch" not in out                                                     # RL has no successor job
+    assert len(_model_servers(out, "rl_v2_seed1", 40960)) == 21
+    assert len(_model_servers(out, "rl_v2_seed1", 67584)) == 24 and "budget compare" in out
+
+
+def test_rl_v2_job_with_a_ready_bank_and_a_chosen_cap_goes_straight_to_rl(tmp_path):
+    """A bank that passed its check is used as it is (window 1 keeps running), and a run that already chose its cap
+    keeps it, so a second job resumes the same run the same way."""
+    (tmp_path / "sbx.sif").write_text("")
+    _bank_check(tmp_path, [])
+    cap = tmp_path / "scratch" / "dpt" / "checkpoints" / "rl" / "rl9b_v2_seed1.cap.json"
+    cap.parent.mkdir(parents=True)
+    cap.write_text(json.dumps({"cap": "16k"}))
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, "3571166"))
+    assert "final eval: done" in r.stderr, r.stderr
+    out = r.stdout
+    assert "scancel" not in out and "DPT_BANK_NAME" not in out and "memtest" not in out
+    train = [line for line in out.splitlines() if line.startswith("DRY: python -m dpt.launch.rl --config")]
+    assert len(train) == 1 and "rl_max_response" not in train[0]                   # 16K, as chosen before
+    assert "the run already chose its cap: 16k" in r.stderr
+
+
+def test_rl_v2_job_repairs_a_bank_window_1_published_before_building_one(tmp_path):
+    """Window 1 runs its frozen copy of data_window.slurm (no pin-dev), so its bank fails the dev-split check. The RL
+    job first puts back run 1's dev split on the CPU, and builds only if the check still fails."""
+    (tmp_path / "sbx.sif").write_text("")
+    _bank_check(tmp_path, ["dev split differs from v1/rl_dev.jsonl (61 vs 190 rows)"])
+    done = tmp_path / "work" / "dpt" / "data" / "gen" / ".done"
+    done.mkdir(parents=True)
+    (done / "v2pub_publish").write_text("")
+    (tmp_path / "work" / "dpt" / "data" / "v2" / "t3_atomic_map.jsonl").write_text("")
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, ""))
+    out = r.stdout
+    repair = next(line for line in out.splitlines() if "bank_merge pin-dev" in line)
+    assert "--t3-map" in repair and "/v1/rl_dev.jsonl" in repair
+    assert out.index(repair) < out.index("DPT_BANK_NAME=hard")      # the dry check cannot pass, so it builds next
+
+
+def test_rl_v2_job_refuses_other_node_counts_and_unknown_caps(tmp_path):
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES="node01-001 node01-002 node01-003")
+    assert r.returncode != 0 and "needs 8 nodes" in r.stderr
+    _bank_check(tmp_path, [])
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, DPT_RL_V2_CAP="32k")
+    assert r.returncode != 0 and "unknown cap '32k'" in r.stderr
 
 
 def test_het_nodes_reads_the_component_from_the_variable_or_from_squeue(tmp_path):
@@ -549,3 +706,87 @@ def test_numhard_64k_serves_each_row_on_both_nodes_and_continues_the_unfinished_
     assert "--stop-new-after 5100" in r.stdout                               # 7200 s left in a dry run − 35 min
     assert "numhard_continue.py summary" in r.stdout
     assert "exports/sft9b_seed1" in r.stdout and "exports/rl9b_seed1_step20" in r.stdout
+
+
+def test_knowledge_job_lays_out_the_teacher_by_the_node_it_lands_on(tmp_path):
+    """Knowledge data (2026-11-11), submitted to gpu-h100 and gpu-a100: on an H100 node the FP8 teacher fits one GPU,
+    on an A100 node it needs two (TP2); Gemma takes the last GPU either way."""
+    h100 = _run("knowledge.slurm", [], tmp_path, DPT_KNOWLEDGE_GPUS="NVIDIA H100 80GB HBM3,NVIDIA H100 80GB HBM3")
+    assert h100.returncode == 0, h100.stderr
+    out = h100.stdout
+    assert "CUDA_VISIBLE_DEVICES=0 GPU_MEM=0.9 bash scripts/serve_vllm.sh Qwen/Qwen3.8-27B-FP8 teacher 8011 40960 1" in out
+    assert "CUDA_VISIBLE_DEVICES=1 GPU_MEM=0.9 bash scripts/serve_vllm.sh" in out and "judge_v 8111 40960 1" in out
+    runs = [line for line in out.splitlines() if "dpt.data.gen.knowledge run" in line]
+    assert len(runs) == 2 and "--limit 40" in runs[0] and "--stop-new-after 83400" in runs[1]   # a first look, then all
+    assert out.index("knowledge run") < out.index("knowledge export")
+    mix = next(line for line in out.splitlines() if "data.slurm knowledge" in line)            # then SFT v2's data
+    assert "DPT_TEACHER_ENDPOINTS=knowledge_teacher" in mix and "CUDA_VISIBLE_DEVICES=" in mix
+    a100 = _run("knowledge.slurm", [], tmp_path, DPT_KNOWLEDGE_GPUS=",".join(["NVIDIA A100-PCIE-40GB"] * 3))
+    assert a100.returncode == 0, a100.stderr
+    assert "CUDA_VISIBLE_DEVICES=0\\,1 GPU_MEM=0.9 bash scripts/serve_vllm.sh Qwen/Qwen3.8-27B-FP8 teacher 8011 40960 2" in a100.stdout
+    assert "CUDA_VISIBLE_DEVICES=2 GPU_MEM=0.9" in a100.stdout
+    one = _run("knowledge.slurm", [], tmp_path, DPT_KNOWLEDGE_GPUS="NVIDIA A100-PCIE-40GB")
+    assert one.returncode != 0 and "need 2 H100 or 3 A100 GPUs" in one.stderr
+
+
+def test_job_2_is_queued_as_one_gated_8_node_job(tmp_path):
+    """Job 2 (2026-11-12): queued now as a plain 8-node job that waits for its go-ahead flag and then runs
+    sft_v2_job.sh, read when the job starts; the placeholder refuses to run."""
+    r = _run("submit_window.sh", ["sft-v2-queue"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "DRY: sbatch -A PROJ -p gpu-a100 -N 8 -t 48:00:00 scripts/slurm/sft_v2_queue.slurm" in r.stdout
+    text = (REPO / "scripts" / "slurm" / "sft_v2_queue.slurm").read_text()
+    assert "sft_v2_job.ready" in text and "exec bash scripts/slurm/sft_v2_job.sh" in text and "#SBATCH -N 8" in text
+    r = _run("sft_v2_queue.slurm", [], tmp_path)                    # a dry run skips the wait
+    if "placeholder" in (REPO / "scripts" / "slurm" / "sft_v2_job.sh").read_text():
+        assert r.returncode != 0 and "placeholder" in r.stderr
+
+
+def test_data_knowledge_builds_the_knowledge_mix_and_the_replay_mix(tmp_path):
+    """SFT v2's data (2026-11-11): the knowledge rows through the SFT stage alone, decontaminated with the teacher
+    as paraphrase judge, then a replay sample of the v1 mix."""
+    ep = tmp_path / "work" / "dpt" / "endpoints"
+    ep.mkdir(parents=True)
+    secure = tmp_path / "work" / "dpt" / "eval_secure"                   # decontamination needs every eval set
+    secure.mkdir(parents=True)
+    for name in ("d_num_draft", "d_code", "d_report", "d_fresh"):
+        (secure / f"{name}.jsonl").write_text("")
+    (ep / "knowledge_teacher.url").write_text("http://node18-001:8010")
+    (ep / "knowledge_teacher.model").write_text("teacher")
+    r = _run("data.slurm", ["knowledge"], tmp_path, DPT_TEACHER_ENDPOINTS="knowledge_teacher",
+             DPT_ENDPOINTS=str(ep))
+    out = "\n".join(_plain(r.stdout))
+    assert "--stages sft" in out and "data_pipeline.output_dir=" in out and "/v2_knowledge" in out
+    for s_ in ("domain_reasoning", "tool_traj", "report", "self_distill"):
+        assert f"data_pipeline.inputs.sft_subsets.{s_}=null" in out
+    assert "data_pipeline.inputs.sft_subsets.knowledge_report=" in out
+    assert "data_pipeline.backends.judge.base_url=http://node18-001:8010" in out
+    assert "sft_build replay-mix" in out and "--replay-token-ratio 2.0" in out and "/sft_v2/sft_train.jsonl" in out
+
+
+def test_job_2_trains_sft_v2_evaluates_it_and_runs_rl_v3(tmp_path):
+    """Job 2 (2026-11-12): SFT v2 on the 8 nodes, its export copied to $WORK, its eval as row sft_v2_seed1, then RL v3
+    from it with RL v2's cap, and RL v3's final eval as row rl_v3_seed1."""
+    (tmp_path / "sbx.sif").write_text("")
+    _bank_check(tmp_path, [])
+    cap = tmp_path / "scratch" / "dpt" / "checkpoints" / "rl" / "rl9b_v2_seed1.cap.json"
+    cap.parent.mkdir(parents=True)
+    cap.write_text(json.dumps({"cap": "24k"}))
+    r = _run("sft_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, ""))
+    out, lines = r.stdout, _plain(r.stdout)
+    assert "final eval: done" in r.stderr, r.stderr
+    assert sum("04_sft.sh --config sft/sft_9b_v2.yaml" in line for line in lines) == 8      # every node trains
+    assert "exports/sft9b_v2_seed1.partial" in out and "hf_export" in out
+    assert len(_model_servers(out, "sft_v2_seed1", 40960)) == 21 and len(_model_servers(out, "sft_v2_seed1", 67584)) == 24
+    assert "dpt.eval.budget continue --set d_fresh --row sft_v2_seed1" in out
+    assert "RL v3 keeps RL v2's cap: 24k" in r.stderr and "memtest" not in out
+    train = [line for line in out.splitlines() if line.startswith("DRY: python -m dpt.launch.rl --config rl/rl_9b_v3.yaml")]
+    assert len(train) == 1 and "project.thinking.rl_max_response=24576" in train[0]
+    assert "rl9b_v3_seed1/global_step_120" in out and len(_model_servers(out, "rl_v3_seed1", 40960)) == 21
+    assert out.index("--row sft_v2_seed1") < out.index("--config rl/rl_9b_v3.yaml")
+
+
+def test_a_second_job_waits_for_a_running_bank_build(tmp_path):
+    """RL v2 and job 2 could start together with no bank: the second waits for the first's build (2026-11-12)."""
+    text = (REPO / "scripts" / "slurm" / "rl_v2_job.sh").read_text()
+    assert '"${V2}/BUILDING"' in text and "is building bank v2: waiting for its check" in text

@@ -1,0 +1,61 @@
+{
+ "what": "knowledge-data selection funnel (dpt.data.gen.knowledge licenses + select), counts only",
+ "collected_at": "2026-11-11",
+ "full_texts": 19945,
+ "found_in_openalex": 17867,
+ "licenses": {
+  "null": 8189,
+  "cc-by": 7293,
+  "not_found": 2078,
+  "cc-by-nc-nd": 772,
+  "cc-by-nc": 707,
+  "other-oa": 316,
+  "cc-by-sa": 306,
+  "cc-by-nc-sa": 219,
+  "public-domain": 43,
+  "cc-by-nd": 22
+ },
+ "admitted_licenses": [
+  "cc0",
+  "public-domain",
+  "cc-by",
+  "cc-by-sa"
+ ],
+ "admitted": 7642,
+ "select": {
+  "chunks": 8286,
+  "duplicate_title": 301,
+  "full_text": 19945,
+  "license_not_admitted:None": 10267,
+  "license_not_admitted:cc-by-nc": 707,
+  "license_not_admitted:cc-by-nc-nd": 772,
+  "license_not_admitted:cc-by-nc-sa": 219,
+  "license_not_admitted:cc-by-nd": 22,
+  "license_not_admitted:other-oa": 316,
+  "no_sections": 11,
+  "off_topic": 253,
+  "papers": 3000,
+  "too_recent": 259
+ },
+ "sections": 8286,
+ "papers": 3000,
+ "section_licenses": {
+  "cc-by": 7910,
+  "cc-by-sa": 353,
+  "public-domain": 23
+ },
+ "section_chars_median": 7350,
+ "section_chars_range": [
+  4000,
+  9000
+ ],
+ "paper_years": {
+  "1960s": 30,
+  "1970s": 220,
+  "1980s": 247,
+  "1990s": 224,
+  "2000s": 549,
+  "2010s": 2661,
+  "2020s": 4355
+ }
+}

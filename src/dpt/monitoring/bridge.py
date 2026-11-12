@@ -70,6 +70,9 @@ def to_canonical(metrics: Mapping[str, Any], *, tail_bucket: str = "12k+") -> di
             put(K.PROXY.format(task=task), v)
         elif var == "gold_score" and float(v) >= 0:      # −1 = "no in-loop gold for this task" (T3)
             put(K.GOLD.format(task=task), v)
+        elif var in ("gold_wrong_value", "gold_unfinished") and task == "t1_num" and float(v) >= 0:
+            # why T1 dev answers fail (dpt.verl_ext.reward_fn): run 1 traded unfinished answers for wrong values
+            put(K.DEV_T1_WRONG_VALUE if var == "gold_wrong_value" else K.DEV_T1_UNFINISHED, 100.0 * float(v))
         elif var == "t2_infra_error" and task == "t2_code":
             # the sandbox fails closed: an ungraded sample scores 0, so this rate is silent in the rewards
             put(K.SANDBOX_INFRA_ERROR, v)

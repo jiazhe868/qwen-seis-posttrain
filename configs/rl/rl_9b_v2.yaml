@@ -1,11 +1,11 @@
 # =============================================================================
-# RL v2 on the 9B line (2026-11-07, README §8.3).
+# RL v2 on the 9B line (2026-11-07, README §8.3; changed 2026-11-11).
 #
 # Run 1 (rl9b_seed1) had almost no learning signal and a lenient report judge. In steps 1–20 the SFT policy
 # solved 88% of T1, 90% of T2 and 76% of T4 groups 8/8. The judge gave 0–10 scores to rubric criteria of 47 words.
 # Answers then shrank until accuracy collapsed (step 52), and only the train/rollout alarm stopped the run (step 56).
 #
-# v2 changes the data, the report reward and the stop rule:
+# v2 changes the data, the task mix, the learning rate and the stop rules:
 #   - bank v2 ($DATA/v2):
 #     - every v1 problem re-graded by the SFT model (8 samples, 16K, medium; dpt.data.difficulty mode audit_all);
 #       8/8 is dropped and 0/8 goes to the hard pool;
@@ -13,15 +13,32 @@
 #     - plus the long T1 families (seismology_long: 6 families, 6–8 steps).
 #   - harder problems drawn more often: 3 / 2 / 1 copies per epoch for pass rates of at most 3/8, 5/8 and 7/8.
 #   - the hard pool (0/8 for the SFT model) joins at stage B with a 10% share, scaled down below 300 problems.
-#   - T3 rubrics as atomic yes/no checks with quoted evidence (dpt.data.gen.t3_atomic, dpt.rewards.judge).
-#   - a dev pass and a checkpoint every 10 steps, and a pause when dev D-Num falls 3 points below its best.
-# Everything else is as in run 1 (LR, batch, 16K cap, losses, task mix), so the comparison isolates data and
-# reward. Like run 1, it starts from the SFT checkpoint.
+#   - no T3 (reports) in training (2026-11-11). The goal is D-Num-hard and D-Fresh above SFT at 32K, and the atomic
+#     report reward has not yet been checked against the independent judge. It also frees the judge's GPUs: the
+#     run is one plain 8-node job (scripts/slurm/rl_v2_job.sh). Its share goes to T1.
+#   - T4 at 15% (25% in run 1), and half of run 1's learning rate. Run 1 drifted after step 20, and in its steps
+#     1–20 T4 was 21% of the prompts but gave a median 57% of the gradient, because T1 and T2 were nearly solved
+#     (docs/reports/tech_report_en.md). Why the answers then shrank is still open.
+#   - a dev pass and a checkpoint every 10 steps. A pause when dev D-Num falls 3 points below its best, or when the
+#     share of T1 dev answers with a wrong value rises 3 points above its lowest.
+# Unchanged from run 1: the SFT start, 126 prompts × 8, the losses, and by default the 16K cap. rl_v2_job.sh
+# switches to 24K with a frozen MTP head when a one-step memory test at full length passes.
 # =============================================================================
 defaults_from: rl_9b.yaml
 requires_model_line: qwen35_9b
 
+rl:
+  # Run 1 used 2e-6 → 1e-6. Its dev D-Num peaked at step 20 (97.3) and fell to 78.9 by step 40. The 27B's rule
+  # (A8: 2e-6 made it oscillate) gave 1e-6 → 5e-7, the values used here.
+  lr_schedule: {base_lr: 1.0e-6, final_lr: 5.0e-7, final_phase_steps: 34}
+
 curriculum:
+  # Run 1's stage boundaries, one mix for all three stages. The stages still set the hard pool's join step and
+  # the final LR phase.
+  stages:
+    - {name: A_verifiable_warmup, start: 0, end: 34, mix: {t1_num: 0.60, t2_code: 0.25, t3_report: 0.00, t4_general: 0.15}}
+    - {name: B_add_hard_pool, start: 34, end: 86, mix: {t1_num: 0.60, t2_code: 0.25, t3_report: 0.00, t4_general: 0.15}}
+    - {name: C_consolidate, start: 86, end: 120, mix: {t1_num: 0.60, t2_code: 0.25, t3_report: 0.00, t4_general: 0.15}}
   hard_pool_join_step: 34                   # stage B; 0/8 problems give no signal until the policy has improved
   hard_share: 0.10
   hard_pool_min_size: 300
@@ -34,6 +51,9 @@ rl_run:
   init_checkpoint: ${oc.env:WORK,.}/dpt/exports/sft${project.model.tag}_seed${rl_run.sft_seed}
   data_dir: ${project.paths.data_root}/v2
   train_files: ["${rl_run.data_dir}/rl_main.parquet", "${rl_run.data_dir}/rl_hard.parquet"]
+  # The dev split without its T3 rows (python -m dpt.data.bank_merge without-task). With no judge in this job,
+  # T3 rows would score 0 at every dev pass and only cost generation time.
+  dev_files: ["${rl_run.data_dir}/rl_dev_no_t3.parquet"]
   dev_freq: 10
   # Every dev pass has a checkpoint to select: 12 × ~126 GB on $SCRATCH.
   save_freq: 10
@@ -47,6 +67,14 @@ monitoring:
       max_drop: 3.0
       action: pause
       risk: "the policy is getting worse on dev (run 1: 97.3 at step 20, 78.9 at step 40; stopped only at step 56)"
+    - name: dev_t1_wrong_value_rise
+      kind: best_drop
+      better: low
+      metric: dev/t1_wrong_value
+      max_drop: 3.0
+      action: pause
+      risk: "finished answers with wrong values are replacing unfinished ones (run 1's T1 dev answers: 1.8% wrong
+        values at step 20, 17.8% at step 40). At the 32K eval budget many unfinished answers would have been right"
     - name: t1_length_drop
       kind: relative_change
       metric: task/t1_num/len_mean

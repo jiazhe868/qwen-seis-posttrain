@@ -31,8 +31,18 @@ for the divergence alert. The gold check per task:
 
 Training rows get ``gold_score = −1``; the bridge ignores negative values.
 
-Output keys are identical for every sample (``dpt.rewards.router.VERL_KEYS`` +
-``gold_score``). verl requires this, because it turns per-sample dicts into columns.
+Wrong values and unfinished answers on the dev split (2026-11-11)
+------------------------------------------------------------------
+A T1 dev answer the gold grader marks wrong is either a finished answer with a wrong value
+(``gold_wrong_value = 1``) or an answer whose thinking never ended (``gold_unfinished = 1``). Run 1
+traded the second for the first: its T1 dev answers went from 0.8% unfinished and 1.8% wrong values at
+step 20 to 0% and 17.8% at step 40 (val_generations of rl9b_seed1). At the 32K eval budget many of
+those unfinished answers would have finished and been right. The bridge turns both into
+``dev/t1_wrong_value`` and ``dev/t1_unfinished`` (percent), and rl_9b_v2.yaml pauses on the first.
+Other rows get −1 for both.
+
+Output keys are identical for every sample (``dpt.rewards.router.VERL_KEYS`` + the three
+``gold_*`` keys). verl requires this, because it turns per-sample dicts into columns.
 """
 
 from __future__ import annotations
@@ -78,30 +88,39 @@ def compute_score(data_source: str, solution_str: str, ground_truth: Any,
     kwargs.pop("reward_router_address", None)
     kwargs.pop("reward_model_tokenizer", None)
     out = _router.compute_score(data_source, solution_str, ground_truth, extra_info, **kwargs)
-    out["gold_score"] = -1.0
+    out.update(NO_GOLD)
     if (extra_info or {}).get("split") == "dev":
         try:
-            out["gold_score"] = gold_score(str(data_source), solution_str, ground_truth, out)
+            out.update(gold_grade(str(data_source), solution_str, ground_truth, out))
         except Exception as e:  # gold is a monitor; never fail the reward because of it
             log.warning("gold grading failed (%s: %s)", type(e).__name__, e)
             out["gold_score"] = 0.0
     return out
 
 
-def gold_score(task: str, solution_str: str, ground_truth: Any, proxy: dict[str, Any]) -> float:
-    """Independent, stricter correctness check for dev rows (see module docstring)."""
+# −1 = not computed for this row (training rows, and the T1-only keys on other tasks)
+NO_GOLD = {"gold_score": -1.0, "gold_wrong_value": -1.0, "gold_unfinished": -1.0}
+
+
+def gold_grade(task: str, solution_str: str, ground_truth: Any, proxy: dict[str, Any]) -> dict[str, float]:
+    """Independent, stricter correctness check for dev rows, and for T1 why a wrong answer is wrong (see the
+    module docstring). Keys left out stay at −1."""
     gt = json.loads(ground_truth) if isinstance(ground_truth, str) else dict(ground_truth)
     answer = strip_thinking(solution_str)
     if task == T2_CODE:
-        return float(proxy.get("t2_hidden_pass", 0.0))
+        return {"gold_score": float(proxy.get("t2_hidden_pass", 0.0))}
     if answer is None:
-        return 0.0
+        return {"gold_score": 0.0, **({"gold_wrong_value": 0.0, "gold_unfinished": 1.0} if task == T1_NUM else {})}
     if task == T1_NUM or (task == T4_GENERAL and gt.get("kind") == "math"):
         from dpt.eval.graders.numeric import grade_numeric
 
-        return float(grade_numeric(answer, gt, missing_unit="strict").correct)
+        grade = grade_numeric(answer, gt, missing_unit="strict")
+        if task != T1_NUM:
+            return {"gold_score": float(grade.correct)}
+        return {"gold_score": float(grade.correct), "gold_wrong_value": float(grade.reason == "wrong_value"),
+                "gold_unfinished": 0.0}
     if task == T4_GENERAL and gt.get("kind") == "ifeval":
         from dpt.eval.graders.ifeval import grade_ifeval
 
-        return float(grade_ifeval(answer, gt).score)
-    return -1.0
+        return {"gold_score": float(grade_ifeval(answer, gt).score)}
+    return {}

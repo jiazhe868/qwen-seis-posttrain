@@ -9,7 +9,7 @@
 # name in $DPT_ENDPOINTS; this job only sends requests, runs the graders and runs model-written code in
 # the sandbox container.
 #
-#   sbatch -A <alloc> scripts/slurm/data.slurm [gen | bank | sft | all]          (default: all)
+#   sbatch -A <alloc> scripts/slurm/data.slurm [gen | bank | sft | knowledge | all]   (default: all)
 #
 #   gen   T1 seismology problems (held-out families → D-Num candidates), T2 code tasks (held-out → D-Code),
 #         T4 public math + instruction prompts, T3 report prompts (teacher), T1 paraphrase (teacher)
@@ -19,6 +19,8 @@
 #         eval set and the public benchmarks (embedding + teacher paraphrase judge)
 #   sft   SFT subsets from the verified bank (dpt.data.gen.sft_gen: teacher rejection sampling and base
 #         self-distillation; the RL dev split is excluded), then the pipeline's sft stage
+#   knowledge  SFT v2's data (2026-11-11): the knowledge rows through the sft stage, then a replay sample of the
+#         v1 mix (run by knowledge.slurm while its teacher is up; the teacher judges paraphrases)
 #
 # Endpoints (sbatch -A <alloc> scripts/slurm/serve.slurm <name> <model> [tp]):
 #   teacher   Qwen/Qwen3.8-27B            gen, bank, sft. Several servers: serve them as teacher, teacher2, …
@@ -47,7 +49,7 @@ source scripts/slurm/env.sh
 source scripts/slurm/lib.sh
 export HF_HUB_OFFLINE=1                                  # tokenizers come from $HF_HOME (setup_login.sh models)
 WHICH="${1:-all}"
-case "${WHICH}" in gen | bank | sft | all) ;; *) tdie "usage: data.slurm [gen | bank | sft | all]" ;; esac
+case "${WHICH}" in gen | bank | sft | knowledge | all) ;; *) tdie "usage: data.slurm [gen | bank | sft | knowledge | all]" ;; esac
 
 read -r DATA SECURE RAW TEACHER_ID BASE_ID SEED <<< "$(python - <<'PY'
 from dpt.common.config import load_config
@@ -247,9 +249,24 @@ do_sft() {
     "data_pipeline.inputs.sft_subsets.self_distill=${SFT}/self_distill.jsonl" "${DEC[@]}"
 }
 
+# ---- knowledge (2026-11-11) ---------------------------------------------------------------------------
+do_knowledge() {   # SFT v2's data: the knowledge rows (dpt.data.gen.knowledge) through the SFT stage alone (admission,
+                   # quality, decontamination, render, buckets), then a replay sample of the v1 mix with 2× their
+                   # tokens (DPT_REPLAY_RATIO), as $DATA/sft_v2/sft_train.jsonl
+  local rows="${SFT}/knowledge_report.jsonl" mix="${DATA}/v2_knowledge/sft/sft_train.jsonl" s ov=()
+  [[ -f "${rows}" ]] || dry || tdie "no ${rows}: run scripts/slurm/knowledge.slurm first"
+  decontam_args
+  for s in domain_reasoning tool_traj report self_distill; do ov+=("data_pipeline.inputs.sft_subsets.${s}=null"); done
+  step knowledge_mix python -m dpt.data.pipeline --config data/pipeline.yaml --stages sft \
+    "data_pipeline.output_dir=${DATA}/v2_knowledge" "${ov[@]}" \
+    "data_pipeline.inputs.sft_subsets.knowledge_report=${rows}" "${DEC[@]}"
+  step sft_v2_mix python -m dpt.data.sft_build replay-mix --new "${mix}" --old "${DATA}/v1/sft/sft_train.jsonl" \
+    --replay-token-ratio "${DPT_REPLAY_RATIO:-2.0}" --seed "${SEED}" --out "${DATA}/sft_v2/sft_train.jsonl"
+}
+
 tlog "data.slurm ${WHICH}: data ${DATA}, teacher servers: ${TEACHERS}"
 case "${WHICH}" in
-  gen) do_gen ;; bank) do_bank ;; sft) do_sft ;;
+  gen) do_gen ;; bank) do_bank ;; sft) do_sft ;; knowledge) do_knowledge ;;
   all) do_gen; do_bank; do_sft ;;
 esac
 tlog "data.slurm ${WHICH}: finished"

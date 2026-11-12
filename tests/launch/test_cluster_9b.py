@@ -148,18 +148,23 @@ def test_describe_reports_progress_for_job_chaining(cluster_environment):
 
 
 def test_rl_9b_v2_renders_bank_v2_weights_and_the_stop_rule(cluster_environment):
-    """RL v2 (2026-11-07): bank v2 with its hard pool, dev and checkpoints every 10 steps, run 1's settings otherwise."""
+    """RL v2 (2026-11-07, changed 11-11): bank v2 with its hard pool, the dev split without T3, dev and checkpoints
+    every 10 steps, no T3 in training, T4 at 15%, half of run 1's learning rate, and the two dev pause rules."""
     from dpt.launch.common import compose_stage
 
     ov = _ov(build("rl/rl_9b_v2.yaml", [f"rl_run.output_dir={cluster_environment}/rl"], require_manifest=False))
     assert "/v2/rl_main.parquet" in ov["data.train_files"] and "/v2/rl_hard.parquet" in ov["data.train_files"]
-    assert "/v2/rl_dev.parquet" in ov["data.val_files"]
+    assert "/v2/rl_dev_no_t3.parquet" in ov["data.val_files"]
     assert ov["trainer.test_freq"] == "10" and ov["trainer.save_freq"] == "10"
     assert ov["trainer.experiment_name"] == "rl9b_v2_seed1"
-    assert ov["actor_rollout_ref.actor.optim.lr"] == "2e-06" and ov["data.train_batch_size"] == "126"
+    assert ov["actor_rollout_ref.actor.optim.lr"] == "1e-06" and ov["actor_rollout_ref.actor.optim.min_lr"] == "5e-07"
+    assert ov["data.train_batch_size"] == "126" and ov["data.max_response_length"] == "16384"
     cfg = compose_stage("rl/rl_9b_v2.yaml")
     assert cfg.curriculum.difficulty_weights.enabled and cfg.curriculum.hard_pool_join_step == 34
-    assert [r.name for r in cfg.monitoring.extra_rules] == ["dev_d_num_best_drop", "t1_length_drop"]
+    for stage in cfg.curriculum.stages:
+        assert dict(stage.mix) == {"t1_num": 0.60, "t2_code": 0.25, "t3_report": 0.00, "t4_general": 0.15}
+    assert [r.name for r in cfg.monitoring.extra_rules] == ["dev_d_num_best_drop", "dev_t1_wrong_value_rise",
+                                                            "t1_length_drop"]
     from dpt.monitoring.alerts import AlertManager
     from dpt.rl.curriculum import CurriculumConfig
     from omegaconf import OmegaConf

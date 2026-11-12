@@ -1,0 +1,46 @@
+{
+ "what": "run 1 (rl9b_seed1): T1 dev answers by outcome at the dev passes of steps 0, 20 and 40",
+ "how": "val_generations/<step>.jsonl of the run, 128 T1 dev problems x 4 samples, graded by dpt.eval.graders.numeric with strict units; unfinished = no end of thinking (dpt.chat.thinking)",
+ "collected_at": "2026-11-11",
+ "answers_per_step": 512,
+ "counts": {
+  "0": {
+   "right": 471,
+   "unfinished": 27,
+   "wrong_value": 11,
+   "no_answer": 2,
+   "unit_parse_error": 1
+  },
+  "20": {
+   "right": 498,
+   "unfinished": 4,
+   "wrong_value": 9,
+   "unit_parse_error": 1
+  },
+  "40": {
+   "right": 404,
+   "wrong_value": 91,
+   "missing_unit": 17
+  }
+ },
+ "percent": {
+  "0": {
+   "right": 92.0,
+   "unfinished": 5.3,
+   "wrong_value": 2.1,
+   "no_answer": 0.4,
+   "unit_parse_error": 0.2
+  },
+  "20": {
+   "right": 97.3,
+   "unfinished": 0.8,
+   "wrong_value": 1.8,
+   "unit_parse_error": 0.2
+  },
+  "40": {
+   "right": 78.9,
+   "wrong_value": 17.8,
+   "missing_unit": 3.3
+  }
+ }
+}

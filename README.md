@@ -69,6 +69,14 @@ which is a knowledge gap. The SFT model solves about half of them once it has ro
 mostly missing or wrong science, and neither SFT nor RL changed them (§7.2). Therefore, mid-training is
 not the next step for the numbers. For the reports, the cheapest test is knowledge-dense SFT data (§8.2).
 
+These results set up the next runs. At 32K, RL step 20 is above SFT by 1.9 points on D-Num-hard [−0.7, +4.6] and
+by 4.6 on D-Fresh [−0.8, +10.4], both inside the noise. Before the next RL run started, I fixed this paired
+comparison at 32K as its test of success. RL v2 re-grades the bank with the SFT model so that more of the groups
+carry gradient. It leaves the report task out, halves the learning rate, and pauses when its dev answers start to
+give wrong values (§8.3). For the reports, the teacher writes answers from 3,000 openly licensed papers, SFT v2
+learns them closed-book, and RL v3 starts from SFT v2 (§8.4). Both runs are queued, and their results are not in
+yet.
+
 Most of the month went to systems. The one 8-node job ran 71.9 hours: 28.7 of them ran the planned stages,
 and 43.2 went to incidents, waits and holds, 35.1 of those before SFT could start (§9.2). A 9B model on
 40 GB GPUs leaves no slack: the last pipeline stage peaked at 40,366 of 40,437 MiB (§5.3). Each incident
@@ -189,6 +197,11 @@ sbatch -A <allocation> scripts/slurm/data.slurm sft
 
 # --- one 8-node job: baseline eval → SFT → SFT eval → RL-entry gate → RL → final eval
 sbatch -A <allocation> scripts/slurm/campaign.slurm
+
+# --- the next runs (§8.3, §8.4): RL v2; knowledge data; SFT v2 → RL v3 -------
+scripts/slurm/submit_window.sh rl-build-queue          # 8 nodes: bank v2 if missing → 24K test → RL v2 → final eval
+sbatch -A <allocation> scripts/slurm/knowledge.slurm   # 1 node: report data from papers, then the SFT v2 mix
+scripts/slurm/submit_window.sh sft-v2-queue            # 8 nodes: SFT v2 → its eval → RL v3 → final eval
 
 # --- figures in this README, from the result files in docs/talk/data/ -----
 python scripts/readme_figures.py
@@ -808,20 +821,138 @@ The one data point, from the reference plan's 27B line, gained +1.1 D-Num inside
 in the queue.
 
 The report shortfalls are knowledge, and SFT and RL left them untouched (§7.2). Therefore, the next test is
-the cheap one: knowledge-dense SFT data for reports, drawn from textbooks and reviews (~24 node-hours).
-Continued pretraining waits until that test has worked.
+the cheap one: knowledge-dense SFT data for reports, written from openly licensed papers (§8.4). Continued
+pretraining waits until that test has worked.
 
-### 8.3 What changes in RL v2
+### 8.3 RL v2: the test, the changes, the job
 
-RL v2 changes what run 1 measured as broken and keeps everything else the same, so that the comparison
-isolates data and reward:
-- the bank is re-graded with the SFT policy: 8/8 problems dropped, 0/8 problems in a hard pool, harder
-  problems drawn more often, 12 hard and 6 long new families; at least 40% of T1 groups mixed at step 1,
-  or RL does not start;
-- T3 rubrics become atomic yes/no checks with quoted evidence;
-- a dev pass and a checkpoint every 10 steps, a pause when dev D-Num falls 3 points below its best, and a
-  warning when T1 answers shrink by 60% within 30 steps;
-- each stage runs in a reserved window, because an 8-node job otherwise waits days (§9.2).
+**The test comes first.** Before RL v2 runs, its success is fixed: at the 32K budget, D-Num-hard and D-Fresh
+above SFT by more than their noise. Here that means the 95% interval of the paired per-item difference lies
+above zero (items resampled, 10,000 draws). One 32K run gives three budgets, because a budget only caps an
+answer and does not change the sampling. At 16K an answer counts if it used at most 16,384 tokens. At 64K the
+answers whose thinking did not end within 32K are continued by the same model, as in §7.3
+(`python -m dpt.eval.budget compare`). Run 1's step 20 on this test:
+
+| set (items) | budget | SFT | RL step 20 | RL − SFT [95%] |
+|---|---|---|---|---|
+| D-Num-hard (160) | 16K | 47.8 | 58.0 | **+10.2** [+7.5, +12.9] |
+| | 32K | 68.1 | 70.1 | +1.9 [−0.7, +4.6] |
+| | 64K | 83.9 | 77.5 | **−6.4** [−9.0, −3.8] |
+| D-Fresh (60) | 16K | 66.9 | 77.9 | **+11.0** [+5.0, +17.5] |
+| | 32K | 78.8 | 83.3 | +4.6 [−0.8, +10.4] |
+
+Source: `docs/talk/data/budgets_1111.json`. D-Fresh at 64K still needs the continuations of SFT's 41 and run
+1's 12 cut-off answers; RL v2's final evaluation adds them.
+
+Run 1 passes at 16K and fails at 32K. It made the model faster and did not make it more reliable.
+
+**The changes, each with the evidence behind it:**
+
+| change | evidence from run 1 | where |
+|---|---|---|
+| the bank re-graded with the SFT model (8 samples, 16K): problems solved 8/8 dropped, problems solved 0/8 in a hard pool that joins at step 34 with a 10% share; harder problems drawn 3, 2 or 1 times per epoch (pass rate ≤ 3/8, ≤ 5/8, ≤ 7/8); 12 hard and 6 long numeric families added | in steps 1–20, 87% of the numeric and code groups had all 8 samples right and gave no gradient (§6.3) | `dpt.data.difficulty`, `configs/rl/rl_9b_v2.yaml` |
+| a bank gate: at least 40% of numeric groups expected to have mixed results at step 1 | run 1 had 13% | `dpt.data.bank_merge check` |
+| run 1's dev split kept, and its problems kept out of training | the re-grading drops the dev problems the SFT model solves, so a newly drawn split would differ from run 1's and leak its problems into training | `dpt.data.bank_merge pin-dev` |
+| no report task in training; numeric 60%, code 25%, general 15% of the prompts | the test is numeric; the report reward is lenient (§6.5), and its atomic version is not yet checked against the second judge; the general tasks were 21% of the prompts and gave a median 57% of the gradient | `configs/rl/rl_9b_v2.yaml` |
+| half the learning rate: 1e-6, then 5e-7 | run 1 (2e-6, then 1e-6) peaked on dev at step 20 and drifted after it (§6.4) | `configs/rl/rl_9b_v2.yaml` |
+| 24K-token responses with the MTP head frozen, if one training step at full length fits in memory; else 16K | run 1 trained at 16K and was tested at 32K; with the MTP head trained, 24K does not fit the last pipeline stage (§6.1) | `scripts/slurm/rl_v2_job.sh` |
+| a dev pass and a checkpoint every 10 steps; a pause when dev D-Num falls 3 points below its best, or when the share of numeric dev answers with a wrong value rises 3 points above its lowest | from step 20 to step 40, dev D-Num went from 97.3 to 78.9, wrong values from 1.8% to 17.8%, and unfinished answers from 0.8% to 0% | `dpt.monitoring.alerts`, `docs/talk/data/run1_dev_outcomes.json` |
+
+The bank gate uses each problem's pass rate $`r`$ under the SFT model. A group of 8 samples of that problem has
+mixed results with probability
+
+```math
+P_{\text{mixed}}(r) = 1 - r^{8} - (1 - r)^{8},
+```
+
+and the gate averages it over the numeric problems of the main pool. The estimate is optimistic: a problem
+graded 7/8 may really be solved 95% of the time.
+
+The atomic report rubrics are built: each criterion becomes 1–6 yes/no checks, and each "yes" needs a quoted
+span. They wait for a run that trains reports again, and before that they have to agree with the second judge.
+
+**How it runs.** RL v2 is one 8-node job of 48 hours, queued before its bank existed. If the bank is missing when
+the job starts, the job builds it on its own nodes: the teacher and Gemma on 2 nodes and the SFT model on the
+other 6, and the teacher nodes switch to the SFT model when their part is done. Then come the 24K test, RL, and
+the final evaluation at the three budgets. The job reads its steps from the repository when it starts, so they
+can still be fixed during the days it waits in the queue (`scripts/slurm/rl_v2_queue.slurm`,
+`scripts/slurm/rl_v2_job.sh`).
+
+```bash
+scripts/slurm/submit_window.sh rl-build-queue      # bank v2 if missing → 24K test → RL v2 → final evaluation
+```
+
+**A job that waits days in the queue should read its steps when it starts.**
+
+Caveats, plainly:
+- one seed per run;
+- D-Fresh has 60 problems, so its interval is about ±5 points;
+- with the report task left out, RL v2 cannot improve D-Report.
+
+### 8.4 Knowledge-dense report data and SFT v2
+
+A model learns most of its facts in pretraining. A few thousand SFT rows mostly change how it answers, and
+adding knowledge usually means continued pretraining on domain text. Here the report shortfalls are missing
+science (§7.2), and continued pretraining is not justified yet (§8.2). The cheaper test is SFT rows whose
+answers carry the facts. A teacher answering from memory passes on only what it already knows. Therefore, I let
+the teacher write each answer from a paper it can read, and train the student on the question alone.
+
+**The papers.** The corpus holds 19,945 full texts. OpenAlex gives the license of the copy that was downloaded,
+and 7,642 of them are CC-BY, CC-BY-SA, CC0 or public domain. From these I took 3,000 seismology papers dated
+before August 2026 (D-Fresh was written later). Each paper is cut at its acknowledgments or references and split
+into sections of 4,000–9,000 characters: 8,286 sections, median 7,350 characters
+(`docs/talk/data/knowledge_selection.json`).
+
+**One section, step by step** (`src/dpt/data/gen/knowledge.py`):
+1. The teacher writes 2 report questions that a specialist understands without the paper, each with the key
+   facts from the section that a good answer needs.
+2. For each question, the teacher writes a short plan and a report of about 550 words, D-Report's length. The
+   section is given as notes that it must treat as its own knowledge. Its thinking still refers to those notes,
+   so the thinking is dropped. The plan is written under the same rules and becomes the row's thinking.
+3. An answer is kept when the plan and the report name no source the reader cannot see (notes, an excerpt, the
+   paper, its authors, figures or tables), the report has 300–900 words, and Gemma finds no statement that
+   contradicts the section, at most 2 claims it cannot support, and a knowledge score of at least 3 of 5.
+4. Each kept report ends with a References line that cites the source paper (authors, year, title, DOI). The
+   report prompt asks for references and the report reward checks them (§6.2), and the source paper is the one
+   reference the row can give with certainty.
+
+```
+teacher sees:    a section of the paper (as notes) + a report question
+student sees:    the report question
+student learns:  a plan → the report → the source paper as its reference
+```
+
+The SFT mix builder then treats these rows like any other: admission, quality, decontamination against every
+eval set (n-grams, embeddings and the teacher as a paraphrase judge), and rendering (§4.4, §4.5). D-Report was
+drafted from topics with no source papers, so the risk left is wording close to its questions, and the
+decontamination checks that.
+
+**SFT v2 and RL v3.** SFT v2 continues SFT v1 for one epoch at half its peak learning rate (4e-6). It trains on the
+knowledge rows plus a replay sample of the v1 mix with twice their tokens, so it keeps what v1 taught, including
+the 25% self-distilled share. A new SFT from the base would take much of a 48-hour job, and this takes about an
+hour. RL v3 then runs RL v2's recipe from SFT v2, so comparing RL v3 with RL v2 isolates the SFT start. All of it
+is one 8-node job: SFT v2, its evaluation, RL v3 and the final evaluation (`scripts/slurm/sft_v2_job.sh`).
+
+What will be measured: D-Report under both judges for SFT v2 and RL v3; D-Num-hard and D-Fresh at the three
+budgets against SFT v1; the general sets, to see what the new facts cost. There are no results yet. The data
+is generated on one node (the teacher and Gemma), and a stopped job resumes where it ended.
+
+```bash
+python -m dpt.data.gen.knowledge licenses --corpus fulltext.jsonl preprints.jsonl --out data/knowledge/licenses.jsonl
+python -m dpt.data.gen.knowledge select --corpus fulltext.jsonl preprints.jsonl \
+    --licenses data/knowledge/licenses.jsonl --out data/knowledge/chunks.jsonl --max-papers 3000
+sbatch -A <allocation> scripts/slurm/knowledge.slurm   # questions → answers → checks, then the SFT v2 mix
+scripts/slurm/submit_window.sh sft-v2-queue            # SFT v2 → its evaluation → RL v3 → final evaluation
+```
+
+**SFT teaches the facts that are in its answers. To add knowledge, write the answers from a source and train
+without it.**
+
+Caveats, plainly:
+- the questions, answers and checks are all made by models, and no person reads them;
+- one epoch may be too little for a 9B model to recall the facts without the paper;
+- Gemma's support check reads only the section, so a claim from outside it is judged by what Gemma itself
+  knows.
 
 ---
 
@@ -920,7 +1051,8 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   - human gold labels for any reward or test (the blind review is ready and has not been run);
   - a second seed, and any scaling curve in data, model size or RL steps;
   - the 27 unclear refusal answers;
-  - the cause of the RL collapse.
+  - the cause of the RL collapse;
+  - whether RL v2, or SFT v2 followed by RL v3, beats SFT at 32K (the test of §8.3; both runs are queued).
 
 ---
 
@@ -931,13 +1063,13 @@ Report portable units. "56 RL steps" means nothing on another batch size. "56 st
 
 | axis | measured here | what to add |
 |---|---|---|
-| SFT data | one mix: 13,095 conversations, 44.1M tokens, one run | a data sweep (¼, ½, 1×) on D-Num-hard and D-Report |
+| SFT data | one mix: 13,095 conversations, 44.1M tokens, one run | a data sweep (¼, ½, 1×) on D-Num-hard and D-Report; report rows written from papers (SFT v2, §8.4) |
 | RL compute | 56 steps × 1,008 samples, ~3.7 h on 8 nodes; good to step 20 | a second seed; a run that survives past step 20 |
 | model size | 9B only (the 27B line does not fit 40 GB GPUs for RL) | the 27B on 80 GB GPUs, or 4B as a cheap probe |
 | mid-training | none (§8.2) | a small token sweep, only after knowledge-dense SFT data is tried |
 | test-time compute | budgets 2K–32K and votes 1–64 on D-Num; budgets up to 64K on D-Num-hard (§7.3) | one more effort level |
 | evaluation | 770 domain items, one budget, model-made references | human gold for ~100 reports and ~200 numeric edge cases |
-| systems | 8 × 3 A100-40GB, TP1 × PP8 × DP3, a 3-day queue | reserved windows (RL v2) |
+| systems | 8 × 3 A100-40GB, TP1 × PP8 × DP3, a 3-day queue | each run as one job that reads its steps when it starts (§8.3) |
 
 What limited this run, in order: the queue and the systems (§9), the policy already solving most of its
 training problems (§6.3), and an answer-length drift that RL could not hold (§6.4). Model knowledge is the
@@ -962,7 +1094,7 @@ a bug in one cannot hide in the other.
 qwen-seis-posttrain/
 ├── src/dpt/
 │   ├── data/            # pipeline: ingest, quality, dedup, decontamination, verification, difficulty, bank and SFT builds
-│   │   └── gen/         # problem generators: T1 solver families, T2 code, T3 rubrics, T4 general (held-out ones not published)
+│   │   └── gen/         # problem generators: T1 solver families, T2 code, T3 rubrics, T4 general, report data from papers (held-out ones not published)
 │   ├── rewards/         # the RL rewards: numeric, code sandbox, judge, instruction checks, citations, length, hack patterns
 │   ├── rl/              # framework-free RL math: advantage, loss, TIS, filtering, curriculum, mismatch, partial rollout
 │   ├── verl_ext/        # how verl runs it: reward function, sampler, trainer hooks, and the runtime patches
@@ -976,7 +1108,7 @@ qwen-seis-posttrain/
 ├── configs/             # model lines, hardware profiles, data, SFT, RL, eval (one YAML per experiment)
 ├── scripts/
 │   ├── 00_setup_env.sh … 08_audit.sh   # the stages as plain scripts, any machine
-│   ├── slurm/            # Slurm job scripts: the campaign, the reserved windows (README.md has the commands)
+│   ├── slurm/            # Slurm job scripts: the campaign, RL v2 and SFT v2 → RL v3 as one 8-node job each, the knowledge data (README.md has the commands)
 │   ├── talk/            # analyses behind the reports: collection, failure types, judge drift, refusals
 │   └── readme_figures.py   # every figure in this README
 ├── tests/               # CPU unit tests, mirroring src/dpt

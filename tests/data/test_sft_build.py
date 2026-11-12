@@ -87,3 +87,17 @@ def test_effort_rendering_failure_is_dropped():
     s = _s("domain_reasoning", think="a careful derivation of the travel time", verified=True)
     res = build_sft([s], XhighDefaultTok(), SFTBuildConfig())
     assert not res.samples and res.dropped[0]["reason"].startswith("render_effort")
+
+
+def test_replay_mix_adds_old_rows_up_to_the_token_ratio():
+    """SFT v2 (2026-11-11): the knowledge rows plus a seeded sample of the v1 mix with 2× their tokens."""
+    from dpt.data.sft_build import replay_mix
+
+    new = [{"uid": f"k{i}", "subset": "knowledge_report", "meta": {"n_tokens": 100}} for i in range(10)]
+    old = [{"uid": f"o{i}", "subset": "self_distill" if i % 4 == 0 else "domain_reasoning", "meta": {"n_tokens": 50}}
+           for i in range(200)]
+    rows, summary = replay_mix(new, old, replay_token_ratio=2.0, seed=1)
+    assert summary["new_tokens"] == 1000 and summary["replay_tokens"] == 2000 and summary["replay_rows"] == 40
+    assert len(rows) == 50 and summary["tokens_by_subset"]["knowledge_report"] == 1000
+    assert replay_mix(new, old, replay_token_ratio=2.0, seed=1)[0] == rows                    # seeded
+    assert replay_mix(new, old, replay_token_ratio=2.0, seed=2)[0] != rows

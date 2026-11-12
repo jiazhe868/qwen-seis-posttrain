@@ -7,7 +7,9 @@
 tlog()  { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 tdie()  { tlog "FAIL $*"; exit 1; }
 dry()   { [[ "${DPT_SLURM_DRY_RUN:-0}" == 1 ]]; }
-run()   { if dry; then printf 'DRY:'; printf ' %q' "$@"; printf '\n'; else "$@"; fi; }
+# A dry-run line is printed in one write: background steps (one per node) print at the same time, and three
+# separate writes let their lines interleave (2026-11-12: a test counted 7 of 8 SFT launches).
+run()   { if dry; then printf 'DRY:%s\n' "$(printf ' %q' "$@")"; else "$@"; fi; }
 # The id of the job `sbatch --parsable` just queued: its last output line, without the cluster name. The cluster's
 # submit filter prints its banner on stdout as well (2026-10-25).
 job_id() { tail -n 1 | cut -d';' -f1; }

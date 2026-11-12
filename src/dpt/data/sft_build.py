@@ -11,6 +11,8 @@ tool_traj           80M tok    ``meta.exec_ok`` and ``meta.hidden_tests_passed``
 self_distill       105M tok    ``meta.generated_by == base model``: the base's own answers on
                    (25%)       general prompts, keeping its format, tone and tool-call habits
 report              25M tok    ``meta.rubric`` present: expert-written. The rubric is reused by T3.
+knowledge_report               ``meta.knowledge_checked``: written from an openly licensed paper and passed
+                               the Gemma check (dpt.data.gen.knowledge, 2026-11-11; SFT v2 only)
 =================  ==========  =================================================================
 
 Then, in order:
@@ -30,6 +32,12 @@ Then, in order:
    packed-sequence support, so every micro-batch is padded. Bucketing keeps
    that padding small. :func:`padding_stats` reports the overhead against the
    < 8% target.
+
+SFT v2 (2026-11-11) continues from SFT v1 on the knowledge rows (dpt.data.gen.knowledge), built by the same stages,
+plus a replay sample of the v1 mix so the model keeps what v1 taught (:func:`replay_mix`)::
+
+    python -m dpt.data.sft_build replay-mix --new $DATA/v2_knowledge/sft/sft_train.jsonl \
+        --old $DATA/v1/sft/sft_train.jsonl --replay-token-ratio 2.0 --out $DATA/sft_v2/sft_train.jsonl
 """
 
 from __future__ import annotations
@@ -40,7 +48,8 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
-from dpt.common.io import read_jsonl
+from dpt.common.hashing import short_hash
+from dpt.common.io import read_jsonl, write_json, write_jsonl
 from dpt.common.logging import get_logger
 from dpt.data.quality import QualityConfig, quality_issues
 from dpt.data.schema import SchemaError, SFTSample
@@ -76,6 +85,8 @@ def admission_reason(s: SFTSample, cfg: SFTBuildConfig) -> str | None:
         return "not_generated_by_base"
     if s.subset == "report" and not m.get("rubric"):
         return "missing_rubric"
+    if s.subset == "knowledge_report" and m.get("knowledge_checked") is not True:
+        return "knowledge_not_checked"
     return None
 
 
@@ -286,3 +297,53 @@ def build_sft(
     res.samples = final
     res.stage_stats = stats
     return res
+
+
+def replay_mix(new: Sequence[dict[str, Any]], old: Sequence[dict[str, Any]], *, replay_token_ratio: float,
+               seed: int = 1) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The new built rows plus a seeded random sample of old built rows holding ``replay_token_ratio`` × the new rows'
+    tokens. Rows are drawn whole and in a hashed order, so the sample keeps the old mix's subset shares on average,
+    its 25% self-distilled replay included."""
+    new_tokens = sum(int(r["meta"]["n_tokens"]) for r in new)
+    picked, replay_tokens = [], 0
+    for r in sorted(old, key=lambda r: short_hash(f"{seed}|replay|{r['uid']}")):
+        if replay_tokens >= replay_token_ratio * new_tokens:
+            break
+        picked.append(r)
+        replay_tokens += int(r["meta"]["n_tokens"])
+    rows = sorted(list(new) + picked, key=lambda r: r["uid"])       # the trainer shuffles; this order is stable
+    tokens: Counter = Counter()
+    for r in rows:
+        tokens[r["subset"]] += int(r["meta"]["n_tokens"])
+    return rows, {"rows": len(rows), "new_rows": len(new), "replay_rows": len(picked), "new_tokens": new_tokens,
+                  "replay_tokens": replay_tokens, "tokens_by_subset": dict(tokens)}
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    import argparse
+    from pathlib import Path
+
+    from dpt.common.manifest import build_manifest, load_manifest, manifest_path_for, write_manifest
+
+    ap = argparse.ArgumentParser(description="SFT mixture tools")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("replay-mix", help="new built rows + a replay sample of an older built mix")
+    r.add_argument("--new", required=True, type=Path)
+    r.add_argument("--old", required=True, type=Path)
+    r.add_argument("--replay-token-ratio", type=float, default=2.0)
+    r.add_argument("--seed", type=int, default=1)
+    r.add_argument("--out", required=True, type=Path)
+    a = ap.parse_args(argv)
+    rows, summary = replay_mix(list(read_jsonl(a.new)), list(read_jsonl(a.old)),
+                               replay_token_ratio=a.replay_token_ratio, seed=a.seed)
+    write_jsonl(a.out, rows)
+    parents = {str(p): load_manifest(p).content_hash for p in (a.new, a.old) if manifest_path_for(p).exists()}
+    write_manifest(build_manifest(a.out, name="sft_train", version="v2", parents=parents,
+                                  notes=f"SFT v2: {a.new.name} + replay of {a.old} ({a.replay_token_ratio}× tokens)"))
+    write_json(a.out.with_suffix(".summary.json"), summary)
+    log.info("replay mix: %s", summary)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

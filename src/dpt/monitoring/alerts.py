@@ -332,6 +332,9 @@ class BestDropRule(Rule):
     Run 1 (rl9b_seed1) had dev D-Num 92.0 → 97.3 at step 20 → 78.9 at step 40 and was stopped only at step 56 by
     the train/rollout mismatch alarm; ``consecutive_drop`` needs three falls in a row. This fires on the first dev
     pass after the turn. ``min_evals`` values must have been seen before it can fire.
+
+    ``better: low`` is for a metric that should stay low, such as the dev wrong-value rate (2026-11-11): the best is
+    then the lowest value so far, and the rule fires when the metric rises more than ``max_drop`` above it.
     """
 
     kind = "best_drop"
@@ -342,15 +345,17 @@ class BestDropRule(Rule):
 
     def check(self, step, key, value, metrics):
         scale, max_drop = float(self.params.get("scale", 1.0)), float(self.params["max_drop"])
+        lower_is_better = self.params.get("better", "high") == "low"
         seen = len(self.hist[key])
         best = self.best.get(key)
-        self.best[key] = value if best is None else max(best, value)
+        self.best[key] = value if best is None else (min(best, value) if lower_is_better else max(best, value))
         if best is None or seen < int(self.params.get("min_evals", 1)):
             return None
-        drop = (best - value) * scale
+        drop = ((value - best) if lower_is_better else (best - value)) * scale
         if drop > max_drop:
+            side = "above" if lower_is_better else "below"
             return self._alert(step, key, value, max_drop,
-                               f"{key} is {drop:.2f} points below its best {best:.4g} (limit {max_drop:g})")
+                               f"{key} is {drop:.2f} points {side} its best {best:.4g} (limit {max_drop:g})")
         return None
 
     def state_dict(self):

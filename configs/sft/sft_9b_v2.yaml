@@ -1,0 +1,26 @@
+# =============================================================================
+# SFT v2 on the 9B line (2026-11-12, the user's decision): continued from SFT v1 on the knowledge-dense report rows
+# (dpt.data.gen.knowledge) plus a replay sample of the v1 mix with twice their tokens (data.slurm knowledge).
+#
+# Continued, not a new SFT from the base: a new SFT would take much of job 2's 48 h, and continuing takes ~1 h for
+# ~30M tokens, which leaves the time to RL v3. The replay keeps what v1 taught: its numeric, code and report rows and
+# its 25% self-distilled share. One epoch at half of v1's peak learning rate, so the v1 skills move as little as
+# possible while the new facts are learned.
+#
+#   scripts/slurm/sft.slurm sft/sft_9b_v2.yaml        # inside job 2 (scripts/slurm/sft_v2_job.sh)
+# =============================================================================
+defaults_from: sft_9b.yaml
+requires_model_line: qwen35_9b
+
+sft:
+  run_name: sft${project.model.tag}_v2_seed${project.seed}
+  train_files: ["${project.paths.data_root}/sft_v2/sft_train.jsonl"]
+  epochs: 1
+  lr_peak: 4.0e-6
+  lr_warmup_steps: 20
+
+verl_sft:
+  # SFT v1's HF export, from its copy on $WORK ($SCRATCH files left unread for 10 days are purged). sft.base_model
+  # stays the base model: the export restores the frozen vision tower and the configs from it.
+  model.path: ${oc.env:WORK,.}/dpt/exports/sft${project.model.tag}_seed1
+  optim.min_lr: 4.0e-7                   # absolute on Megatron (= lr_min_ratio × lr_peak)

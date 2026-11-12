@@ -1,0 +1,13 @@
+# =============================================================================
+# RL v3 on the 9B line (2026-11-12): RL v2's recipe (rl_9b_v2.yaml) started from SFT v2 (sft_9b_v2.yaml: SFT v1
+# continued on the knowledge-dense report rows) instead of SFT v1. The same bank v2, dev split, mix, learning rate
+# and stop rules, so the comparison with RL v2 isolates the SFT start.
+#
+#   DPT_RL_CONFIG=rl/rl_9b_v3.yaml DPT_FINAL_ROW=rl_v3_seed1 bash scripts/slurm/rl_v2_job.sh    # inside job 2
+# =============================================================================
+defaults_from: rl_9b_v2.yaml
+requires_model_line: qwen35_9b
+
+rl_run:
+  run_name: rl${project.model.tag}_v3_seed${project.seed}
+  init_checkpoint: ${oc.env:WORK,.}/dpt/exports/sft${project.model.tag}_v2_seed1

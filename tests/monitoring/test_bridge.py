@@ -48,3 +48,10 @@ def test_mtp_acceptance_falls_back_to_vllm_counters():
     assert to_canonical({"rollout/spec_accept_rate_counters": 0.66})[K.MTP_ACCEPTANCE] == 0.66
     both = {"rollout/spec_accept_rate": 0.7, "rollout/spec_accept_rate_counters": 0.5}
     assert to_canonical(both)[K.MTP_ACCEPTANCE] == 0.7          # verl's per-request metric wins
+
+
+def test_dev_t1_wrong_values_and_unfinished_answers_in_percent():
+    out = to_canonical({"val-aux/t1_num/gold_wrong_value/mean@4": 0.178, "val-aux/t1_num/gold_unfinished/mean@4": 0.0,
+                        "val-aux/t4_general/gold_wrong_value/mean@4": -1.0})
+    assert abs(out[K.DEV_T1_WRONG_VALUE] - 17.8) < 1e-9 and out[K.DEV_T1_UNFINISHED] == 0.0
+    assert "gold/t1_num" not in out                                       # the gold score has its own key

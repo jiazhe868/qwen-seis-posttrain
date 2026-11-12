@@ -470,7 +470,8 @@ def filter_by_problem(samples: list[SFTSample], keep_from: str | None,
 
 def stage_sft(ctx: Context) -> None:
     sc = ctx.dp["sft"]
-    paths = {k: str(_repo_path(v)) for k, v in ctx.dp["inputs"]["sft_subsets"].items()}
+    # a subset set to null is left out (the knowledge mix of 2026-11-11 builds that subset alone)
+    paths = {k: str(_repo_path(v)) for k, v in ctx.dp["inputs"]["sft_subsets"].items() if v}
     samples, schema_errors = load_subsets(paths)
     samples, problem_filter = filter_by_problem(samples, sc.get("keep_problems_from"),
                                                 sc.get("exclude_problems_from") or [])

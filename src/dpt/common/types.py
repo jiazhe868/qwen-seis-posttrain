@@ -27,7 +27,8 @@ D_NUM, D_CODE, D_REPORT, D_FRESH = "d_num", "d_code", "d_report", "d_fresh"
 EVAL_SETS: tuple[str, ...] = (D_NUM, D_CODE, D_REPORT, D_FRESH)
 
 # --- SFT subsets (report: "SFT 语料") -----------------------------------------------------------
-SFT_SUBSETS: tuple[str, ...] = ("domain_reasoning", "tool_traj", "self_distill", "report")
+# knowledge_report (2026-11-11): T3 rows written by the teacher from openly licensed papers (dpt.data.gen.knowledge)
+SFT_SUBSETS: tuple[str, ...] = ("domain_reasoning", "tool_traj", "self_distill", "report", "knowledge_report")
 
 
 def check_task(task: str) -> str:

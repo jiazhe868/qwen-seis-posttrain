@@ -48,6 +48,8 @@ HACK_RATE = "hack/{category}/rate"
 # --- evaluation during training ----------------------------------------------------------------
 DEV_D_NUM = "dev/d_num"
 DEV_D_NUM_CI = "dev/d_num_ci_halfwidth"
+DEV_T1_WRONG_VALUE = "dev/t1_wrong_value"  # % of T1 dev answers that finished with a wrong value (gold grader)
+DEV_T1_UNFINISHED = "dev/t1_unfinished"  # % of T1 dev answers whose thinking never ended
 GENERAL_REPLAY_REWARD = TASK_REWARD.format(task="t4_general")
 
 

@@ -13,6 +13,9 @@
 #   main     every set at medium; D-Report judged pairwise against base_medium by Gemma
 #   hard     D-Num-hard (the frozen 160 items), as the base, SFT and run 1 were scored
 #   k64      D-Num with 64 samples (pass@k), only if listed in DPT_FINAL_PHASES
+#   budgets  the answers whose thinking did not end within 32K, continued to 64K by the same model (D-Num-hard,
+#            D-Fresh; SFT's too if missing), then the three-budget table with paired intervals against SFT
+#            ($R/budgets_rl_v2_seed1.json, dpt.eval.budget compare). RL v2's success test is its 32K column.
 #   report   scripts/07_final_eval.sh --report-only with rl_v2_seed1 as the gate candidate
 # Layout as in October:
 #   - this node: the T2 sandbox (:8080) and Gemma ×3 (:8101-8103, proxy :8100);
@@ -21,14 +24,16 @@
 #
 #   sbatch -A PROJ --reservation=<name> --dependency=afterany:<RL job> scripts/slurm/final_eval_window.slurm
 #
-# DPT_FINAL_PHASES (default select,export,main,hard,report); DPT_FINAL_STEP=<n> skips the dev selection;
+# DPT_FINAL_ROW (default rl_v2_seed1), DPT_FINAL_RUN (its RL run directory) and DPT_FINAL_EXPORT (default
+# <run>/hf_export) name another model: job 2 evaluates SFT v2 (phases main,hard,budgets on its export) and RL v3.
+# DPT_FINAL_PHASES (default select,export,main,hard,budgets,report); DPT_FINAL_STEP=<n> skips the dev selection;
 # DPT_CANCEL_JOB=<id> cancels that job first (the RL run's judge server, no longer needed).
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 source scripts/slurm/env.sh
 source scripts/slurm/lib.sh
 export HF_HUB_OFFLINE=1
-PHASES="${DPT_FINAL_PHASES:-select,export,main,hard,report}"
+PHASES="${DPT_FINAL_PHASES:-select,export,main,hard,budgets,report}"
 mapfile -t NODES < <(job_nodes)
 (( ${#NODES[@]} >= 2 )) || tdie "this job needs the RL nodes (8), it has ${#NODES[@]}"
 HEAD="${NODES[0]}"; WORKERS=("${NODES[@]:1}")
@@ -40,7 +45,8 @@ p = load_config().project
 print(p.paths.eval_root, p.paths.ckpt_root, p.judges.primary.hf_id, p.model.tag, p.model.base, p.paths.eval_secure_root)
 PY
 )"
-ROW=rl_v2_seed1; RUN="${CK}/rl/rl${TAG}_v2_seed1"; EXPORT="${RUN}/hf_export"
+ROW="${DPT_FINAL_ROW:-rl_v2_seed1}"; RUN="${DPT_FINAL_RUN:-${CK}/rl/rl${TAG}_v2_seed1}"
+EXPORT="${DPT_FINAL_EXPORT:-${RUN}/hf_export}"
 EP="http://127.0.0.1:8000"
 OV=(eval_suite.sandbox_endpoint=http://127.0.0.1:8080 eval_suite.judge.endpoint=http://127.0.0.1:8100
     eval_suite.judge.model=judge eval_suite.judge.max_concurrency=24 eval_suite.max_concurrency=384)
@@ -49,11 +55,11 @@ phase() { tlog "final eval: $*"; }
 [[ -z "${DPT_CANCEL_JOB:-}" ]] || run scancel "${DPT_CANCEL_JOB}" || true
 
 # ---- servers --------------------------------------------------------------------------------------------------
-start_replicas() {   # start_replicas <host> <model> <served name> <first port> [env]: one server per GPU
-  local host="$1" model="$2" name="$3" port0="$4" extra="${5:-}" g
+start_replicas() {   # start_replicas <host> <model> <served name> <first port> [env] [max_model_len]: one per GPU
+  local host="$1" model="$2" name="$3" port0="$4" extra="${5:-}" maxlen="${6:-40960}" g
   for g in 0 1 2; do
     on_node "${host}" bash -c "${extra} DPT_VLLM_DP=1 CUDA_VISIBLE_DEVICES=${g} GPU_MEM=0.9 setsid nohup bash \
-scripts/serve_vllm.sh '${model}' '${name}' $((port0 + g)) 40960 1 > '${LOGS}/${name}_${host}_$((port0 + g)).log' \
+scripts/serve_vllm.sh '${model}' '${name}' $((port0 + g)) ${maxlen} 1 > '${LOGS}/${name}_${host}_$((port0 + g)).log' \
 2>&1 < /dev/null & echo \$! > '${PIDS}/${host}_$((port0 + g))'"
   done
 }
@@ -81,6 +87,28 @@ stop_all() {
   done
 }
 trap stop_all EXIT
+gpus_free() {        # wait up to 5 min until no process holds a GPU on this job's nodes
+  dry && return 0
+  local h i busy
+  for i in $(seq 1 30); do
+    busy=0
+    for h in "${NODES[@]}"; do
+      [[ -z "$(on_node "${h}" nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null)" ]] || busy=1
+    done
+    (( busy )) || return 0
+    sleep 10
+  done
+  tlog "WARN GPUs still in use 5 min after stopping the servers"
+}
+serve_64k() {        # serve_64k <model> <served name>: one replica per GPU on every node at 64K + prompt, proxy :8000
+  local urls=() args=() h p
+  for h in "${NODES[@]}"; do start_replicas "${h}" "$1" "$2" 8001 DPT_GDN_MODEL=1 67584; done
+  for h in "${NODES[@]}"; do for p in 8001 8002 8003; do urls+=("http://${h}:${p}"); done; done
+  wait_backends "${urls[@]}"
+  for p in "${urls[@]}"; do args+=(--backend "${p}"); done
+  start_here 8000 python scripts/rr_proxy.py --port 8000 "${args[@]}"
+  wait_backends "http://${HEAD}:8000"
+}
 harness() { run python -m dpt.eval.harness --endpoint "${EP}" "$@" "${OV[@]}"; }
 
 # ---- 1-2: the RL checkpoint ----------------------------------------------------------------------------------
@@ -134,7 +162,35 @@ if want main || want hard || want k64; then
   fi
 fi
 
-# ---- 6: report and ship gates ------------------------------------------------------------------------------------
+# ---- 6: 64K by continuation, and the three-budget table --------------------------------------------------------
+# A 64K sample equals the 32K one up to token 32K, so only the answers whose thinking did not end are continued
+# (dpt.eval.budget). The judge and the sandbox are not needed: every GPU serves the model, at max_model_len 67,584.
+if want budgets; then
+  stop_all; gpus_free
+  phase "${ROW}: answers cut at 32K continued to 64K"
+  serve_64k "${EXPORT}" "${ROW}"
+  for s in d_num_hard d_fresh; do
+    run python -m dpt.eval.budget continue --set "${s}" --row "${ROW}" --endpoint "${EP}" --served-model "${ROW}" \
+      --concurrency 96 2>&1 | tee -a "${LOGS}/budgets.log"
+  done
+  stop_all; gpus_free
+  SFT_LEFT=0
+  dry || SFT_LEFT="$(python -m dpt.eval.budget todo --set d_fresh --row sft)"
+  if (( SFT_LEFT > 0 )); then
+    phase "sft: ${SFT_LEFT} D-Fresh answers cut at 32K continued to 64K"
+    serve_64k "${WORK}/dpt/exports/sft9b_seed1" sft
+    run python -m dpt.eval.budget continue --set d_fresh --row sft --endpoint "${EP}" --served-model sft \
+      --concurrency 96 2>&1 | tee -a "${LOGS}/budgets.log"
+    stop_all
+  fi
+  phase "three budgets against SFT (${R}/budgets_${ROW}.json)"
+  ROWS="sft,rl_seed1,rl_v2_seed1,sft_v2_seed1,rl_v3_seed1,base_medium"     # rows without generations are skipped
+  [[ ",${ROWS}," == *",${ROW},"* ]] || ROWS="${ROWS},${ROW}"
+  run python -m dpt.eval.budget compare --rows "${ROWS}" --baseline sft \
+    --sets d_num_hard,d_fresh,d_num --out "${R}/budgets_${ROW}.json" 2>&1 | tee -a "${LOGS}/budgets.log"
+fi
+
+# ---- 7: report and ship gates ------------------------------------------------------------------------------------
 if want report; then
   phase "report and ship gates (${ROW})"
   run env DPT_FINAL_CANDIDATE="${ROW}" bash scripts/07_final_eval.sh --report-only 2>&1 | tee "${LOGS}/report.log"
