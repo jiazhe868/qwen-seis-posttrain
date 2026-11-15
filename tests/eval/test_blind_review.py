@@ -112,3 +112,14 @@ def test_import_records_the_review_and_the_report_shows_it(tmp_path):
     assert br["status"] == "done" and br["n"] == 20 and set(br["by_judge"]) == {"primary", "second"}
     md = render_markdown(build_summary({"rl_seed1": row}))
     assert "Blind review, rl_seed1 (20 pairs): reviewer win rate" in md and "primary 100.0%" in md
+    assert br["reviewer"] == "person"
+
+    # a model's review of the same pairs (2026-11-14) is kept apart from the person's and named in the report
+    rc = main(["import", "--row-dir", str(row), "--verdicts", str(tmp_path / "v1.csv"), "--extra-if-gap", "50",
+               "--reviewer", "model"])
+    d_report = read_json(row / "results.json")["sets"]["d_report"]
+    assert rc == 0 and d_report["blind_review_model"]["reviewer"] == "model"
+    assert d_report["blind_review"]["reviewer"] == "person"
+    md = render_markdown(build_summary({"rl_seed1": row}))
+    assert "Blind review by a model, rl_seed1 (20 pairs): reviewer win rate" in md
+    assert "Blind review, rl_seed1 (20 pairs)" in md

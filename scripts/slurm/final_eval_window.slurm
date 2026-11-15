@@ -184,7 +184,7 @@ if want budgets; then
     stop_all
   fi
   phase "three budgets against SFT (${R}/budgets_${ROW}.json)"
-  ROWS="sft,rl_seed1,rl_v2_seed1,sft_v2_seed1,rl_v3_seed1,base_medium"     # rows without generations are skipped
+  ROWS="sft,rl_seed1,rl_v2_seed1,rl_v2_seed2,base_medium"     # rows without generations are skipped
   [[ ",${ROWS}," == *",${ROW},"* ]] || ROWS="${ROWS},${ROW}"
   run python -m dpt.eval.budget compare --rows "${ROWS}" --baseline sft \
     --sets d_num_hard,d_fresh,d_num --out "${R}/budgets_${ROW}.json" 2>&1 | tee -a "${LOGS}/budgets.log"

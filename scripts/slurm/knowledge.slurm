@@ -17,10 +17,11 @@
 #   rr_proxy on :8010 (teacher) and :8110 (Gemma, served as judge_v).
 #
 # The client reads $DATA/knowledge/chunks.jsonl (written on the workstation by `knowledge select`), appends to
-# records.jsonl and caches every reply, so a second job resumes. It starts no new section 50 min before the job's
-# limit, then writes the SFT rows to $DATA/gen/sft/knowledge_report.jsonl (+ .summary.json, counts only). The job that
-# finishes the last section also builds SFT v2's data (data.slurm knowledge: the SFT stage's decontamination, with
-# this job's teacher as its paraphrase judge, then the replay mix) as $DATA/sft_v2/sft_train.jsonl.
+# records.jsonl (each record names its prompt version) and caches every reply, so a second job resumes. It starts
+# no new section 50 min before the job's limit, then writes the SFT rows to $DATA/gen/sft/knowledge_report.jsonl
+# (+ .summary.json, counts only). The job that finishes the last section also builds SFT v2's data (data.slurm
+# knowledge: the SFT stage's decontamination, with this job's teacher as its paraphrase judge, then the replay mix)
+# as $DATA/sft_v2/sft_train.jsonl.
 # Logs: $WORK/dpt/logs/knowledge_<job>/. Dry run: DPT_SLURM_DRY_RUN=1 DPT_KNOWLEDGE_GPUS="NVIDIA H100 80GB HBM3"×n.
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
@@ -40,7 +41,7 @@ export_rows() {
   run python -m dpt.data.gen.knowledge export --records "${K}/records.jsonl" --chunks "${K}/chunks.jsonl" \
     --out "${DATA}/gen/sft/knowledge_report.jsonl" 2>&1 | tee -a "${LOGS}/export.log"
 }
-# One client at a time: records.jsonl and the reply caches are appended to without a lock. A 2 h dev-queue job
+# One client at a time: the records and the reply caches are appended to without a lock. A 2 h dev-queue job
 # leaves at once when another knowledge job runs; a longer job waits for it (a dev job ends within 2 h).
 others() { squeue -h -u "${USER}" -n dpt-knowledge -t R -o %i 2>/dev/null | grep -vx "${SLURM_JOB_ID:-none}" || true; }
 if ! dry; then

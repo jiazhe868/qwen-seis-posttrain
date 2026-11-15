@@ -1,4 +1,4 @@
-"""Blind review of D-Report pairs by a person: the review page and the import of its verdicts.
+"""Blind review of D-Report pairs by a reviewer: the review page and the import of its verdicts.
 
 This is the one human check left on the 9B plan (README §3.1): the only measurement of
 whether the judges agree with a person. The final eval writes ``<row>/d_report/expert_review.jsonl``
@@ -23,7 +23,9 @@ agreement with each judge, and whether batch 2 is needed (after batch 1, the rev
 from a judge's by more than ``extra_if_gap`` points). ``dpt.eval.report`` prints it under the table.
 
 Who reviews: anyone with domain training who has not been reading this model's outputs (they would
-recognize its style).
+recognize its style). On 2026-11-14 the project lead asked a frontier model to review the pairs in place of a
+person. ``import --reviewer model`` records such a review under ``sets.d_report.blind_review_model``, apart from
+a person's, and the report names it as a model's review.
 """
 
 from __future__ import annotations
@@ -275,6 +277,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     i.add_argument("--verdicts", nargs="+", required=True, help="CSV files downloaded from the page")
     i.add_argument("--extra-if-gap", type=float, default=None,
                    help="default: eval_suite.pairwise.blind_review.extra_if_gap")
+    i.add_argument("--reviewer", choices=("person", "model"), default="person",
+                   help="who judged the pairs; a model's review goes to blind_review_model, apart from a person's")
     args = ap.parse_args(argv)
     row_dir = Path(args.row_dir)
     rows = review_rows(row_dir)
@@ -296,12 +300,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     d_report = results.get("sets", {}).get("d_report") or {}
     key_rows = list(read_jsonl(row_dir / "d_report" / "expert_review.KEY.jsonl"))
     summary = summarize(rows, key_rows, read_verdicts(args.verdicts), d_report, extra_if_gap=gap)
-    d_report["blind_review"] = summary
+    summary["reviewer"] = args.reviewer
+    d_report["blind_review" if args.reviewer == "person" else "blind_review_model"] = summary
     write_json(results_path, results)
     judges = ", ".join(f"{r} {v['win_rate_same_pairs']:.1f}% (agree {v['agreement']:.0%})"
                        for r, v in summary["by_judge"].items())
     wr = summary["reviewer_win_rate"]
-    log.info("%d pairs: reviewer %s, judges on the same pairs: %s → %s", summary["n"],
+    log.info("%d pairs: %s reviewer %s, judges on the same pairs: %s → %s", summary["n"], args.reviewer,
              "—" if wr is None else f"{wr:.1f}%", judges or "—", summary["status"])
     if summary["status"] == "needs_batch_2":
         log.warning("the reviewer and a judge differ by %.1f points (> %.0f): review batch 2 "

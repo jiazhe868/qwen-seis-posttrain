@@ -1,4 +1,5 @@
 # =============================================================================
+# Dropped 2026-11-15 with SFT v2 (its data failed an expert audit); job 2 runs rl_9b_v2_seed2.yaml instead.
 # RL v3 on the 9B line (2026-11-12): RL v2's recipe (rl_9b_v2.yaml) started from SFT v2 (sft_9b_v2.yaml: SFT v1
 # continued on the knowledge-dense report rows) instead of SFT v1. The same bank v2, dev split, mix, learning rate
 # and stop rules, so the comparison with RL v2 isolates the SFT start.

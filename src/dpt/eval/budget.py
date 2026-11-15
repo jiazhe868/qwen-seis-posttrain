@@ -197,10 +197,21 @@ def paired_interval(candidate: dict[str, float], baseline: dict[str, float], *, 
             "high": round(float(high), 2)}
 
 
+def read_exclude(path: Path | None) -> set[str]:
+    """Item ids to leave out, one per line ('#' starts a comment). The 2026-11-14 screening of the frozen sets
+    flags items whose gold answer or wording is faulty; the list stays private, results carry counts only."""
+    if path is None:
+        return set()
+    return {line.split("#", 1)[0].strip() for line in Path(path).read_text().splitlines()} - {""}
+
+
 def compare(cfg: dict[str, Any], root: Path, rows: Sequence[str], baseline: str, sets: Sequence[str], *,
-            verify: bool = True) -> dict[str, Any]:
+            verify: bool = True, exclude: set[str] | None = None) -> dict[str, Any]:
+    """Each row's three-budget scores on each set, and its paired difference from the baseline. ``exclude``
+    leaves those item ids out (the screened subset); ``out["excluded"]`` counts them per set."""
+    exclude = exclude or set()
     out: dict[str, Any] = {"collected_at": dt.datetime.now().strftime("%Y-%m-%dT%H:%M"), "baseline": baseline,
-                           "budgets": list(THREE_BUDGETS), "sets": {}}
+                           "budgets": list(THREE_BUDGETS), "sets": {}, "excluded": {}}
     for spec in _set_specs(cfg, sets):
         scored = {}
         for row in rows:
@@ -208,11 +219,14 @@ def compare(cfg: dict[str, Any], root: Path, rows: Sequence[str], baseline: str,
             if not (run_dir / spec.name / "generations.jsonl").exists():
                 continue
             items, gens = row_samples(spec, run_dir, verify=verify)
+            out["excluded"][spec.name] = sum(it.id in exclude for it in items)
+            items = [it for it in items if it.id not in exclude]
             scored[row] = three_budget_scores(spec, items, gens,
                                               read_continuations(continuations_path(root, spec.name, row)))
         entry: dict[str, Any] = {}
         for row, sc in scored.items():
-            e: dict[str, Any] = {"missing_continuations": sc["missing_continuations"]}
+            e: dict[str, Any] = {"items": len(sc["per_item"][THREE_BUDGETS[0]]),
+                                 "missing_continuations": sc["missing_continuations"]}
             for b in THREE_BUDGETS:
                 n = sum(sc["counts"][b].values())
                 e[f"at_{b // 1024}k"] = {
@@ -308,6 +322,8 @@ def three_budget_main(argv: Sequence[str]) -> int:
     m.add_argument("--sets", default="d_num_hard,d_fresh")
     m.add_argument("--out", type=Path, default=None)
     m.add_argument("--config", default="eval/eval_suite.yaml")
+    m.add_argument("--exclude", type=Path, default=None,
+                   help="file of item ids to leave out (one per line): scores on the screened subset")
     a = ap.parse_args(argv)
     full = load_config(getattr(a, "config", "eval/eval_suite.yaml"))
     cfg = to_container(full)["eval_suite"]
@@ -326,7 +342,7 @@ def three_budget_main(argv: Sequence[str]) -> int:
     if a.cmd == "continue":
         asyncio.run(continue_answers(a, cfg, root, str(full.project.model.base)))
         return 0
-    res = compare(cfg, root, a.rows.split(","), a.baseline, a.sets.split(","))
+    res = compare(cfg, root, a.rows.split(","), a.baseline, a.sets.split(","), exclude=read_exclude(a.exclude))
     if a.out:
         a.out.parent.mkdir(parents=True, exist_ok=True)
         a.out.write_text(json.dumps(res, indent=1))
@@ -338,7 +354,8 @@ def three_budget_main(argv: Sequence[str]) -> int:
                 vs = v.get("vs_baseline")
                 parts.append(f"{b // 1024}K {v['score']:.1f}" + (
                     f" ({vs['diff']:+.1f} [{vs['low']:+.1f}, {vs['high']:+.1f}])" if vs else ""))
-            print(f"{set_name} {row}: " + " | ".join(parts) + f" | missing {e['missing_continuations']}")
+            print(f"{set_name} {row} ({e['items']} items): " + " | ".join(parts)
+                  + f" | missing {e['missing_continuations']}")
     return 0
 
 

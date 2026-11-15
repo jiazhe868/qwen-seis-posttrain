@@ -4,8 +4,9 @@
         $V2/stages/04_verify.jsonl $DATA/v1_hard/stages/04_verify.jsonl $DATA/v1_long/stages/04_verify.jsonl
     python -m dpt.data.bank_merge check $V2          # after the difficulty and publish stages
 
-``merge`` reads every input before writing (the output may be one of them), keeps the first row of each uid, applies
-the T3 map (dpt.data.gen.t3_atomic.apply_map) and writes a manifest whose parents are the inputs' content hashes.
+``merge`` reads every input before writing (the output may be one of them), keeps the first row of each uid, leaves
+out the problems of ``FAULTY_FAMILIES``, applies the T3 map (dpt.data.gen.t3_atomic.apply_map) and writes a manifest
+whose parents are the inputs' content hashes.
 
 ``check`` prints counts only (tasks, pools, pass rates, rubric formats) and writes ``<bank>/bank_check.json``. It
 exits 1 when the bank cannot train: no T1 rows, a T3 rubric that is not atomic, a dev split different from v1's, or
@@ -47,6 +48,20 @@ from dpt.data.rl_build import write_rows
 
 log = get_logger(__name__)
 
+# Families whose labels are wrong, found by the 2026-11-14 screening of bank v1's expert queue. local_magnitude
+# printed ML = log10 A + 1.11 log10 r + 0.00189 r − 2.09 with A in mm and called it Hutton–Boore: −2.09 is the
+# IASPEI constant for A in nm, and with a Wood–Anderson amplitude in mm Hutton–Boore has +0.591 (1 mm at 100 km must
+# give ML 3.0; the printed relation gave 0.32). Every label was 2.681 too low and the problems taught a false relation.
+# Bank v1 holds 795 such T1 problems and 41 T2 code tasks (network_local_magnitude); the generators are fixed for new
+# problems, and bank v2 leaves the old ones out. Run 1's dev split keeps its 6 (pin-dev): they are not trained on,
+# and they grade answers against the relation they print.
+FAULTY_FAMILIES = frozenset({"local_magnitude", "network_local_magnitude"})
+
+
+def family_of(row: dict[str, Any]) -> str | None:
+    source, meta = row.get("source") or {}, row.get("meta") or {}
+    return source.get("family") or (meta.get("generator") or {}).get("name") or meta.get("family")
+
 
 def merge(inputs: Sequence[Path], out: Path, t3_map: Path | None = None, version: str = "v2",
           name: str = "rl_bank.verify") -> dict[str, Any]:
@@ -61,6 +76,8 @@ def merge(inputs: Sequence[Path], out: Path, t3_map: Path | None = None, version
             rows.append(r)
             n += 1
         per_input[str(p)] = n
+    faulty = Counter(family_of(r) for r in rows if family_of(r) in FAULTY_FAMILIES)
+    rows = [r for r in rows if family_of(r) not in FAULTY_FAMILIES]
     dropped: dict[str, int] = {}
     if t3_map is not None:
         from dpt.data.gen.t3_atomic import apply_map
@@ -68,8 +85,9 @@ def merge(inputs: Sequence[Path], out: Path, t3_map: Path | None = None, version
         rows, dropped = apply_map(rows, {r["uid"]: r for r in read_jsonl(t3_map)})
     write_jsonl(out, rows)
     write_manifest(build_manifest(out, name=name, version=version, parents=parents,
-                                  notes="bank v2: verified v1 + hard + long problems; T3 rubrics as atomic checks"))
-    res = {"rows": len(rows), "per_input": per_input, "t3_dropped": dropped,
+                                  notes="bank v2: verified v1 + hard + long problems; T3 rubrics as atomic checks; "
+                                        f"faulty families left out: {dict(faulty)}"))
+    res = {"rows": len(rows), "per_input": per_input, "t3_dropped": dropped, "faulty_dropped": dict(faulty),
            "tasks": dict(Counter(r["task"] for r in rows))}
     log.info("bank merge: %s", res)
     return res

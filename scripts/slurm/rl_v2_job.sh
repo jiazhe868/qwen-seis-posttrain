@@ -22,8 +22,9 @@
 # Logs: this job's output, and $WORK/dpt/logs/rlv2_<job>/ (bank build, 24K test).
 # Dry run: DPT_SLURM_DRY_RUN=1 DPT_SLURM_NODES="<8 nodes>" bash scripts/slurm/rl_v2_job.sh
 # DPT_RL_CAP=16k skips the 24K test; DPT_RL_CAP=24k skips it and trains at 24K (DPT_RL_V2_CAP is the older name).
-# Job 2 runs RL v3 with this script (2026-11-12): DPT_RL_CONFIG=rl/rl_9b_v3.yaml DPT_FINAL_ROW=rl_v3_seed1. The run's
-# directory, cap file and 24K test follow the config's run name.
+# Job 2 runs RL v2's seed 2 with this script (2026-11-15; RL v3 of 11-12 was dropped with SFT v2):
+# DPT_RL_CONFIG=rl/rl_9b_v2_seed2.yaml DPT_FINAL_ROW=rl_v2_seed2. The run's directory, cap file and 24K test follow
+# the config's run name.
 #
 # The whole script is one { … } block: bash reads all of it before the first step, so a copy synced while the
 # job runs cannot change the running job's steps (scripts it calls are read when they start).

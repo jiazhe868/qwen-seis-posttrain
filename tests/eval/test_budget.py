@@ -111,3 +111,13 @@ def test_paired_comparison_with_sft_at_each_budget(tmp_path):
     assert rl["at_64k"]["vs_baseline"]["diff"] == -12.5 and not rl["at_64k"]["vs_baseline"]["above_noise"]
     assert sft["at_64k"]["score"] == 100.0 and "vs_baseline" not in sft["at_32k"]
     assert sft["at_32k"]["outcomes_pct"] == {"right": 50.0, "wrong_value": 0.0, "unfinished": 50.0, "format": 0.0}
+    assert rl["items"] == 4 and res["excluded"] == {"d_fresh": 0}
+
+    # the screened subset (2026-11-14): flagged items are left out of every row and of the paired difference
+    (tmp_path / "flagged.txt").write_text("# private list\nd   # gold answer wrong\n\n")
+    from dpt.eval.budget import read_exclude
+    res = compare(cfg, root, ["sft", "rl_v2_seed1"], "sft", ["d_fresh"], verify=False,
+                  exclude=read_exclude(tmp_path / "flagged.txt"))
+    rl = res["sets"]["d_fresh"]["rl_v2_seed1"]
+    assert res["excluded"] == {"d_fresh": 1} and rl["items"] == 3 and rl["at_32k"]["score"] == 100.0
+    assert rl["at_32k"]["vs_baseline"]["items"] == 3 and rl["at_32k"]["vs_baseline"]["diff"] == 50.0

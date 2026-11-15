@@ -158,3 +158,10 @@ def test_many_draws_never_raise(name):
     rng = rng_for(11, "many", name)
     for _ in range(300):
         assert math.isfinite(f.solve(f.sample(rng)))
+
+
+def test_local_magnitude_uses_the_hutton_boore_constant_for_amplitudes_in_mm():
+    """Richter's anchor: a 1 mm Wood–Anderson amplitude at 100 km is ML 3.0 (the old −2.09 gave 0.32)."""
+    f = FAMILIES["local_magnitude"]
+    assert f.solve({"amplitude_mm": 1.0, "distance_km": 100.0}) == pytest.approx(3.0, abs=1e-3)
+    assert all("+ 0.591" in t and "2.09" not in t for t in f.templates)

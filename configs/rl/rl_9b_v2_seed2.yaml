@@ -1,0 +1,14 @@
+# =============================================================================
+# RL v2, seed 2 (2026-11-15): the same recipe as rl_9b_v2.yaml (bank v2, dev split, mix, learning rate, stop
+# rules, SFT v1 start) with another seed, which changes the curriculum's draws, the data order and the run name.
+# It runs in job 2's 8-node slot. SFT v2 was dropped there: an expert audit of 100 of its knowledge-dense rows
+# kept 2, would fix 48 and drop 50 (98 had at least one factual error, mostly earthquake facts the teacher wrote
+# from memory). A second seed tells whether an RL v2 gain over SFT holds beyond seed noise.
+#
+#   DPT_RL_CONFIG=rl/rl_9b_v2_seed2.yaml DPT_FINAL_ROW=rl_v2_seed2 bash scripts/slurm/rl_v2_job.sh    # inside job 2
+# =============================================================================
+defaults_from: rl_9b_v2.yaml
+requires_model_line: qwen35_9b
+
+project:
+  seed: 2

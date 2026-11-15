@@ -255,14 +255,14 @@ def _coverage_summary(cov: dict[str, Any] | None) -> dict[str, Any] | None:
 
 # ---------------------------------------------------------------------------------------------- CLI
 def _generator(url: str, model: str, tokenizer: str | None, cache: Path, label: str, wait_s: float,
-               url_file: str | None, concurrency: int) -> Gen:
+               url_file: str | None, concurrency: int, enable_thinking: bool | None = True) -> Gen:
     from dpt.data import backends as B
 
     client = B.OpenAICompatClient(url, model, timeout=7200.0, max_concurrency=concurrency,
                                   url_file=url_file, wait_s=wait_s)
     tok = B.load_hf_tokenizer(tokenizer) if tokenizer else None
-    return B.CachedGenerator(B.VLLMGenerator(client, tokenizer=tok, temperature=0.6, top_p=0.95), cache,
-                             f"{label}:{model}")
+    gen = B.VLLMGenerator(client, tokenizer=tok, temperature=0.6, top_p=0.95, enable_thinking=enable_thinking)
+    return B.CachedGenerator(gen, cache, f"{label}:{model}")
 
 
 def cmd_convert(a: argparse.Namespace) -> None:
@@ -282,8 +282,10 @@ def cmd_convert(a: argparse.Namespace) -> None:
                          a.wait_s, a.teacher_url_file, a.concurrency)
     judge = None
     if a.judge_url:
+        # no thinking switch, as for the T3 reward judge: asked to think, Gemma used up 4K tokens before its JSON in
+        # the knowledge check (2026-11-13)
         judge = _generator(a.judge_url, a.judge_model, None, cache / "t3_atomic_judge.jsonl", "t3_atomic_cov",
-                           a.wait_s, a.judge_url_file, a.concurrency)
+                           a.wait_s, a.judge_url_file, a.concurrency, enable_thinking=None)
 
     def one(r: dict[str, Any]) -> dict[str, Any]:
         try:

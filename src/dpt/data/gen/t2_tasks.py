@@ -1182,13 +1182,15 @@ def _apparent_velocity(rng):
                    f"apparent_velocity|{ret}")
 
 
+# The Hutton–Boore constant for A in mm is +0.591 (1 mm at 100 km gives ML 3.0). Until 2026-11-14 this task used
+# −2.09, the IASPEI constant for A in nm (bank_merge.FAULTY_FAMILIES).
 @kind("network_local_magnitude", "magnitude")
 def _ml(rng):
     agg = pick(rng, ("mean", "median"))
     per_station = rng.random() < 0.3
     entry = pick(rng, ("station_ml",) if per_station else ("network_ml", "local_magnitude"))
     spec = phrase(rng, f"{entry}(amps_mm, dists_km)", "compute local magnitudes from Wood–Anderson amplitudes",
-                  "For each station, ML = log10(A) + 1.11·log10(r) + 0.00189·r − 2.09 (Hutton & Boore, 1987), with A "
+                  "For each station, ML = log10(A) + 1.11·log10(r) + 0.00189·r + 0.591 (Hutton & Boore, 1987), with A "
                   "the zero-to-peak Wood–Anderson amplitude in mm and r the hypocentral distance in km.",
                   "Return the list of station magnitudes." if per_station else
                   f"Return the {agg} of the station magnitudes"
@@ -1198,13 +1200,13 @@ def _ml(rng):
                       "    return s[n // 2] if n % 2 else 0.5 * (s[n // 2 - 1] + s[n // 2])\n"}[
         "list" if per_station else agg]
     src = ("import math\n\n\ndef ENTRY(amps_mm, dists_km):\n"
-           "    ml = [math.log10(a) + 1.11 * math.log10(r) + 0.00189 * r - 2.09 for a, r in zip(amps_mm, dists_km)]\n"
+           "    ml = [math.log10(a) + 1.11 * math.log10(r) + 0.00189 * r + 0.591 for a, r in zip(amps_mm, dists_km)]\n"
            + tail)
 
     def args(k):
         m = rng.uniform(1.5, 5.5)
         rs = [_r(rng.uniform(10, 400), 1) for _ in range(k)]
-        amps = [float(f"{10 ** (m - 1.11 * math.log10(r) - 0.00189 * r + 2.09 + rng.gauss(0, 0.15)):.4g}")
+        amps = [float(f"{10 ** (m - 1.11 * math.log10(r) - 0.00189 * r - 0.591 + rng.gauss(0, 0.15)):.4g}")
                 for r in rs]
         return (amps, rs)
     return Variant(entry, spec, ref(src, entry), [args(3)], [args(rng.randint(3, 12)) for _ in range(6)],

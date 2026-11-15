@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 
 from dpt.common.io import read_jsonl
-from dpt.data.gen.knowledge import (check_answer, fetch_licenses, license_of, openalex_filter, process_chunk,
-                                    reference_line, sections, select_chunks, sft_rows)
+from dpt.data.gen.knowledge import (check_answer, fetch_licenses, license_of, openalex_filter, parse_questions,
+                                    process_chunk, reference_line, sections, select_chunks, sft_rows)
 
 PROSE = ("Rupture directivity concentrates seismic energy in the direction the rupture propagates, so ground motion "
          "at stations ahead of the rupture front is stronger and richer in high frequencies than behind it. ")
@@ -78,12 +78,15 @@ def test_select_keeps_open_licenses_on_topic_and_before_d_fresh():
     assert stats["off_topic"] == 1 and stats["duplicate_title"] == 1
 
 
+QUESTIONS_REPLY = ("thinking\n</think>\n\n<question>Explain how rupture directivity shapes ground motion "
+                   "(approximately 550 words).</question>\n<facts>\n- factor 2-4 ahead of the rupture\n"
+                   "- stronger at high frequencies\n</facts>\n<question>What does the excerpt say?</question>\n<facts>\n</facts>")
+
+
 def _teacher(answer_text):
     def teacher(messages, **kw):
         if "Write 2 questions" in messages[0]["content"]:
-            return ['thinking\n</think>\n\n{"questions": [{"question": "Explain how rupture directivity shapes '
-                    'ground motion.", "key_facts": ["factor 2-4"]}, {"question": "What does the excerpt say?", '
-                    '"key_facts": []}]}']
+            return [QUESTIONS_REPLY]
         return [answer_text]
     return teacher
 
@@ -92,7 +95,7 @@ def _judge(verdict):
     return lambda messages, **kw: ["\n" + json.dumps(verdict)]
 
 
-OK_VERDICT = {"contradicted": [], "unsupported": [], "mentions_source": False, "knowledge": 4}
+OK_VERDICT = {"contradicted": [], "wrong": [], "study_specific": False, "mentions_source": False, "knowledge": 4}
 
 
 def test_one_section_gives_checked_answers_with_reasons():
@@ -111,7 +114,8 @@ def test_check_answer_reasons():
     assert check_answer(PLAN, "too short", OK_VERDICT) == "length"
     assert check_answer(PLAN, REPORT + "\n\nReferences\nAki 1967", OK_VERDICT) == "has_references"
     assert check_answer(PLAN, REPORT.replace("by a factor", "(Figure 3) by a factor", 1), OK_VERDICT) == "mentions_source"
-    assert check_answer(PLAN, REPORT, {**OK_VERDICT, "unsupported": ["a", "b", "c"]}) == "unsupported"
+    assert check_answer(PLAN, REPORT, {**OK_VERDICT, "wrong": ["moving NW to SE"]}) == "wrong"
+    assert check_answer(PLAN, REPORT, {**OK_VERDICT, "study_specific": True}) == "study_specific"
     assert check_answer(PLAN, REPORT, {**OK_VERDICT, "knowledge": 2}) == "low_knowledge"
     assert check_answer(PLAN, REPORT, {"error": "unparsed"}) == "judge_unparsed"
     assert check_answer(PLAN, REPORT, OK_VERDICT) == "ok"
@@ -119,10 +123,11 @@ def test_check_answer_reasons():
 
 def test_sft_rows_are_closed_book_t3_rows_citing_only_the_source_paper():
     chunk = _chunk()
-    rec = {"chunk_id": chunk["chunk_id"], "answers": [
+    rec = {"chunk_id": chunk["chunk_id"], "prompt_version": 2, "answers": [
         {"question": "Explain directivity.", "plan": PLAN, "report": REPORT, "verdict": OK_VERDICT, "status": "ok"},
         {"question": "Q2", "status": "length"}]}
-    rows, summary = sft_rows([rec], {chunk["chunk_id"]: chunk}, model_id="Qwen/Qwen3.8-27B")
+    old_prompts = {**rec, "prompt_version": None}                         # a record of the 11-12 prompts: not used
+    rows, summary = sft_rows([old_prompts, rec], {chunk["chunk_id"]: chunk}, model_id="Qwen/Qwen3.8-27B")
     assert summary == {"rows": 1, "papers": 1, "answer_status": {"ok": 1, "length": 1}, "licenses": {"cc-by": 1}}
     msgs = rows[0]["messages"]
     assert msgs[0]["role"] == "system" and "References" in msgs[0]["content"]          # the T3 system prompt
@@ -133,3 +138,85 @@ def test_sft_rows_are_closed_book_t3_rows_citing_only_the_source_paper():
     assert rows[0]["subset"] == "knowledge_report" and rows[0]["meta"]["knowledge_checked"] is True
     assert reference_line({**chunk, "authors": ["Ana Lopez", "Ben Wu"], "n_authors": 2, "doi": None}).startswith(
         "Lopez and Wu (2021).")
+
+
+def test_the_clients_use_the_servers_v1_api(tmp_path):
+    """The first knowledge job (2026-11-12) posted to http://127.0.0.1:8010/completions: 404 for all 40 sections."""
+    from dpt.data.gen.knowledge import _generator
+
+    for url in ("http://127.0.0.1:8010", "http://127.0.0.1:8010/", "http://127.0.0.1:8010/v1"):
+        gen = _generator(url, "teacher", None, tmp_path / "cache.jsonl", "knowledge", 0.0, None, 4, 0.7, 0.95)
+        assert gen.gen.client.base_url == "http://127.0.0.1:8010/v1"
+
+
+def test_questions_come_in_tagged_blocks_without_a_stated_length():
+    """2026-11-13: in JSON the teacher closed the brackets wrongly in 17 of the first 40 replies."""
+    qs = parse_questions(QUESTIONS_REPLY)
+    assert [q["question"] for q in qs] == ["Explain how rupture directivity shapes ground motion.",
+                                           "What does the excerpt say?"]
+    assert qs[0]["key_facts"] == ["factor 2-4 ahead of the rupture", "stronger at high frequencies"]
+    assert qs[1]["key_facts"] == []
+    assert parse_questions("still thinking <question>Q?</question>") == []                 # cut off: none
+    q = parse_questions("x\n</think>\n\n<question>Write a report of about 550 words on Q.</question>")[0]
+    assert q["question"] == "Write a report on Q."
+    assert parse_questions('x\n</think>\n\n{"questions": [{"question": "Q", "key_facts": ["a"]}}') == []
+
+
+def test_the_knowledge_check_sends_no_thinking_switch(tmp_path):
+    """2026-11-13: asked to think, Gemma used ~4K tokens of thought and ran out before its JSON (34 of 46 answers)."""
+    import httpx
+
+    from dpt.data import backends as B
+    from dpt.data.gen.knowledge import _generator
+
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"index": 0, "message": {"content": "{}"}}]})
+
+    client = B.OpenAICompatClient("http://judge/v1", "judge_v", transport=httpx.MockTransport(handler))
+    B.VLLMGenerator(client, enable_thinking=None)([{"role": "user", "content": "check"}], effort=None)
+    B.VLLMGenerator(client)([{"role": "user", "content": "check"}], effort=None)
+    assert "chat_template_kwargs" not in sent[0]                                   # as the T3 reward judge
+    assert sent[1]["chat_template_kwargs"] == {"enable_thinking": True}            # the default is unchanged
+    gen = _generator("http://127.0.0.1:8110", "judge_v", None, tmp_path / "c.jsonl", "knowledge_check_v2", 0.0, None,
+                     4, 0.6, 0.95, enable_thinking=None)
+    assert gen.gen.enable_thinking is None and gen.label == "knowledge_check_v2:judge_v"
+
+
+def test_only_records_of_the_current_prompts_count():
+    """2026-11-13: the queued jobs' frozen batch scripts all write records.jsonl, so the version is in each record. A
+    section done with the older prompts is done again, and the last current record of a section wins."""
+    from dpt.data.gen.knowledge import PROMPT_VERSION, current_records
+
+    recs = [{"chunk_id": "a", "status": "done"}, {"chunk_id": "b", "prompt_version": PROMPT_VERSION, "status": "x"},
+            {"chunk_id": "b", "prompt_version": PROMPT_VERSION, "status": "y"}, {"chunk_id": "c", "prompt_version": 1}]
+    cur = current_records(recs)
+    assert sorted(cur) == ["b"] and cur["b"]["status"] == "y"
+    rec = process_chunk(_chunk(), _teacher("no tags\n</think>\n\nnothing"), _judge(OK_VERDICT))
+    assert rec["prompt_version"] == PROMPT_VERSION
+
+
+def test_recheck_judges_v2_answers_again_from_their_stored_reports():
+    """2026-11-13: the v3 check replaces "unsupported" by "wrong" and adds "study_specific". v2 answers are checked
+    again from their stored plan and report, so no teacher work is repeated; v1 records and v3 records are left."""
+    from dpt.data.gen.knowledge import JUDGE_VERSION, recheck
+
+    chunk = _chunk()
+    ans = {"question": "Q", "plan": PLAN, "report": REPORT, "verdict": {"unsupported": ["x"] * 5}, "status": "unsupported"}
+    v2 = {"chunk_id": chunk["chunk_id"], "prompt_version": 2, "status": "done",
+          "answers": [{"question": "Q0", "status": "question_mentions_source"}, dict(ans)]}
+    v1 = {"chunk_id": chunk["chunk_id"], "status": "done", "answers": [dict(ans)]}
+    v3 = {"chunk_id": chunk["chunk_id"], "prompt_version": 3, "judge_version": JUDGE_VERSION, "answers": [dict(ans)]}
+    records = [v1, v2, v3]
+    assert recheck(records, {chunk["chunk_id"]: chunk}, _judge(OK_VERDICT)) == 1
+    assert v2["judge_version"] == JUDGE_VERSION and v2["answers"][1]["status"] == "ok"
+    assert v2["answers"][0]["status"] == "question_mentions_source"                 # never reached the teacher
+    assert "judge_version" not in v1 and v3["answers"][0]["status"] == "unsupported"
+
+    def broken(messages, **kw):
+        raise ConnectionError("judge down")
+
+    v2b = {**v2, "judge_version": None, "answers": [dict(ans)]}
+    assert recheck([v2b], {chunk["chunk_id"]: chunk}, broken) == 0 and v2b["judge_version"] is None

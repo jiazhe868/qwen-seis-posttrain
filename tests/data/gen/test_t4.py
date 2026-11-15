@@ -328,3 +328,15 @@ def test_cli_build(tmp_path):
     assert t4.main(["build", "--raw-dir", str(RAW), "--out", str(out), "--n-math", "4", "--n-if", "3"]) == 0
     rows = list(read_jsonl(out))
     assert len(rows) == 7 and json.loads(Path(f"{out}.summary.json").read_text())["total"] == 7
+
+
+def test_math_solutions_that_box_several_different_answers_have_no_label(tmp_path):
+    """'Find all t …' boxes each root; the last box alone graded the complete answer 0 (2026-11-14 screening)."""
+    (tmp_path / "math.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        {"id": "m1", "problem": "Find all t such that x - t divides 6x^2 + 13x - 5.",
+         "solution": "The roots are $\\boxed{\\frac13}$ and $\\boxed{-\\frac52}$."},
+        {"id": "m2", "problem": "What is 6 + 6?", "solution": "It is $\\boxed{12}$, so the answer is $\\boxed{12}$."},
+    ]) + "\n")
+    items, drops = t4.math_items(tmp_path, {})
+    assert drops["math:several_answers"] == 1 and [i["answer"]["value"] for i in items] == [12.0]
+    assert t4.all_boxed("a \\boxed{1/3} b \\boxed{-\\frac{5}{2}}") == ["1/3", "-\\frac{5}{2}"]

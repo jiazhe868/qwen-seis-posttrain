@@ -1,0 +1,171 @@
+{
+ "about": "Aggregates of the 2026-11-14/15 screening: a model review (a frontier LLM did the expert screening in place of a person). Per-item notes are private; this file holds counts and rates only.",
+ "eval_sets": {
+  "d_num_hard": {
+   "items": 160,
+   "families": 8,
+   "blind_answers_matching_gold": 160,
+   "flagged": 0
+  },
+  "d_fresh": {
+   "items": 60,
+   "blind_answers_matching_gold": 60,
+   "flagged": 1,
+   "flag_kinds": {
+    "answer depends on an unstated convention under a 0.1% tolerance": 1
+   },
+   "items_not_naming_the_answer_unit": 24
+  },
+  "d_report": {
+   "items": 100,
+   "criteria": 529,
+   "criteria_judged_sound": 515,
+   "common_errors": 412,
+   "flagged": 5,
+   "flag_kinds": {
+    "a rubric rewards wrong physics": 2,
+    "a true statement listed as an error": 1,
+    "the rubric accepts one of several valid readings": 2
+   },
+   "minor_kept": 14
+  }
+ },
+ "screened_subset": {
+  "items_left_out": {
+   "d_num_hard": 0,
+   "d_fresh": 1
+  },
+  "run1_step20_vs_sft_32k": {
+   "d_num_hard": {
+    "score": 70.1,
+    "vs_sft": [
+     1.95,
+     -0.7,
+     4.61
+    ]
+   },
+   "d_fresh": {
+    "score": 83.3,
+    "vs_sft": [
+     3.6,
+     -1.48,
+     9.11
+    ]
+   }
+  },
+  "frozen_run1_step20_vs_sft_32k": {
+   "d_num_hard": [
+    1.9,
+    -0.7,
+    4.6
+   ],
+   "d_fresh": [
+    4.6,
+    -0.8,
+    10.4
+   ]
+  },
+  "d_report_win_rate_vs_base": {
+   "frozen": {
+    "sft": {
+     "gemma": 86.0,
+     "luna": 49.0
+    },
+    "rl_seed1": {
+     "gemma": 88.5,
+     "luna": 49.0
+    }
+   },
+   "screened": {
+    "sft": {
+     "gemma": 87.4,
+     "luna": 49.5
+    },
+    "rl_seed1": {
+     "gemma": 88.9,
+     "luna": 49.5
+    }
+   }
+  }
+ },
+ "blind_review": {
+  "pairs": 30,
+  "rows": "rl_seed1 (step 20) vs base",
+  "first_pass_one_order": {
+   "trained_model_shown_first_won": [
+    11,
+    11
+   ],
+   "trained_model_shown_second_won": [
+    8,
+    19
+   ]
+  },
+  "both_orders": {
+   "pairs_agreeing": 24,
+   "pairs_split_counted_as_ties": 6
+  },
+  "win_rate_same_pairs": {
+   "model_reviewer": 60.0,
+   "gemma": 86.7,
+   "luna": 45.0
+  },
+  "agreement_with_model_reviewer": {
+   "gemma": 0.53,
+   "luna": 0.63
+  }
+ },
+ "bank_expert_queue": {
+  "items": 156,
+  "removed_because": {
+   "one verifier had no stable answer": 140,
+   "verifiers disagreed": 16
+  },
+  "sound_labels": 150,
+  "dropped": {
+   "carry the faulty magnitude relation": 5,
+   "partial label (several answers)": 1
+  },
+  "generator_bug": {
+   "family": "local_magnitude (and the code task network_local_magnitude)",
+   "printed": "ML = log10 A + 1.11 log10 r + 0.00189 r - 2.09, A in mm",
+   "correct_for_A_in_mm": "+0.591 (Hutton & Boore 1987)",
+   "labels_too_low_by": 2.681,
+   "anchor": "1 mm at 100 km is ML 3.0; the printed relation gives 0.32",
+   "verified_bank_v1": {
+    "numeric": 795,
+    "code": 41
+   },
+   "run1_training_pools": 825
+  }
+ },
+ "knowledge_audit": {
+  "population_rows": 3262,
+  "sample": 100,
+  "one_row_per_paper": true,
+  "verdicts": {
+   "keep": 2,
+   "fix": 48,
+   "drop": 50
+  },
+  "rows_with_a_factual_error": 98,
+  "factual_errors": 382,
+  "median_errors_per_row": 4,
+  "rows_with_overreach": 87,
+  "topic": {
+   "seismology": 62,
+   "adjacent": 33,
+   "off_topic": 5
+  },
+  "seismology_rows_verdicts": {
+   "keep": 2,
+   "fix": 32,
+   "drop": 28
+  },
+  "study_specific": 11,
+  "names_a_hidden_source": 1,
+  "reference_line_wrong": 4,
+  "east_anatolian_fault_called_right_lateral": 4,
+  "rows_from_papers_without_seismology": 21
+ }
+}

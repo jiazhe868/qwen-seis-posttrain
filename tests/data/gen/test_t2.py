@@ -160,3 +160,13 @@ def test_cli_writes_candidates_hidden_tests_and_a_manifested_dcode(tmp_path):
         t2.main(args)
     with pytest.raises(SystemExit, match="must not overlap"):
         t2.main(["build", "--out-dir", str(ev / "x"), "--eval-out-dir", str(ev), "--force"])
+
+
+def test_network_local_magnitude_gives_ml_3_for_1_mm_at_100_km():
+    """The code task states the Hutton–Boore relation for amplitudes in mm (+0.591; 2026-11-14)."""
+    for task in _tasks("network_local_magnitude", n=6, seed=3):
+        assert "+ 0.591" in task.question and "2.09" not in task.question + task.reference
+        ns = {}
+        exec(task.reference, ns)
+        out = ns[task.entry]([1.0, 1.0], [100.0, 100.0])
+        assert (out == pytest.approx([3.0, 3.0], abs=1e-3)) if isinstance(out, list) else out == pytest.approx(3.0, abs=1e-3)

@@ -10,6 +10,10 @@ Usage::
         --label rl_seed1="SFT + RL (seed 1, delivered)" \\
         --summary-out eval_results/summary.json --markdown-out eval_results/report.md
 
+``--exclude FILE`` (item ids, one per line) scores every row without those items: the screened subset of the
+2026-11-14 review of the frozen sets, which flagged items with a faulty gold answer, wording or rubric. The list
+stays private; the table notes how many items each set lost.
+
 Row names matter: :mod:`dpt.eval.gates` looks up the reference rows by the
 names used in ``configs/project.yaml`` (``base_medium``, ``base_xhigh``).
 ``general_mean_delta`` is always computed against the ``base_medium`` row.
@@ -45,8 +49,9 @@ def row_from_results(results: dict[str, Any]) -> dict[str, Any]:
                 "gate_judge": r.get("gate_judge"),
                 "agreement": r.get("judge_agreement"),
             }
-        if r.get("blind_review"):  # dpt.eval.blind_review import
-            row[f"{name}_blind_review"] = r["blind_review"]
+        for review in ("blind_review", "blind_review_model"):  # dpt.eval.blind_review import --reviewer person|model
+            if r.get(review):
+                row[f"{name}_{review}"] = r[review]
         if r.get("score") is None:
             continue
         row[name] = {
@@ -73,8 +78,52 @@ def row_from_results(results: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def build_summary(run_dirs: dict[str, str | Path]) -> dict[str, Any]:
-    rows = {name: row_from_results(read_json(Path(d) / "results.json")) for name, d in run_dirs.items()}
+def screened(results: dict[str, Any], exclude: set[str]) -> tuple[dict[str, Any], dict[str, int]]:
+    """One results.json scored without the excluded item ids, and how many items each set lost.
+
+    Only sets that lose an item are rescored. Numeric sets: the mean of the per-item means. D-Report: each judge's
+    win rate over the items left, and the score of the judge the run's gate picks ("min": the lower one). The
+    intervals and length-matched scores are dropped, since the samples behind them are not in results.json."""
+    from copy import deepcopy
+
+    from dpt.eval.metrics import win_rate
+
+    out, lost = deepcopy(results), {}
+    for name, r in out.get("sets", {}).items():
+        per_item = r.get("per_item") or []
+        kept = [x for x in per_item if x["id"] not in exclude]
+        if len(kept) == len(per_item):
+            continue
+        lost[name] = len(per_item) - len(kept)
+        r["per_item"], r["n_items"] = kept, len(kept)
+        for k in ("ci", "item_ci", "length_matched", "pass_at_k"):
+            r.pop(k, None)
+        if r.get("metric") == "winrate_vs_base" and not r.get("by_judge"):     # the base row: ties by definition
+            r["score"] = win_rate([x["outcome"] for x in kept])
+            r["outcomes"] = {o: sum(x["outcome"] == o for x in kept) for o in ("win", "tie", "loss")}
+        elif r.get("metric") == "winrate_vs_base":
+            for role, b in r["by_judge"].items():
+                b["score"] = win_rate([x["by_judge"][role] for x in kept if role in (x.get("by_judge") or {})])
+                b.pop("ci", None)
+            gate = r.get("gate_judge", "primary")
+            roles = ["primary", "second"] if gate == "min" else [gate]
+            r["score_judge"] = min(roles, key=lambda role: r["by_judge"][role]["score"])
+            r["score"] = r["by_judge"][r["score_judge"]]["score"]
+            r["outcomes"] = {o: sum(x["by_judge"][r["score_judge"]] == o for x in kept) for o in ("win", "tie", "loss")}
+        else:
+            r["score"] = 100.0 * sum(float(x["mean"]) for x in kept) / max(1, len(kept))
+    return out, lost
+
+
+def build_summary(run_dirs: dict[str, str | Path], exclude: set[str] | None = None) -> dict[str, Any]:
+    results = {name: read_json(Path(d) / "results.json") for name, d in run_dirs.items()}
+    lost: dict[str, int] = {}
+    if exclude:
+        for name in results:
+            results[name], lost_here = screened(results[name], exclude)
+            for set_name, n in lost_here.items():
+                lost[set_name] = max(lost.get(set_name, 0), n)
+    rows = {name: row_from_results(r) for name, r in results.items()}
     # pass@k curves (k up to 64) come from a sibling run "<dir>_k64" made with --samples-override 64
     # (scripts 03/07). Merge them so the RL-entry gate (pass@16 ≥ base) and the pass@64 floor see them.
     for name, d in run_dirs.items():
@@ -91,7 +140,10 @@ def build_summary(run_dirs: dict[str, str | Path]) -> dict[str, Any]:
                     common
                 )
                 row["general_benchmarks"] = common
-    return {"rows": rows, "base_row": BASE_ROW}
+    out: dict[str, Any] = {"rows": rows, "base_row": BASE_ROW}
+    if exclude:
+        out["screened"] = {"items_left_out": lost}
+    return out
 
 
 def _cell(row: dict[str, Any], key: str, pct: bool = False) -> str:
@@ -125,6 +177,11 @@ def render_markdown(summary: dict[str, Any], labels: dict[str, str] | None = Non
         "± is the 95% generation-noise interval (resampling within items; see docs/evaluation.md).",
         "Gains count only when they exceed the noise band.",
     ]
+    if summary.get("screened"):
+        lost = summary["screened"]["items_left_out"]
+        notes.append("Screened subset: items flagged by the 2026-11-14 review are left out ("
+                     + (", ".join(f"{k} {v}" for k, v in sorted(lost.items())) or "none in these sets")
+                     + "); the rescored sets have no interval.")
     judged = {n: r["d_report_by_judge"] for n, r in summary["rows"].items() if r.get("d_report_by_judge")}
     if judged:
         parts = []
@@ -135,14 +192,16 @@ def render_markdown(summary: dict[str, Any], labels: dict[str, str] | None = Non
         gate = next(iter(judged.values())).get("gate_judge")
         notes.append(f"D-Report by judge ({'; '.join(parts)}); the table shows the gated value ({gate}).")
     for n, r in summary["rows"].items():
-        br = r.get("d_report_blind_review")
-        if not br or br.get("reviewer_win_rate") is None:
-            continue
-        js = ", ".join(f"{role} {v['win_rate_same_pairs']:.1f}% (agree {v['agreement']:.0%})"
-                       for role, v in br.get("by_judge", {}).items())
-        status = "" if br.get("status") == "done" else f"; {br.get('status')}"
-        notes.append(f"Blind review, {labels.get(n, n)} ({br['n']} pairs{status}): reviewer win rate "
-                     f"{br['reviewer_win_rate']:.1f}%; judges on the same pairs: {js or '—'}.")
+        for review, title in (("d_report_blind_review", "Blind review"),
+                              ("d_report_blind_review_model", "Blind review by a model")):
+            br = r.get(review)
+            if not br or br.get("reviewer_win_rate") is None:
+                continue
+            js = ", ".join(f"{role} {v['win_rate_same_pairs']:.1f}% (agree {v['agreement']:.0%})"
+                           for role, v in br.get("by_judge", {}).items())
+            status = "" if br.get("status") == "done" else f"; {br.get('status')}"
+            notes.append(f"{title}, {labels.get(n, n)} ({br['n']} pairs{status}): reviewer win rate "
+                         f"{br['reviewer_win_rate']:.1f}%; judges on the same pairs: {js or '—'}.")
     rel = sorted({b for r in summary["rows"].values() for b in r.get("general_relative_only", [])})
     if rel:
         notes.append(
@@ -168,8 +227,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--label", action="append", default=[], help="NAME=display label")
     ap.add_argument("--summary-out", required=True)
     ap.add_argument("--markdown-out", default=None)
+    ap.add_argument("--exclude", default=None, help="file of item ids to leave out: the screened subset")
     args = ap.parse_args(argv)
-    summary = build_summary(_kv(args.row))
+    from dpt.eval.budget import read_exclude
+
+    summary = build_summary(_kv(args.row), read_exclude(Path(args.exclude)) if args.exclude else None)
     write_json(args.summary_out, summary)
     md = render_markdown(summary, _kv(args.label))
     if args.markdown_out:

@@ -169,3 +169,38 @@ def test_summary_and_markdown(summary):
     md = render_markdown(summary, {"rl_seed1": "SFT + RL (seed 1)"})
     assert "| SFT + RL (seed 1) | 71.4 ±1.6 | 55.2 ±2.4 | 68.0% ±4.0 | 60.3 ±3.1 | -0.4 | 6.4K |" in md
     assert "mmlu_pro_2k" in md
+
+
+def test_screened_subset_rescores_only_the_sets_that_lose_items(tmp_path):
+    """The 2026-11-14 review flags faulty items in the frozen sets; the report can score every row without them."""
+    from dpt.eval.report import screened
+
+    judges = [("win", "loss"), ("win", "win"), ("tie", "loss"), ("loss", "loss")]
+    res = {"sets": {
+        "d_fresh": {"score": 50.0, "metric": "avg@8", "ci": {"halfwidth": 9.0},
+                    "per_item": [{"id": "f1", "mean": 1.0}, {"id": "f2", "mean": 0.5}, {"id": "f3", "mean": 0.0}]},
+        "d_num": {"score": 90.0, "metric": "avg@8", "ci": {"halfwidth": 1.0},
+                  "per_item": [{"id": "n1", "mean": 0.9}]},
+        "d_report": {"score": 25.0, "metric": "winrate_vs_base", "gate_judge": "min", "score_judge": "second",
+                     "ci": {"halfwidth": 8.0},
+                     "by_judge": {"primary": {"score": 62.5}, "second": {"score": 25.0}},
+                     "per_item": [{"id": f"r{i}", "by_judge": {"primary": a, "second": b}}
+                                  for i, (a, b) in enumerate(judges)]}}}
+    out, lost = screened(res, {"f3", "r3", "elsewhere"})
+    assert lost == {"d_fresh": 1, "d_report": 1}
+    assert out["sets"]["d_fresh"]["score"] == 75.0 and "ci" not in out["sets"]["d_fresh"]
+    assert out["sets"]["d_num"] == res["sets"]["d_num"]                       # nothing left out: untouched
+    rep = out["sets"]["d_report"]
+    assert rep["by_judge"]["primary"]["score"] == pytest.approx(500 / 6) and rep["by_judge"]["second"]["score"] == 100 / 3
+    assert rep["score_judge"] == "second" and rep["score"] == 100 / 3 and rep["outcomes"] == {"win": 1, "tie": 0, "loss": 2}
+    assert res["sets"]["d_fresh"]["score"] == 50.0                            # the input is not changed
+    base = {"sets": {"d_report": {"score": 50.0, "metric": "winrate_vs_base",
+                                  "per_item": [{"id": f"r{i}", "outcome": "tie"} for i in range(4)]}}}
+    out, lost = screened(base, {"r3"})                                        # the base row has no judges
+    assert lost == {"d_report": 1} and out["sets"]["d_report"]["score"] == 50.0
+
+    write_json(tmp_path / "rl" / "results.json", res)
+    summary = build_summary({"rl": tmp_path / "rl"}, {"f3", "r3"})
+    assert summary["screened"] == {"items_left_out": {"d_fresh": 1, "d_report": 1}}
+    md = render_markdown(summary)
+    assert "| rl | 90.0 ±1.0 | — | 33.3% | 75.0 |" in md and "Screened subset" in md and "d_fresh 1, d_report 1" in md

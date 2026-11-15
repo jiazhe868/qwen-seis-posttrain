@@ -592,17 +592,21 @@ register(Family(
     rel_tol=0.02, valid=lambda p: 0.4 <= p["m_large"] - p["m_small"] <= 3.0,
 ))
 
+# Hutton & Boore (1987) with the Wood–Anderson amplitude in mm: ML = log10 A + 1.11 log10(r/100) + 0.00189 (r − 100)
+# + 3.0 = log10 A + 1.11 log10 r + 0.00189 r + 0.591, so 1 mm at 100 km gives ML 3.0. Until 2026-11-14 this family
+# printed −2.09, the IASPEI constant for A in nm, with A in mm: every label was 2.681 too low
+# (bank_merge.FAULTY_FAMILIES).
 register(Family(
     "local_magnitude", "earthquake magnitude",
     lambda p: math.log10(p["amplitude_mm"]) + 1.11 * math.log10(p["distance_km"]) + 0.00189 * p["distance_km"]
-    - 2.09,
+    + 0.591,
     (P("amplitude_mm", 0.01, 500.0, log=True, digits=3), P("distance_km", 10.0, 500.0)), "",
     (
         "A Wood–Anderson seismograph {distance_km} km (hypocentral distance) from an earthquake records a peak "
-        "amplitude of {amplitude_mm} mm. Using ML = log10 A + 1.11 log10 r + 0.00189 r − 2.09 (A in mm, r in "
+        "amplitude of {amplitude_mm} mm. Using ML = log10 A + 1.11 log10 r + 0.00189 r + 0.591 (A in mm, r in "
         "km), what is the local magnitude?",
         "Compute ML from A = {amplitude_mm} mm at r = {distance_km} km with the Hutton–Boore relation "
-        "ML = log10 A + 1.11 log10 r + 0.00189 r − 2.09.",
+        "ML = log10 A + 1.11 log10 r + 0.00189 r + 0.591.",
     ),
     steps=2, rel_tol=0.0, abs_tol=0.05,
 ))

@@ -36,6 +36,27 @@ out is wording close to its questions: dpt.data.sft_build decontaminates every r
 
 Resumable: every model reply is cached in ``--cache-dir`` (dpt.data.backends.CachedGenerator), and a section whose
 record is in ``--out`` is skipped.
+
+What the first 40 sections showed (2026-11-13), and what changed:
+- the teacher wrote the questions as nested JSON and closed the brackets wrongly in 17 of 40 replies (``]}}`` for
+  ``]}]}``), so those sections had no questions. Questions are now tagged blocks (``<question>``, ``<facts>``), as
+  the plans and reports already were, which no bracket can break;
+- some questions asked about the paper's own study ("a four-day survey of roughly 70 buildings"), which the
+  student cannot answer without the paper; the prompt now asks for topics a specialist can answer from the field;
+- asked to think, Gemma wrote ~4K tokens of thought and ran out before its JSON on 34 of 46 answers. The check
+  now sends no thinking switch, as the T3 reward judge does.
+What the next 78 sections showed (2026-11-13, prompts v2), and what changed:
+- Gemma listed a median of 4 claims per answer as "unsupported", and with at most 2 allowed it dropped 68% of the
+  answers. Most of those claims were true background (the 2011 Tohoku moment, ~4 × 10²² N·m). The check now asks for
+  claims Gemma believes are wrong; on 60 of these answers it named such claims in 3;
+- 22 of the same 60 still built on one study's set-up (a model's own 10.5 Hz frequency, a test's input levels). The
+  check now asks for that ("study_specific"), and the question and answer prompts (v3) say it more firmly.
+  With the new check, 36 of the 60 pass, against 12 of 60 before.
+Records carry ``prompt_version`` and ``judge_version``. Resuming, ``todo`` and ``export`` count the last record of each
+section written with prompts v2 or v3; v1 sections are done again. A record from an older judge is checked again at the
+start of ``run`` from its stored plan and report, so no teacher work is repeated. The versions live in the records, not
+in the file name: a queued job runs the copy of its batch script taken at submission, and those copies all write
+``records.jsonl``.
 """
 
 from __future__ import annotations
@@ -44,6 +65,7 @@ import argparse
 import ast
 import hashlib
 import json
+import os
 import re
 import time
 from collections import Counter
@@ -52,10 +74,11 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 from urllib.parse import urlencode
 
+from dpt.chat.thinking import split_thinking
 from dpt.common.io import read_jsonl, write_json
 from dpt.common.logging import get_logger
 from dpt.common.types import T3_REPORT
-from dpt.data.gen.teacher import last_block, last_json
+from dpt.data.gen.teacher import _v1, last_block, last_json
 from dpt.data.prompts import messages_for_problem
 from dpt.data.schema import SFTSample
 
@@ -64,7 +87,7 @@ log = get_logger(__name__)
 ADMITTED_LICENSES = ("cc0", "public-domain", "cc-by", "cc-by-sa")
 LENGTH_HINT_WORDS = 550                      # D-Report's target (dpt.data.gen.t3)
 MIN_REPORT_WORDS, MAX_REPORT_WORDS = 300, 900
-MIN_KNOWLEDGE, MAX_UNSUPPORTED = 3, 2
+MIN_KNOWLEDGE = 3
 CHUNK_MIN_CHARS, CHUNK_MAX_CHARS = 4000, 9000
 SEISMOLOGY_TERMS = re.compile(
     r"\b(seism\w*|earthquake\w*|fault\w*|ruptur\w*|tomograph\w*|aftershock\w*|tremor\w*|magnitude\w*|"
@@ -290,16 +313,28 @@ def select_chunks(records: Iterable[dict[str, Any]], licenses: dict[str, dict[st
 
 # ---- 3. questions, answers, checks --------------------------------------------------------------------------------
 QUESTIONS_PROMPT = """You are writing questions for seismology specialists. Below is a section of an openly
-licensed paper ("{title}", {year}). Write {n} questions, each asking for a short technical report of about
-{words} words on something this section treats in depth.
+licensed paper ("{title}", {year}). Write {n} questions, each asking for a short technical report on a topic that
+this section treats in depth.
 
-Each question must stand on its own. A specialist who never saw the section should understand it, so do not
-mention the section, the paper, its authors, its figures or its tables, and do not name the study's region or data
-set unless the question is about them. A good answer should need the specific knowledge in the section
-(mechanisms, quantities with units, methods and their limits), not general statements. For each question list the
-key facts from the section that an excellent answer would contain.
+Each question asks about seismology a specialist should know: a mechanism, a method and its limits, a relation
+between quantities, or the behaviour of a well-known named earthquake, fault or region. A good answer should need
+the specific knowledge in the section (mechanisms, quantities with units, conditions, limits), not general
+statements.
 
-Reply with JSON only: {{"questions": [{{"question": "...", "key_facts": ["...", "..."]}}]}}
+Each question must stand on its own: a specialist who never read this paper should understand it and could answer
+it fully from knowledge of the field. So the question must not depend on this paper's own study: not on its
+experiment, model, survey, data set, stations, input motions or measured values. If the section is mostly about one
+study, ask about the general topic behind it (the mechanism, the method, the relation it tests), as a textbook
+chapter would. A major named earthquake, fault or region is fine, since its facts belong to the field. Do not
+mention the section, the paper, its authors, its figures or its tables, and do not say how long the report should
+be. For each question, list the key facts from the section that an excellent answer would contain.
+
+Reply in exactly this form, once per question:
+<question>the question</question>
+<facts>
+- a key fact
+- another key fact
+</facts>
 
 <section>
 {text}
@@ -316,7 +351,8 @@ Key facts: {facts}
 
 Write as an expert who knows this material. Never mention notes, an excerpt, a paper, a study, its authors, or
 figures or tables, and cite nothing: the reader sees only your report. Give mechanisms, quantities with units, and
-limits where they matter.
+limits where they matter. Do not present the set-up, measurements or results of the one study behind the notes as
+general facts: give what holds in general, with typical values and ranges.
 
 Reply in exactly this form:
 <plan>
@@ -338,18 +374,35 @@ CHECK_PROMPT = """You check a technical report against source notes.
 {report}
 </report>
 
-Answer four questions about the report.
+Answer five questions about the report.
 1. "contradicted": every statement in the report that contradicts the notes, quoted. An empty list if none.
-2. "unsupported": every specific claim (a number, a named result, a causal statement) that is neither in the notes
-   nor standard knowledge in seismology, quoted. An empty list if none.
-3. "mentions_source": true if the report refers to notes, an excerpt, a paper, a study, its authors, figures or
+2. "wrong": every specific claim (a number, a named result, a causal statement) that you believe is false, judged
+   from the notes and from what you know of seismology, quoted. A claim that is true but not in the notes is not
+   wrong. An empty list if none.
+3. "study_specific": true if the report presents the set-up, measurements or results of one particular study as
+   general facts (for example a model's own frequency or a test's own input levels), or refers to "this study",
+   "the configuration examined here" or the like. A named, well-known earthquake's facts are not study-specific.
+4. "mentions_source": true if the report refers to notes, an excerpt, a paper, a study, its authors, figures or
    tables as if the reader could see them.
-4. "knowledge": from 1 to 5, how much specific and correct technical content (mechanisms, quantities with units,
+5. "knowledge": from 1 to 5, how much specific and correct technical content (mechanisms, quantities with units,
    methods, limits) the report gives beyond textbook generalities.
 
-Reply with JSON only: {{"contradicted": [], "unsupported": [], "mentions_source": false, "knowledge": 4}}"""
+Reply with JSON only, for example:
+{{"contradicted": [], "wrong": [], "study_specific": false, "mentions_source": false, "knowledge": 4}}"""
 
 Gen = Callable[..., list[str]]
+PROMPT_VERSION = 3          # 2026-11-13: v2 tagged questions; v3 firmer on one study's set-up (module docstring)
+CURRENT_PROMPTS = (2, 3)    # v2 questions and answers are kept: the v3 check filters what v3 prompts now avoid
+JUDGE_VERSION = 3           # v3: "wrong" and "study_specific" in place of "unsupported"
+
+
+def current_records(records: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The last record of each section written with current prompts (``CURRENT_PROMPTS``)."""
+    out: dict[str, dict[str, Any]] = {}
+    for r in records:
+        if r.get("prompt_version") in CURRENT_PROMPTS:
+            out[r["chunk_id"]] = r
+    return out
 
 
 def _seed(*parts: Any) -> int:
@@ -378,17 +431,41 @@ def words(text: str) -> int:
     return len(re.findall(r"\S+", text or ""))
 
 
+LENGTH_PHRASE = re.compile(r"\s*\((?:approximately|about|roughly|around|~)?\s*~?\s*\d{3,4}\s*words?\)"
+                           r"|\s+of\s+(?:approximately|about|roughly|around)\s+\d{3,4}\s+words", re.I)
+
+
+def parse_questions(reply: str) -> list[dict[str, Any]]:
+    """The ``<question>`` blocks of the teacher's answer, each with the lines of the ``<facts>`` block after it. A
+    reply whose thinking never ended (cut off) gives none. A stated report length is removed: the T3 prompt adds its
+    own ("Aim for roughly 550 words.")."""
+    sp = split_thinking(reply or "")
+    if not sp.has_end:
+        return []
+    out = []
+    for m in re.finditer(r"<question>(.*?)</question>\s*(?:<facts>(.*?)</facts>)?", sp.answer, re.S):
+        question = " ".join(LENGTH_PHRASE.sub("", m.group(1)).split())
+        facts = [f.strip(" -*\t") for f in (m.group(2) or "").splitlines() if f.strip(" -*\t")]
+        if question:
+            out.append({"question": question, "key_facts": facts})
+    return out
+
+
+VERDICT_KEYS = ("contradicted", "wrong", "study_specific", "mentions_source", "knowledge")
+
+
 def judge_verdict(reply: str) -> dict[str, Any]:
     try:
-        obj = {k: last_json(reply, k) for k in ("contradicted", "unsupported", "mentions_source", "knowledge")}
+        obj = {k: last_json(reply, k) for k in VERDICT_KEYS}
     except ValueError:
         return {"error": "unparsed"}
     try:
         knowledge = int(obj["knowledge"])
     except (TypeError, ValueError):
         return {"error": "no knowledge score"}
-    return {"contradicted": list(obj["contradicted"] or []), "unsupported": list(obj["unsupported"] or []),
-            "mentions_source": bool(obj["mentions_source"]), "knowledge": knowledge}
+    return {"contradicted": list(obj["contradicted"] or []), "wrong": list(obj["wrong"] or []),
+            "study_specific": bool(obj["study_specific"]), "mentions_source": bool(obj["mentions_source"]),
+            "knowledge": knowledge}
 
 
 def check_answer(plan: str | None, report: str | None, verdict: dict[str, Any] | None) -> str:
@@ -408,11 +485,52 @@ def check_answer(plan: str | None, report: str | None, verdict: dict[str, Any] |
         return "contradicted"
     if verdict["mentions_source"]:
         return "judge_mentions_source"
-    if len(verdict["unsupported"]) > MAX_UNSUPPORTED:
-        return "unsupported"
+    if verdict["study_specific"]:
+        return "study_specific"
+    if verdict["wrong"]:
+        return "wrong"
     if verdict["knowledge"] < MIN_KNOWLEDGE:
         return "low_knowledge"
     return "ok"
+
+
+PASSES_JUDGE = {"contradicted": [], "wrong": [], "study_specific": False, "mentions_source": False, "knowledge": 5}
+
+
+def judge_answer(chunk: dict[str, Any], k: int, plan: str | None, report: str | None,
+                 judge: Gen) -> tuple[dict[str, Any] | None, str]:
+    """Gemma's verdict on answer ``k`` of a section, asked only when the checks that need no model pass, and the
+    answer's status."""
+    verdict = None
+    if plan and report and check_answer(plan, report, PASSES_JUDGE) == "ok":
+        verdict = judge_verdict(judge([{"role": "user", "content": CHECK_PROMPT.format(
+            text=chunk["text"], plan=plan, report=report)}], n=1, effort=None, max_tokens=4096,
+            seed=_seed(chunk["chunk_id"], k, "check"))[0])
+    return verdict, check_answer(plan, report, verdict)
+
+
+def recheck(records: list[dict[str, Any]], chunks: dict[str, dict[str, Any]], judge: Gen, *,
+            concurrency: int = 16) -> int:
+    """Check again, with the current judge, the answers of current-prompt records that an older judge checked, from
+    their stored plans and reports (module docstring). Changes ``records`` in place; returns how many changed. A
+    record whose judge call fails keeps its old judge version and is checked again next time."""
+    stale = [r for r in records if r.get("prompt_version") in CURRENT_PROMPTS
+             and r.get("judge_version") != JUDGE_VERSION and r["chunk_id"] in chunks]
+
+    def one(r: dict[str, Any]) -> bool:
+        try:
+            for k, a in enumerate(r.get("answers") or []):
+                if a.get("plan") is not None or a.get("report") is not None:      # it reached the teacher
+                    a["verdict"], a["status"] = judge_answer(chunks[r["chunk_id"]], k, a.get("plan"),
+                                                             a.get("report"), judge)
+        except Exception as e:
+            log.warning("recheck %s: %s: %s", r["chunk_id"], type(e).__name__, e)
+            return False
+        r["judge_version"] = JUDGE_VERSION
+        return True
+
+    with ThreadPoolExecutor(max_workers=concurrency) as ex:
+        return sum(ex.map(one, stale))
 
 
 def process_chunk(chunk: dict[str, Any], teacher: Gen, judge: Gen, *, per_chunk: int = 2) -> dict[str, Any]:
@@ -422,10 +540,10 @@ def process_chunk(chunk: dict[str, Any], teacher: Gen, judge: Gen, *, per_chunk:
         title=chunk.get("title") or "untitled", year=chunk.get("year") or "n.d.", n=per_chunk,
         words=LENGTH_HINT_WORDS, text=chunk["text"])}], n=1, effort="medium", max_tokens=8192,
         seed=_seed(cid, "questions"))[0]
-    try:
-        questions = [q for q in last_json(reply, "questions") if isinstance(q, dict) and q.get("question")]
-    except ValueError:
-        return {"chunk_id": cid, "status": "no_questions", "answers": []}
+    questions = parse_questions(reply)
+    versions = {"prompt_version": PROMPT_VERSION, "judge_version": JUDGE_VERSION}
+    if not questions:
+        return {"chunk_id": cid, **versions, "status": "no_questions", "answers": []}
     answers = []
     for k, q in enumerate(questions[:per_chunk]):
         question = str(q["question"]).strip()
@@ -436,15 +554,10 @@ def process_chunk(chunk: dict[str, Any], teacher: Gen, judge: Gen, *, per_chunk:
         text = teacher(answer_messages(question, chunk, facts), n=1, effort="medium", max_tokens=16384,
                        seed=_seed(cid, k, "answer"))[0]
         plan, report = last_block(text, "plan"), last_block(text, "report")
-        verdict = None
-        if plan and report and check_answer(plan, report, {"contradicted": [], "unsupported": [],
-                                                           "mentions_source": False, "knowledge": 5}) == "ok":
-            verdict = judge_verdict(judge([{"role": "user", "content": CHECK_PROMPT.format(
-                text=chunk["text"], plan=plan, report=report)}], n=1, effort=None, max_tokens=4096,
-                seed=_seed(cid, k, "check"))[0])
+        verdict, status = judge_answer(chunk, k, plan, report, judge)
         answers.append({"question": question, "key_facts": facts, "plan": plan, "report": report,
-                        "verdict": verdict, "status": check_answer(plan, report, verdict)})
-    return {"chunk_id": cid, "status": "done", "answers": answers}
+                        "verdict": verdict, "status": status})
+    return {"chunk_id": cid, **versions, "status": "done", "answers": answers}
 
 
 # ---- 4. SFT rows --------------------------------------------------------------------------------------------------
@@ -464,7 +577,7 @@ def reference_line(chunk: dict[str, Any]) -> str:
 def sft_rows(records: Iterable[dict[str, Any]], chunks: dict[str, dict[str, Any]], *, model_id: str) -> tuple[
         list[dict[str, Any]], dict[str, Any]]:
     rows, reasons, licenses = [], Counter(), Counter()
-    for rec in records:
+    for rec in current_records(records).values():
         chunk = chunks.get(rec["chunk_id"])
         for k, a in enumerate(rec.get("answers") or []):
             reasons[a["status"]] += 1
@@ -474,7 +587,7 @@ def sft_rows(records: Iterable[dict[str, Any]], chunks: dict[str, dict[str, Any]
             msgs = t3_messages(a["question"]) + [{"role": "assistant", "reasoning_content": a["plan"].strip(),
                                                   "content": content}]
             meta = {"task": T3_REPORT, "knowledge_checked": True, "knowledge_score": a["verdict"]["knowledge"],
-                    "unsupported_claims": len(a["verdict"]["unsupported"]), "paper_id": chunk["paper_id"],
+                    "wrong_claims": len(a["verdict"]["wrong"]), "paper_id": chunk["paper_id"],
                     "license": chunk["license"], "doi": chunk.get("doi")}
             rows.append(SFTSample.from_dict({
                 "subset": "knowledge_report", "messages": msgs, "reasoning_effort": "medium", "meta": meta,
@@ -488,14 +601,16 @@ def sft_rows(records: Iterable[dict[str, Any]], chunks: dict[str, dict[str, Any]
 
 # ---- CLI ----------------------------------------------------------------------------------------------------------
 def _generator(url: str, model: str, tokenizer: str | None, cache: Path, label: str, wait_s: float,
-               url_file: str | None, concurrency: int, temperature: float, top_p: float) -> Gen:
+               url_file: str | None, concurrency: int, temperature: float, top_p: float,
+               enable_thinking: bool | None = True) -> Gen:
     from dpt.data import backends as B
 
-    client = B.OpenAICompatClient(url, model, timeout=7200.0, max_concurrency=concurrency, url_file=url_file,
+    # the servers' API is under /v1; the first knowledge job posted to /completions and got 404 for every request
+    client = B.OpenAICompatClient(_v1(url), model, timeout=7200.0, max_concurrency=concurrency, url_file=url_file,
                                   wait_s=wait_s)
     tok = B.load_hf_tokenizer(tokenizer) if tokenizer else None
-    return B.CachedGenerator(B.VLLMGenerator(client, tokenizer=tok, temperature=temperature, top_p=top_p), cache,
-                             f"{label}:{model}")
+    gen = B.VLLMGenerator(client, tokenizer=tok, temperature=temperature, top_p=top_p, enable_thinking=enable_thinking)
+    return B.CachedGenerator(gen, cache, f"{label}:{model}")
 
 
 def cmd_run(a: argparse.Namespace) -> None:
@@ -503,15 +618,26 @@ def cmd_run(a: argparse.Namespace) -> None:
     if a.limit:
         chunks = chunks[:a.limit]
     out = Path(a.out)
-    done = {r["chunk_id"] for r in read_jsonl(out)} if out.exists() else set()
-    todo = [c for c in chunks if c["chunk_id"] not in done]
-    log.info("knowledge: %d sections, %d done, %d to go", len(chunks), len(done), len(todo))
     cache = Path(a.cache_dir)
     cache.mkdir(parents=True, exist_ok=True)
     teacher = _generator(a.teacher_url, a.teacher_model, a.tokenizer, cache / "knowledge_teacher.jsonl", "knowledge",
                          a.wait_s, a.teacher_url_file, a.concurrency, 0.7, 0.95)
-    judge = _generator(a.judge_url, a.judge_model, None, cache / "knowledge_judge.jsonl", "knowledge_check",
-                       a.wait_s, a.judge_url_file, a.concurrency, 0.6, 0.95)
+    # no thinking switch, and a label per judge version, so no earlier verdict is reused (module docstring)
+    judge = _generator(a.judge_url, a.judge_model, None, cache / "knowledge_judge.jsonl",
+                       f"knowledge_check_v{JUDGE_VERSION}", a.wait_s, a.judge_url_file, a.concurrency, 0.6, 0.95,
+                       enable_thinking=None)
+    records = list(read_jsonl(out)) if out.exists() else []
+    changed = recheck(records, {c["chunk_id"]: c for c in read_jsonl(a.chunks)}, judge, concurrency=a.concurrency)
+    if changed:                                       # one client at a time (knowledge.slurm), so a plain rewrite
+        tmp = out.with_suffix(".jsonl.tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
+            for r in records:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+        os.replace(tmp, out)
+        log.info("knowledge: %d records checked again with judge v%d", changed, JUDGE_VERSION)
+    done = set(current_records(records))
+    todo = [c for c in chunks if c["chunk_id"] not in done]
+    log.info("knowledge: %d sections, %d done, %d to go", len(chunks), len(done), len(todo))
     stop_at = time.time() + a.stop_new_after if a.stop_new_after else None
 
     def one(c: dict[str, Any]) -> dict[str, Any] | None:
@@ -592,7 +718,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     elif a.cmd == "run":
         cmd_run(a)
     elif a.cmd == "todo":
-        done = {r["chunk_id"] for r in read_jsonl(a.records)} if Path(a.records).exists() else set()
+        done = set(current_records(read_jsonl(a.records))) if Path(a.records).exists() else set()
         print(sum(1 for c in read_jsonl(a.chunks) if c["chunk_id"] not in done))
     else:
         chunks = {c["chunk_id"]: c for c in read_jsonl(a.chunks)}

@@ -104,6 +104,21 @@ def plain_number(text: str) -> tuple[float, str] | None:
     return value, t
 
 
+def all_boxed(text: str) -> list[str]:
+    """Contents of every ``\\boxed{...}`` (brace-balanced, stripped), in order."""
+    out, i = [], 0
+    while (start := text.find("\\boxed{", i)) >= 0:
+        j, depth = start + len("\\boxed{"), 1
+        while j < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[j], 0)
+            j += 1
+        if depth:
+            break
+        out.append(text[start + len("\\boxed{"):j - 1].strip())
+        i = j
+    return out
+
+
 def last_boxed(text: str) -> str | None:
     """Content of the last ``\\boxed{...}`` (brace-balanced), or None."""
     start = text.rfind("\\boxed{")
@@ -138,6 +153,11 @@ def math_items(raw_dir: Path, revision: dict[str, str]) -> tuple[list[dict[str, 
                 question, final = r.get("question", ""), gsm8k_answer(r.get("answer", ""))
             else:
                 question, final = r.get("problem", ""), last_boxed(r.get("solution", ""))
+                # "Find all t …" boxes each answer; the last box alone was a partial label that graded the complete
+                # answer 0 (2026-11-14 screening: {1/3, −5/2} labelled −2.5). Such problems have no single label.
+                if len(set(all_boxed(r.get("solution", "")))) > 1:
+                    drops[f"{name}:several_answers"] += 1
+                    continue
             if not question.strip():
                 drops[f"{name}:empty_question"] += 1
                 continue

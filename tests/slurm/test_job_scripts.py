@@ -388,6 +388,9 @@ def test_data_window_runs_every_server_and_client_on_its_own_two_nodes(tmp_path)
     for env in ("DPT_BANK_NAME=hard", "DPT_BANK_NAME=long", "DPT_BANK_NAME=v2a", "DPT_BANK_NAME=v2new",
                 "DPT_BANK_NAME=v2pub", "t3_atomic.slurm"):
         assert env in out, env
+    for name in ("hard", "long"):        # decontamination embeds on the CPU: node 1's GPUs hold the servers (3571166)
+        line = next(x for x in lines if f"DPT_BANK_NAME={name} " in x)
+        assert "env CUDA_VISIBLE_DEVICES= " in line, line
     node1_sft = [i for i, line in enumerate(lines) if line in _served(lines, "node01-001", "sft")]
     assert len(node1_sft) == 3 and min(node1_sft) > out.count("\n", 0, out.index("DPT_BANK_NAME=hard"))
     assert out.index("DPT_BANK_NAME=v2new") > out.index("DPT_BANK_NAME=hard")      # phase B after phase A
@@ -418,6 +421,31 @@ def test_data_window_on_eight_nodes_with_two_teacher_nodes_and_no_t3(tmp_path):
     assert "DPT_DIFFICULTY_CONCURRENCY=576 " in out and "DPT_DIFFICULTY_CONCURRENCY=768 " in out
 
 
+def test_data_window_as_its_own_job_gives_way_to_a_builder_and_to_a_ready_bank(tmp_path):
+    """Window 1 resubmitted on 11-14 may start while an 8-node job builds bank v2 in the same directory, or after the
+    bank passed its check: it leaves at once. Inside an 8-node job (another job name) the guard does not apply."""
+    v2 = tmp_path / "work" / "dpt" / "data" / "v2"
+    v2.mkdir(parents=True)
+    (v2 / "BUILDING").write_text("3576284\n")
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "squeue").write_text('#!/bin/bash\n[[ " $* " == *" -j 3576284 "* ]] && echo 3576284\nexit 0\n')
+    (fake / "squeue").chmod(0o755)
+    path = f"{fake}:{os.environ['PATH']}"
+    two = "node01-001 node01-002"
+    r = _run("data_window.slurm", [], tmp_path, DPT_SLURM_NODES=two, PATH=path, SLURM_JOB_NAME="dpt-datawin")
+    assert r.returncode == 0 and "job 3576284 is building bank v2: leaving" in r.stderr, r.stderr
+    assert "DPT_BANK_NAME" not in r.stdout
+    r = _run("data_window.slurm", [], tmp_path, DPT_SLURM_NODES=two, PATH=path, SLURM_JOB_NAME="dpt-rlv2")
+    assert r.returncode == 0 and "DPT_BANK_NAME=hard" in r.stdout, r.stderr
+    (v2 / "BUILDING").write_text("3576000\n")                     # a builder that no longer runs
+    r = _run("data_window.slurm", [], tmp_path, DPT_SLURM_NODES=two, PATH=path, SLURM_JOB_NAME="dpt-datawin")
+    assert r.returncode == 0 and "DPT_BANK_NAME=hard" in r.stdout, r.stderr
+    (v2 / "bank_check.json").write_text(json.dumps({"problems": []}))
+    r = _run("data_window.slurm", [], tmp_path, DPT_SLURM_NODES=two, PATH=path, SLURM_JOB_NAME="dpt-datawin")
+    assert r.returncode == 0 and "passed its check already" in r.stderr and "DPT_BANK_NAME" not in r.stdout
+
+
 def test_data_window_needs_a_node_for_the_sft_model(tmp_path):
     r = _run("data_window.slurm", [], tmp_path, DPT_SLURM_NODES="node01-001")
     assert r.returncode != 0 and "needs 2 nodes" in r.stderr
@@ -439,7 +467,7 @@ def test_final_eval_window_evaluates_rl_v2_on_the_rl_nodes(tmp_path):
     assert len(_model_servers(out, "rl_v2_seed1", 67584)) == 24                 # 64K continuations on all 8 nodes
     for s_ in ("d_num_hard", "d_fresh"):
         assert f"dpt.eval.budget continue --set {s_} --row rl_v2_seed1" in out
-    assert ("dpt.eval.budget compare --rows sft,rl_seed1,rl_v2_seed1,sft_v2_seed1,rl_v3_seed1,base_medium "
+    assert ("dpt.eval.budget compare --rows sft,rl_seed1,rl_v2_seed1,rl_v2_seed2,base_medium "
             "--baseline sft") in "\n".join(_plain(out))
     assert out.index("budget compare") < out.index("07_final_eval.sh --report-only")
     assert sum(1 for line in out.splitlines() if "serve_vllm.sh" in line and "judge" in line) == 3
@@ -764,26 +792,24 @@ def test_data_knowledge_builds_the_knowledge_mix_and_the_replay_mix(tmp_path):
     assert "sft_build replay-mix" in out and "--replay-token-ratio 2.0" in out and "/sft_v2/sft_train.jsonl" in out
 
 
-def test_job_2_trains_sft_v2_evaluates_it_and_runs_rl_v3(tmp_path):
-    """Job 2 (2026-11-12): SFT v2 on the 8 nodes, its export copied to $WORK, its eval as row sft_v2_seed1, then RL v3
-    from it with RL v2's cap, and RL v3's final eval as row rl_v3_seed1."""
+def test_job_2_runs_rl_v2_with_seed_2_and_evaluates_it(tmp_path):
+    """Job 2 (2026-11-15, after SFT v2 was dropped): RL v2 again with seed 2 on the same bank, from SFT v1, at seed
+    1's cap, and its final eval as row rl_v2_seed2. No SFT step and no RL v3."""
     (tmp_path / "sbx.sif").write_text("")
     _bank_check(tmp_path, [])
     cap = tmp_path / "scratch" / "dpt" / "checkpoints" / "rl" / "rl9b_v2_seed1.cap.json"
     cap.parent.mkdir(parents=True)
     cap.write_text(json.dumps({"cap": "24k"}))
     r = _run("sft_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, ""))
-    out, lines = r.stdout, _plain(r.stdout)
+    out = r.stdout
     assert "final eval: done" in r.stderr, r.stderr
-    assert sum("04_sft.sh --config sft/sft_9b_v2.yaml" in line for line in lines) == 8      # every node trains
-    assert "exports/sft9b_v2_seed1.partial" in out and "hf_export" in out
-    assert len(_model_servers(out, "sft_v2_seed1", 40960)) == 21 and len(_model_servers(out, "sft_v2_seed1", 67584)) == 24
-    assert "dpt.eval.budget continue --set d_fresh --row sft_v2_seed1" in out
-    assert "RL v3 keeps RL v2's cap: 24k" in r.stderr and "memtest" not in out
-    train = [line for line in out.splitlines() if line.startswith("DRY: python -m dpt.launch.rl --config rl/rl_9b_v3.yaml")]
+    assert "seed 2 keeps seed 1's cap: 24k" in r.stderr and "memtest" not in out
+    assert "04_sft.sh" not in out and "rl_9b_v3" not in out and "sft_v2" not in out
+    train = [line for line in out.splitlines()
+             if line.startswith("DRY: python -m dpt.launch.rl --config rl/rl_9b_v2_seed2.yaml")]
     assert len(train) == 1 and "project.thinking.rl_max_response=24576" in train[0]
-    assert "rl9b_v3_seed1/global_step_120" in out and len(_model_servers(out, "rl_v3_seed1", 40960)) == 21
-    assert out.index("--row sft_v2_seed1") < out.index("--config rl/rl_9b_v3.yaml")
+    assert "rl9b_v2_seed2/global_step_120" in out and len(_model_servers(out, "rl_v2_seed2", 40960)) == 21
+    assert "dpt.eval.budget continue --set d_num_hard --row rl_v2_seed2" in out
 
 
 def test_a_second_job_waits_for_a_running_bank_build(tmp_path):

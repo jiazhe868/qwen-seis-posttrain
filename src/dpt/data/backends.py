@@ -151,15 +151,20 @@ class OpenAICompatClient:
     def chat(
         self, messages: Sequence[dict[str, Any]], *, n: int = 1, temperature: float = 1.0, top_p: float = 1.0,
         max_tokens: int = 1024, seed: int | None = None, effort: str | None = None,
-        enable_thinking: bool = True,
+        enable_thinking: bool | None = True,
     ) -> list[str]:
-        kwargs: dict[str, Any] = {"enable_thinking": enable_thinking}
+        # enable_thinking=None sends no template switch, as the T3 reward judge does (dpt.rewards.judge). Gemma 4
+        # thinks when asked to: the knowledge check with enable_thinking=True wrote ~4K tokens of thought and ran out
+        # of tokens before its JSON, for 34 of 46 answers (2026-11-13).
+        kwargs: dict[str, Any] = {} if enable_thinking is None else {"enable_thinking": enable_thinking}
         if effort is not None:
             kwargs["reasoning_effort"] = effort
         payload: dict[str, Any] = {
             "model": self.model, "messages": list(messages), "n": n, "temperature": temperature,
-            "top_p": top_p, "max_tokens": max_tokens, "chat_template_kwargs": kwargs,
+            "top_p": top_p, "max_tokens": max_tokens,
         }
+        if kwargs:
+            payload["chat_template_kwargs"] = kwargs
         if seed is not None:
             payload["seed"] = seed
         out = self._post("/chat/completions", payload)
@@ -194,11 +199,12 @@ class VLLMGenerator:
     """
 
     def __init__(self, client: OpenAICompatClient, tokenizer: Any | None = None,
-                 temperature: float = 1.0, top_p: float = 1.0):
+                 temperature: float = 1.0, top_p: float = 1.0, enable_thinking: bool | None = True):
         self.client = client
         self.tokenizer = tokenizer
         self.temperature = temperature
         self.top_p = top_p
+        self.enable_thinking = enable_thinking      # chat requests only; None sends no switch (OpenAICompatClient.chat)
 
     def __call__(self, messages: Sequence[dict[str, Any]], *, n: int = 1, effort: str | None = "medium",
                  max_tokens: int = 16384, seed: int | None = None) -> list[str]:
@@ -210,7 +216,7 @@ class VLLMGenerator:
             return self.client.complete(prompt, n=n, temperature=self.temperature, top_p=self.top_p,
                                         max_tokens=max_tokens, seed=seed)
         return self.client.chat(messages, n=n, temperature=self.temperature, top_p=self.top_p,
-                                max_tokens=max_tokens, seed=seed, effort=effort)
+                                max_tokens=max_tokens, seed=seed, effort=effort, enable_thinking=self.enable_thinking)
 
 
 class CachedGenerator:

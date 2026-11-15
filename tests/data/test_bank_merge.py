@@ -6,7 +6,7 @@ import json
 
 from dpt.common.io import read_jsonl, write_jsonl
 from dpt.common.manifest import build_manifest, load_manifest, write_manifest
-from dpt.data.bank_merge import check, expected_mixed_share, merge, pin_dev, without_task
+from dpt.data.bank_merge import FAULTY_FAMILIES, check, expected_mixed_share, merge, pin_dev, without_task
 
 RUB = [{"criterion": "States X", "weight": 2}]
 
@@ -118,3 +118,22 @@ def test_pin_dev_gives_the_dev_reports_their_atomic_checks(tmp_path):
     res = pin_dev(v2, v1 / "rl_dev.jsonl", t3_map=m)
     rows = {r["extra_info"]["uid"]: json.loads(r["reward_model"]["ground_truth"]) for r in read_jsonl(v2 / "rl_dev.jsonl")}
     assert res["t3_rubrics_converted"] == 1 and rows["d3"]["rubric"] == checks and rows["d4"]["rubric"] == RUB
+
+
+def test_merge_leaves_out_the_faulty_local_magnitude_families(tmp_path):
+    """The 2026-11-14 screening: local_magnitude printed the IASPEI constant (A in nm) with A in mm, so its labels
+    were 2.681 too low. Bank v2 drops the T1 family and the T2 code task; the long family that also ends in a
+    local magnitude uses a relation calibrated for mm and stays."""
+    assert FAULTY_FAMILIES == {"local_magnitude", "network_local_magnitude"}
+    a = tmp_path / "a.jsonl"
+    write_jsonl(a, [
+        {"uid": "t1", "task": "t1_num", "source": {"family": "local_magnitude"}, "answer": {"value": 0.3}},
+        {"uid": "t2", "task": "t2_code", "source": {"family": "network_local_magnitude"}},
+        {"uid": "t2b", "task": "t2_code", "source": {"family": "local_magnitude", "kind": "physics_function"}},
+        {"uid": "long", "task": "t1_num", "source": {"family": "locate_then_local_magnitude"}},
+        {"uid": "gen", "task": "t1_num", "meta": {"generator": {"name": "local_magnitude"}}},
+        {"uid": "ok", "task": "t1_num", "source": {"family": "head_wave_time"}}])
+    res = merge([a], tmp_path / "out.jsonl")
+    assert sorted(r["uid"] for r in read_jsonl(tmp_path / "out.jsonl")) == ["long", "ok"]
+    assert res["faulty_dropped"] == {"local_magnitude": 3, "network_local_magnitude": 1}
+    assert "faulty families left out" in load_manifest(tmp_path / "out.jsonl").notes

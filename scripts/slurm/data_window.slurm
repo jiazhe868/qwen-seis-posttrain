@@ -46,6 +46,22 @@ TEACHER_MODEL="${DPT_TEACHER_MODEL:-Qwen/Qwen3.8-27B-FP8}"
 JUDGE_MODEL="${DPT_JUDGE_MODEL_ID:-RedHatAI/gemma-4-26B-A4B-it-FP8-dynamic}"
 SKIP_T3="${DPT_DATA_SKIP_T3:-0}"
 TEACHER_NODE_COUNT="${DPT_DATA_TEACHER_NODES:-1}"
+# Window 1 as its own job (dpt-datawin) gives way to an 8-node job that is building bank v2 ($V2/BUILDING holds the
+# builder's job id), since both would write the same files, and leaves when the bank already passed its check. An
+# 8-node job that starts while window 1 runs stops window 1 and builds the bank itself (rl_v2_job.sh).
+if [[ "${SLURM_JOB_NAME:-}" == dpt-datawin ]]; then
+  BUILDER="$(cat "${V2}/BUILDING" 2>/dev/null || true)"
+  if [[ -n "${BUILDER}" && "${BUILDER}" != "${SLURM_JOB_ID:-}" ]] &&
+     squeue -h -j "${BUILDER}" -t R -o %i 2>/dev/null | grep -q .; then
+    tlog "job ${BUILDER} is building bank v2: leaving"; exit 0
+  fi
+  if [[ -f "${V2}/bank_check.json" ]] &&
+     python -c 'import json, sys; sys.exit(1 if json.load(open(sys.argv[1])).get("problems", [1]) else 0)' \
+       "${V2}/bank_check.json"; then
+    tlog "bank v2 passed its check already (${V2}/bank_check.json): leaving"; exit 0
+  fi
+  dry || { mkdir -p "${V2}"; echo "${SLURM_JOB_ID}" > "${V2}/BUILDING"; }
+fi
 mapfile -t NODES < <(job_nodes)
 (( ${#NODES[@]} >= TEACHER_NODE_COUNT + 1 )) ||
   tdie "this job needs $((TEACHER_NODE_COUNT + 1)) nodes (${TEACHER_NODE_COUNT} for the teacher, 1 or more for the SFT model), it has ${#NODES[@]}"
@@ -147,11 +163,15 @@ proxy_here sft_audit 8200 "${SFT_URLS[@]}"; publish sft_audit "http://${N1}:8200
 
 # ---- phase A ----------------------------------------------------------------------------------------------------
 tlog "phase A: hard + long verification$( [[ "${SKIP_T3}" == 1 ]] || echo ', atomic T3'), v1 difficulty"
-bg hard.log env DPT_BANK_OUT="${DATA}/v1_hard" DPT_BANK_NAME=hard DPT_BANK_CANDIDATES="${G}/t1_hard_candidates.jsonl" \
-  DPT_BANK_STAGES=ingest,quality,dedup,decontam,verify DPT_JUDGE_ENDPOINT=judge_v bash scripts/slurm/data.slurm bank
+# The verification clients embed for decontamination on the CPU (CUDA_VISIBLE_DEVICES empty): node 1's GPUs hold the
+# teacher and Gemma, and window 1's embedder ran out of memory on GPU 0 there (job 3571166, 2026-11-14).
+bg hard.log env CUDA_VISIBLE_DEVICES= DPT_BANK_OUT="${DATA}/v1_hard" DPT_BANK_NAME=hard \
+  DPT_BANK_CANDIDATES="${G}/t1_hard_candidates.jsonl" DPT_BANK_STAGES=ingest,quality,dedup,decontam,verify \
+  DPT_JUDGE_ENDPOINT=judge_v bash scripts/slurm/data.slurm bank
 A_HARD=${BG}
-bg long.log env DPT_BANK_OUT="${DATA}/v1_long" DPT_BANK_NAME=long DPT_BANK_CANDIDATES="${G}/t1_long_candidates.jsonl" \
-  DPT_BANK_STAGES=ingest,quality,dedup,decontam,verify DPT_JUDGE_ENDPOINT=judge_v bash scripts/slurm/data.slurm bank
+bg long.log env CUDA_VISIBLE_DEVICES= DPT_BANK_OUT="${DATA}/v1_long" DPT_BANK_NAME=long \
+  DPT_BANK_CANDIDATES="${G}/t1_long_candidates.jsonl" DPT_BANK_STAGES=ingest,quality,dedup,decontam,verify \
+  DPT_JUDGE_ENDPOINT=judge_v bash scripts/slurm/data.slurm bank
 A_LONG=${BG}
 if [[ "${SKIP_T3}" != 1 ]]; then
   bg t3_atomic.log env DPT_TEACHER_ENDPOINT=teacher DPT_JUDGE_ENDPOINT=judge_v bash scripts/slurm/t3_atomic.slurm

@@ -1,4 +1,5 @@
 # =============================================================================
+# Dropped 2026-11-15: an expert audit of 100 knowledge rows kept 2 (98 had a factual error); not run.
 # SFT v2 on the 9B line (2026-11-12, the user's decision): continued from SFT v1 on the knowledge-dense report rows
 # (dpt.data.gen.knowledge) plus a replay sample of the v1 mix with twice their tokens (data.slurm knowledge).
 #
