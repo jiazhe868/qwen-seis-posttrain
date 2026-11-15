@@ -10,7 +10,9 @@
 #     rl_v2_queue.slurm → rl_v2_job.sh builds bank v2 first if it is missing, then RL v2, then the final eval. No bank
 #     check at submission, so it can wait in the queue while window 1 does (2026-11-11).
 #   scripts/slurm/submit_window.sh sft-v2-queue                  # job 2 as ONE 8-node job for 48 h (2026-11-12):
-#     sft_v2_queue.slurm → sft_v2_job.sh: SFT v2 from SFT v1 on the knowledge rows, its eval, RL v3, the final eval
+#     sft_v2_queue.slurm → sft_v2_job.sh. Since 2026-11-15 it runs RL v2 with seed 2 (SFT v2 was dropped)
+#   scripts/slurm/submit_window.sh rl-seed-queue <seed>          # RL v2 with another seed as ONE 8-node job for 48 h:
+#     rl_v2_queue.slurm with configs/rl/rl_9b_v2_seed<seed>.yaml, final eval row rl_v2_seed<seed> (2026-11-15)
 #   scripts/slurm/submit_window.sh rl-queue                      # window 2 as ONE heterogeneous job: rl_fallback.slurm,
 #     8 gpu-a100 nodes + 1 judge node (the cluster allows at most 8 gpu-a100 nodes per job). DPT_FB_TIME (default 24:00:00)
 #     is both components' limit; DPT_JUDGE_PARTITION (default gpu-a100, or gpu-a100-small) the judge node's queue.
@@ -27,7 +29,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source scripts/slurm/env.sh
 source scripts/slurm/lib.sh
-WHAT="${1:?data | rl | data-queue | rl-queue | rl-build-queue | sft-v2-queue}"
+WHAT="${1:?data | rl | data-queue | rl-queue | rl-build-queue | sft-v2-queue | rl-seed-queue}"
 ACCT="${DPT_ACCOUNT:-PROJ}"; EVAL_MIN=$(( ${DPT_EVAL_H:-4} * 60 ))
 read -r DATA JUDGE_ID <<< "$(python - <<'PY'
 from dpt.common.config import load_config
@@ -83,10 +85,22 @@ case "${WHAT}" in
     (( $# == 1 )) || tdie "sft-v2-queue takes no sbatch options: set DPT_FB_TIME"
     time_limit="${DPT_FB_TIME:-48:00:00}"
     submit SFTV2 -A "${ACCT}" -p gpu-a100 -N 8 -t "${time_limit}" scripts/slurm/sft_v2_queue.slurm
-    tlog "job 2 in the queue: job ${SFTV2} (8 gpu-a100 nodes, ${time_limit}: SFT v2, eval, RL v3, final eval)"
+    tlog "job 2 in the queue: job ${SFTV2} (8 gpu-a100 nodes, ${time_limit}: RL v2 seed 2, final eval)"
+    exit 0 ;;
+  rl-seed-queue)
+    seed="${2:?rl-seed-queue <seed>}"
+    (( $# == 2 )) || tdie "rl-seed-queue takes a seed and no sbatch options: set DPT_FB_TIME"
+    [[ -f "configs/rl/rl_9b_v2_seed${seed}.yaml" ]] || tdie "no configs/rl/rl_9b_v2_seed${seed}.yaml"
+    time_limit="${DPT_FB_TIME:-48:00:00}"
+    # The batch script is the same as RL v2's: it waits for the go-ahead flag and runs rl_v2_job.sh, read when the
+    # job starts. The seed reaches that script through the environment, which sbatch copies at submission.
+    submit RLSEED -A "${ACCT}" -p gpu-a100 -N 8 -t "${time_limit}" -J "dpt-rlv2s${seed}" \
+      --export="ALL,DPT_RL_CONFIG=rl/rl_9b_v2_seed${seed}.yaml,DPT_FINAL_ROW=rl_v2_seed${seed}" \
+      scripts/slurm/rl_v2_queue.slurm
+    tlog "RL v2 seed ${seed} in the queue: job ${RLSEED} (8 gpu-a100 nodes, ${time_limit}: RL, final eval)"
     exit 0 ;;
   data|rl) ;;
-  *) tdie "unknown window ${WHAT}: data | rl | data-queue | rl-queue | rl-build-queue" ;;
+  *) tdie "unknown window ${WHAT}: data | rl | data-queue | rl-queue | rl-build-queue | sft-v2-queue | rl-seed-queue" ;;
 esac
 
 RES="${2:?reservation name}"

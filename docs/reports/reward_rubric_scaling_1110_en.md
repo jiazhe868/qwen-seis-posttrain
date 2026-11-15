@@ -337,6 +337,25 @@ knowledge-dense SFT data drawn from textbooks, or retrieval. The test would star
 | The cause of run 1's collapse is open | `best_drop` pause at −3 dev points; length-drop warning | done (RL v2 config) |
 | Mid-training question | not now; first the cheap failure-type test of §7 | proposed |
 
+## 9. Update (2026-11-15): labels, rubrics and a reviewer
+
+A model review of the tests and the data (README §8.5) adds three things to §4.
+
+- **Agreement with the grader cannot catch a wrong formula that the problem states.** The T1 family for local
+  magnitudes printed ML = log10 A + 1.11 log10 r + 0.00189 r − 2.09 with A in mm. The constant belongs to the form with
+  A in nm; with A in mm, Hutton–Boore has +0.591, so every label was 2.681 too low. The reward, the grader, the solver
+  and both verifying models all computed the same label from the printed formula, so the 99.3–100% agreement in §4
+  included these problems. 825 of them were in run 1's training bank. The generators are fixed and bank v2 leaves the
+  old problems out. A physical anchor caught it: 1 mm at 100 km must give ML 3.0, and the printed formula gives 0.32.
+- **The D-Report rubrics are mostly sound.** Of 529 criteria, the review judged 515 sound. 5 questions were flagged:
+  2 rubrics reward wrong physics, 1 lists a true statement as an error, 2 accept only one of several valid readings.
+  Without them, the D-Report win rates move by at most 1.4 points (Gemma) and 0.5 (Luna).
+- **A model reviewer must read both orders.** Judged in one order, the reviewer favoured the first answer. Over both
+  orders, it gives RL step 20 a 60.0% win rate against the base on 30 pairs, between Gemma (86.7%) and Luna (45.0%), and
+  agrees with Luna on 63% of the pairs and with Gemma on 53%. That is one more sign that the T3 judge is lenient.
+
+Counts only: `docs/talk/data/screening_1114.json`.
+
 ## Data and code
 
 | file | content |

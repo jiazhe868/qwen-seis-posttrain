@@ -381,3 +381,18 @@ def test_report_check_resumes_from_its_cache(tmp_path):
     again = Checker(lambda p: (_verdict(), "stop"))
     b = check_reports(rows, again, votes=1, cache=VerdictCache(tmp_path / "r.jsonl", "question"))
     assert a == b and again.calls == 0
+
+
+def test_an_error_split_at_a_semicolon_keeps_its_back_reference():
+    """A drafted error with a semicolon in it was split in two, and its second half, on its own, was a true
+    statement that a rubric criterion required (one D-Report item, 2026-11-14 screening). A part that points back
+    now stays with the error before it. The example below is made up."""
+    from dpt.eval.autocheck import _errors_of
+
+    row = {"common_errors_to_penalize": "Claiming that the ray parameter grows with depth; that quantity is constant "
+                                        "along a ray; says diffusion is instantaneous; It ignores the dip"}
+    assert _errors_of(row) == ["Claiming that the ray parameter grows with depth; that quantity is constant along "
+                               "a ray", "says diffusion is instantaneous; It ignores the dip"]
+    assert _errors_of({"common_errors_to_penalize": "confuses pore pressure with total stress; says diffusion is "
+                                                    "instantaneous"}) == [
+        "confuses pore pressure with total stress", "says diffusion is instantaneous"]

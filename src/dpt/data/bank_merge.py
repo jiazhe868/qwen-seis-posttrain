@@ -59,8 +59,11 @@ FAULTY_FAMILIES = frozenset({"local_magnitude", "network_local_magnitude"})
 
 
 def family_of(row: dict[str, Any]) -> str | None:
+    """The generator family of a problem. Code tasks built from a T1 family carry it as ``family``; the other code
+    tasks carry only their ``kind`` (12 network_local_magnitude tasks in bank v1 have family null)."""
     source, meta = row.get("source") or {}, row.get("meta") or {}
-    return source.get("family") or (meta.get("generator") or {}).get("name") or meta.get("family")
+    return (source.get("family") or (meta.get("generator") or {}).get("name") or meta.get("family")
+            or source.get("kind") or meta.get("kind"))
 
 
 def merge(inputs: Sequence[Path], out: Path, t3_map: Path | None = None, version: str = "v2",

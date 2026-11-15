@@ -348,3 +348,31 @@ What this changes in the sections above:
 - §7's row on the receiver-function families: report them per model and at both budgets. They test the base
   model's knowledge and the trained models' budget.
 - For RL v2: score D-Num-hard at 32K and at 64K, and keep the wrong-value monitor from §7.
+
+## 9. Update (2026-11-15): a model review of the tests and the data
+
+No person was available to check the tests, so a frontier LLM did the expert screening in place of one. It is
+recorded as a model review, and its notes on single items stay private. Counts only:
+`docs/talk/data/screening_1114.json`, `docs/talk/data/budgets_screened_1115.json`.
+
+| what | items | result |
+|---|---|---|
+| D-Num-hard | 160 | every gold answer right (solved before the answer was shown); 0 flagged |
+| D-Fresh | 60 | every gold answer right; 1 flagged (an unstated convention under a 0.1% tolerance) |
+| D-Report | 100 questions, 529 criteria | 515 criteria sound; 5 questions flagged (2 rubrics reward wrong physics, 1 lists a true statement as an error, 2 accept one of several valid readings) |
+| the bank's expert queue | 156 | 150 labels sound; one generator bug |
+| knowledge report rows | 100 | 2 keep, 48 fix, 50 drop |
+
+What this means for the sections above:
+- §5 (the tests): the numeric gold answers hold, so D-Num-hard's and D-Fresh's weaknesses are the ones listed there,
+  not wrong answers. Leaving out the 6 flagged items changes no result: at 32K, RL step 20 − SFT is +1.9 [−0.7, +4.6]
+  on D-Num-hard (no item left out) and +3.6 [−1.5, +9.1] on D-Fresh (59 items).
+- §5 (D-Report, "no human gold"): the 30 blind pairs were judged by the model reviewer in both orders. Judged in one
+  order, it favoured the first answer: the trained model won all 11 pairs it led and 8 of the 19 it trailed. Over both
+  orders it gives RL step 20 a 60.0% win rate against the base; Gemma gives 86.7% and Luna 45.0% on the same pairs.
+  That agrees with §3: the reward judge is lenient.
+- §7 (what to change): the knowledge-dense report data was built and failed review. The teacher wrote facts that its
+  source section did not contain from memory, and the check against the section could not see them. SFT v2 was
+  dropped, and RL v2 runs with three seeds.
+- The data generator for local magnitudes printed the constant for amplitudes in nm with amplitudes in mm, so 825
+  problems in run 1's training bank carried labels 2.681 too low. Bank v2 leaves them out.

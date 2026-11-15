@@ -82,7 +82,7 @@ solved every D-Num-hard and D-Fresh problem without seeing the answers, and all 
 825 problems in run 1's training bank carried labels 2.681 units too low. Bank v2 leaves them out. Of 100 rows of
 the paper-based report data, it would keep 2 and drop 50: the teacher wrote earthquake facts from memory, and
 many were wrong. Therefore, I dropped SFT v2, and the 8-node job planned for it runs RL v2 again with a second
-seed. Both RL v2 runs are queued, and their results are not in yet.
+seed. A third seed is queued too, and the results of all three are not in yet.
 
 Most of the month went to systems. The one 8-node job ran 71.9 hours: 28.7 of them ran the planned stages,
 and 43.2 went to incidents, waits and holds, 35.1 of those before SFT could start (§9.2). A 9B model on
@@ -205,9 +205,10 @@ sbatch -A <allocation> scripts/slurm/data.slurm sft
 # --- one 8-node job: baseline eval → SFT → SFT eval → RL-entry gate → RL → final eval
 sbatch -A <allocation> scripts/slurm/campaign.slurm
 
-# --- the next runs (§8.3): RL v2 with two seeds, one 8-node job each --------
+# --- the next runs (§8.3): RL v2 with three seeds, one 8-node job each ------
 scripts/slurm/submit_window.sh rl-build-queue          # seed 1: bank v2 if missing → 24K test → RL v2 → final eval
 scripts/slurm/submit_window.sh sft-v2-queue            # seed 2: the same steps (the slot first planned for SFT v2, §8.4)
+scripts/slurm/submit_window.sh rl-seed-queue 3         # seed 3: the same steps
 
 # --- figures in this README, from the result files in docs/talk/data/ -----
 python scripts/readme_figures.py
@@ -888,19 +889,27 @@ can still be fixed during the days it waits in the queue (`scripts/slurm/rl_v2_q
 `scripts/slurm/rl_v2_job.sh`). The bank build embeds problems for decontamination on the CPU, because the GPUs
 hold the servers. A first build ran out of GPU memory there.
 
-A second 8-node job runs the same steps with seed 2 (`configs/rl/rl_9b_v2_seed2.yaml`). It was queued for SFT v2,
-which was dropped (§8.4), and its script keeps that first name. If both jobs start without a bank, the second
-waits for the first one's build. The final evaluation compares both seeds with SFT.
+Two more 8-node jobs run the same steps with seeds 2 and 3 (`configs/rl/rl_9b_v2_seed2.yaml`,
+`configs/rl/rl_9b_v2_seed3.yaml`). The job for seed 2 was queued for SFT v2, which was dropped (§8.4), and its script
+keeps that first name. If several jobs start without a bank, the later ones wait for the first one's build. A
+seed reuses the length cap another seed chose, since the model, layout and lengths are the same. The final
+evaluation compares each seed with SFT, and the seeds pooled: each item's score averaged over the seeds
+(`dpt.eval.budget compare --pool`).
 
 ```bash
 scripts/slurm/submit_window.sh rl-build-queue      # seed 1: bank v2 if missing → 24K test → RL v2 → final evaluation
 scripts/slurm/submit_window.sh sft-v2-queue        # seed 2: the same steps (scripts/slurm/sft_v2_job.sh)
+scripts/slurm/submit_window.sh rl-seed-queue 3     # seed 3: the same steps
+# when they have finished: each seed and the pooled seeds against SFT, as the table for this section
+python -m dpt.eval.budget compare --rows sft,rl_seed1,rl_v2_seed1,rl_v2_seed2,rl_v2_seed3 \
+    --pool rl_v2=rl_v2_seed1,rl_v2_seed2,rl_v2_seed3 --out budgets_rl_v2.json
+python -m dpt.eval.budget table budgets_rl_v2.json --rows rl_seed1,rl_v2_seed1,rl_v2_seed2,rl_v2_seed3,rl_v2
 ```
 
 **A job that waits days in the queue should read its steps when it starts.**
 
 Caveats, plainly:
-- two seeds of RL v2, and one of every other run;
+- three seeds of RL v2, and one of every other run;
 - D-Fresh has 60 problems, so its interval is about ±5 points;
 - with the report task left out, RL v2 cannot improve D-Report.
 
@@ -1065,8 +1074,11 @@ The model reviewer sits between the two judges and closer to Luna, which again p
 ```bash
 python -m dpt.eval.budget compare --rows sft,rl_seed1,base_medium --baseline sft --exclude <private list>
 python -m dpt.eval.report --row base_medium=… --row sft=… --row rl_seed1=… --exclude <private list> --summary-out …
+python -m dpt.eval.blind_review page --row-dir eval_results/rl_seed1 --swap --out review_batch1_swapped.html
+python -m dpt.eval.blind_review combine --first verdicts_batch1.csv --swapped verdicts_batch1_swapped.csv \
+    --out verdicts_batch1_both.csv                  # a verdict counts when both orders agree
 python -m dpt.eval.blind_review import --row-dir eval_results/rl_seed1 --reviewer model \
-    --verdicts verdicts_batch1.csv verdicts_batch2.csv
+    --verdicts verdicts_batch1_both.csv verdicts_batch2_both.csv
 ```
 
 Caveats, plainly:
@@ -1177,10 +1189,10 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   RL step 20 a 60.0% win rate against the base, between Gemma (86.7%) and Luna (45.0%) on the same pairs (§8.5).
 - **Not measured yet:**
   - human gold labels for any reward or test (a model review stood in, §8.5);
-  - a second seed (RL v2's second seed is queued), and any scaling curve in data, model size or RL steps;
+  - a second seed (RL v2's seeds 2 and 3 are queued), and any scaling curve in data, model size or RL steps;
   - the 27 unclear refusal answers;
   - the cause of the RL collapse;
-  - whether RL v2 beats SFT at 32K (the test of §8.3; both seeds are queued).
+  - whether RL v2 beats SFT at 32K (the test of §8.3; its three seeds are queued).
 
 ---
 
@@ -1192,7 +1204,7 @@ Report portable units. "56 RL steps" means nothing on another batch size. "56 st
 | axis | measured here | what to add |
 |---|---|---|
 | SFT data | one mix: 13,095 conversations, 44.1M tokens, one run | a data sweep (¼, ½, 1×) on D-Num-hard and D-Report; report rows written from papers with every claim matched to its source (the unmatched version failed review, §8.4) |
-| RL compute | 56 steps × 1,008 samples, ~3.7 h on 8 nodes; good to step 20 | a second seed (queued for RL v2, §8.3); a run that survives past step 20 |
+| RL compute | 56 steps × 1,008 samples, ~3.7 h on 8 nodes; good to step 20 | more seeds (two more queued for RL v2, §8.3); a run that survives past step 20 |
 | model size | 9B only (the 27B line does not fit 40 GB GPUs for RL) | the 27B on 80 GB GPUs, or 4B as a cheap probe |
 | mid-training | none (§8.2) | a small token sweep, only after knowledge-dense SFT data is tried |
 | test-time compute | budgets 2K–32K and votes 1–64 on D-Num; budgets up to 64K on D-Num-hard (§7.3) | one more effort level |
@@ -1236,7 +1248,7 @@ qwen-seis-posttrain/
 ├── configs/             # model lines, hardware profiles, data, SFT, RL, eval (one YAML per experiment)
 ├── scripts/
 │   ├── 00_setup_env.sh … 08_audit.sh   # the stages as plain scripts, any machine
-│   ├── slurm/            # Slurm job scripts: the campaign and RL v2's two seeds as one 8-node job each, the knowledge data (README.md has the commands)
+│   ├── slurm/            # Slurm job scripts: the campaign and RL v2's three seeds as one 8-node job each, the knowledge data (README.md has the commands)
 │   ├── talk/            # analyses behind the reports: collection, failure types, judge drift, refusals
 │   └── readme_figures.py   # every figure in this README
 ├── tests/               # CPU unit tests, mirroring src/dpt

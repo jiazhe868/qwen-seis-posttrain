@@ -467,7 +467,7 @@ def test_final_eval_window_evaluates_rl_v2_on_the_rl_nodes(tmp_path):
     assert len(_model_servers(out, "rl_v2_seed1", 67584)) == 24                 # 64K continuations on all 8 nodes
     for s_ in ("d_num_hard", "d_fresh"):
         assert f"dpt.eval.budget continue --set {s_} --row rl_v2_seed1" in out
-    assert ("dpt.eval.budget compare --rows sft,rl_seed1,rl_v2_seed1,rl_v2_seed2,base_medium "
+    assert ("dpt.eval.budget compare --rows sft,rl_seed1,rl_v2_seed1,rl_v2_seed2,rl_v2_seed3,base_medium "
             "--baseline sft") in "\n".join(_plain(out))
     assert out.index("budget compare") < out.index("07_final_eval.sh --report-only")
     assert sum(1 for line in out.splitlines() if "serve_vllm.sh" in line and "judge" in line) == 3
@@ -810,6 +810,32 @@ def test_job_2_runs_rl_v2_with_seed_2_and_evaluates_it(tmp_path):
     assert len(train) == 1 and "project.thinking.rl_max_response=24576" in train[0]
     assert "rl9b_v2_seed2/global_step_120" in out and len(_model_servers(out, "rl_v2_seed2", 40960)) == 21
     assert "dpt.eval.budget continue --set d_num_hard --row rl_v2_seed2" in out
+
+
+def test_rl_v2_seed_3_is_queued_with_its_config_and_reuses_another_seeds_cap(tmp_path):
+    """A third seed of RL v2 (2026-11-15): the same batch script as RL v2, the seed's config through the environment,
+    and the cap seed 1 chose, so the third job skips the 75-minute memory test."""
+    r = _run("submit_window.sh", ["rl-seed-queue", "3"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    line = next(x for x in r.stdout.splitlines() if x.startswith("DRY: sbatch")).replace("\\,", ",")  # %q quoting
+    assert "-N 8 -t 48:00:00 -J dpt-rlv2s3" in line and line.endswith("scripts/slurm/rl_v2_queue.slurm")
+    assert "--export=ALL,DPT_RL_CONFIG=rl/rl_9b_v2_seed3.yaml,DPT_FINAL_ROW=rl_v2_seed3" in line
+    r = _run("submit_window.sh", ["rl-seed-queue", "9"], tmp_path)
+    assert r.returncode != 0 and "no configs/rl/rl_9b_v2_seed9.yaml" in r.stderr
+
+    (tmp_path / "sbx.sif").write_text("")
+    _bank_check(tmp_path, [])
+    cap = tmp_path / "scratch" / "dpt" / "checkpoints" / "rl" / "rl9b_v2_seed1.cap.json"
+    cap.parent.mkdir(parents=True)
+    cap.write_text(json.dumps({"cap": "24k"}))
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, ""),
+             DPT_RL_CONFIG="rl/rl_9b_v2_seed3.yaml", DPT_FINAL_ROW="rl_v2_seed3")
+    out = r.stdout
+    assert "final eval: done" in r.stderr, r.stderr
+    assert "another seed of this recipe chose its cap: 24k" in r.stderr and "memtest" not in out
+    train = [x for x in out.splitlines() if x.startswith("DRY: python -m dpt.launch.rl --config rl/rl_9b_v2_seed3.yaml")]
+    assert len(train) == 1 and "project.thinking.rl_max_response=24576" in train[0]
+    assert "rl9b_v2_seed3/global_step_120" in out and len(_model_servers(out, "rl_v2_seed3", 40960)) == 21
 
 
 def test_a_second_job_waits_for_a_running_bank_build(tmp_path):

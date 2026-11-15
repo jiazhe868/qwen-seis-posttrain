@@ -205,10 +205,27 @@ def read_exclude(path: Path | None) -> set[str]:
     return {line.split("#", 1)[0].strip() for line in Path(path).read_text().splitlines()} - {""}
 
 
+def pooled_scores(scored: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Several runs of one recipe as one row: each item's score is the mean over the runs, on the items all of them
+    have, and the outcome counts add up. The paired interval against the baseline then resamples items only, so it
+    shows item noise for the seed-averaged model and leaves out how much the seeds differ."""
+    per_item: dict[int, dict[str, float]] = {}
+    counts: dict[int, Counter[str]] = {}
+    for b in THREE_BUDGETS:
+        common = set.intersection(*(set(sc["per_item"][b]) for sc in scored))
+        per_item[b] = {i: float(np.mean([sc["per_item"][b][i] for sc in scored])) for i in sorted(common)}
+        counts[b] = sum((sc["counts"][b] for sc in scored), Counter())
+    return {"per_item": per_item, "counts": counts,
+            "missing_continuations": sum(sc["missing_continuations"] for sc in scored)}
+
+
 def compare(cfg: dict[str, Any], root: Path, rows: Sequence[str], baseline: str, sets: Sequence[str], *,
-            verify: bool = True, exclude: set[str] | None = None) -> dict[str, Any]:
+            verify: bool = True, exclude: set[str] | None = None,
+            pools: dict[str, Sequence[str]] | None = None) -> dict[str, Any]:
     """Each row's three-budget scores on each set, and its paired difference from the baseline. ``exclude``
-    leaves those item ids out (the screened subset); ``out["excluded"]`` counts them per set."""
+    leaves those item ids out (the screened subset); ``out["excluded"]`` counts them per set. ``pools`` adds rows
+    that average several runs, e.g. {"rl_v2": ["rl_v2_seed1", "rl_v2_seed2", "rl_v2_seed3"]} (pooled_scores); a
+    pool is added only when all of its runs have generations."""
     exclude = exclude or set()
     out: dict[str, Any] = {"collected_at": dt.datetime.now().strftime("%Y-%m-%dT%H:%M"), "baseline": baseline,
                            "budgets": list(THREE_BUDGETS), "sets": {}, "excluded": {}}
@@ -223,6 +240,9 @@ def compare(cfg: dict[str, Any], root: Path, rows: Sequence[str], baseline: str,
             items = [it for it in items if it.id not in exclude]
             scored[row] = three_budget_scores(spec, items, gens,
                                               read_continuations(continuations_path(root, spec.name, row)))
+        for name, members in (pools or {}).items():
+            if members and all(m in scored for m in members):
+                scored[name] = pooled_scores([scored[m] for m in members])
         entry: dict[str, Any] = {}
         for row, sc in scored.items():
             e: dict[str, Any] = {"items": len(sc["per_item"][THREE_BUDGETS[0]]),
@@ -238,6 +258,34 @@ def compare(cfg: dict[str, Any], root: Path, rows: Sequence[str], baseline: str,
             entry[row] = e
         out["sets"][spec.name] = entry
     return out
+
+
+SET_LABELS = {"d_num_hard": "D-Num-hard", "d_fresh": "D-Fresh"}
+
+
+def success_table(res: dict[str, Any], rows: Sequence[str], lang: str = "en") -> str:
+    """The RL v2 test as a README table: each row's difference from the baseline at 16K, 32K and 64K with its 95%
+    interval, in bold when the interval lies above zero, then the verdict at 32K for the last row (2026-11-15)."""
+    words = {"en": ("set", "row", "passes: above {b} by more than the noise on both sets",
+                    "does not pass: inside the noise or below {b} on at least one set at 32K"),
+             "zh": ("测试集", "行", "通过：在两个测试集上都比 {b} 高出噪声以上",
+                    "未通过：32K 下至少一个测试集在噪声以内或低于 {b}")}[lang]
+    lines = [f"| {words[0]} | {words[1]} | 16K | 32K | 64K |", "|---|---|---|---|---|"]
+    passes = []
+    for set_name, entry in res["sets"].items():
+        for row in rows:
+            if row not in entry:
+                continue
+            cells = []
+            for b in THREE_BUDGETS:
+                vs = entry[row][f"at_{b // 1024}k"].get("vs_baseline")
+                cell = "—" if vs is None else f"{vs['diff']:+.1f} [{vs['low']:+.1f}, {vs['high']:+.1f}]"
+                cells.append(f"**{cell}**" if vs and vs["low"] > 0 else cell)
+            lines.append(f"| {SET_LABELS.get(set_name, set_name)} | {row} | " + " | ".join(cells) + " |")
+        last = entry.get(rows[-1], {}).get("at_32k", {}).get("vs_baseline")
+        passes.append(bool(last and last["low"] > 0))
+    verdict = words[2] if passes and all(passes) else words[3]
+    return "\n".join(lines) + f"\n\n{rows[-1]}: " + verdict.format(b=res.get("baseline", "sft")) + "\n"
 
 
 async def continue_answers(a: argparse.Namespace, cfg: dict[str, Any], root: Path, base_model: str) -> None:
@@ -324,7 +372,16 @@ def three_budget_main(argv: Sequence[str]) -> int:
     m.add_argument("--config", default="eval/eval_suite.yaml")
     m.add_argument("--exclude", type=Path, default=None,
                    help="file of item ids to leave out (one per line): scores on the screened subset")
+    m.add_argument("--pool", action="append", default=[],
+                   help="NAME=ROW,ROW,…: a row averaging several runs (seeds), compared like the others")
+    tb = sub.add_parser("table", help="the README table of a compare output, with the verdict for its last row")
+    tb.add_argument("compare_json", type=Path)
+    tb.add_argument("--rows", required=True, help="rows to show, in order; the last one gets the verdict")
+    tb.add_argument("--lang", choices=("en", "zh"), default="en")
     a = ap.parse_args(argv)
+    if a.cmd == "table":
+        print(success_table(json.loads(a.compare_json.read_text()), a.rows.split(","), a.lang), end="")
+        return 0
     full = load_config(getattr(a, "config", "eval/eval_suite.yaml"))
     cfg = to_container(full)["eval_suite"]
     root = Path(str(full.project.paths.eval_root))
@@ -342,7 +399,9 @@ def three_budget_main(argv: Sequence[str]) -> int:
     if a.cmd == "continue":
         asyncio.run(continue_answers(a, cfg, root, str(full.project.model.base)))
         return 0
-    res = compare(cfg, root, a.rows.split(","), a.baseline, a.sets.split(","), exclude=read_exclude(a.exclude))
+    pools = {name: members.split(",") for name, _, members in (x.partition("=") for x in a.pool)}
+    res = compare(cfg, root, a.rows.split(","), a.baseline, a.sets.split(","), exclude=read_exclude(a.exclude),
+                  pools=pools)
     if a.out:
         a.out.parent.mkdir(parents=True, exist_ok=True)
         a.out.write_text(json.dumps(res, indent=1))

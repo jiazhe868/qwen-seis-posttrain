@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from dpt.common.io import write_json, write_jsonl
 from dpt.eval.budget import analyze_run, main
 
@@ -121,3 +123,42 @@ def test_paired_comparison_with_sft_at_each_budget(tmp_path):
     rl = res["sets"]["d_fresh"]["rl_v2_seed1"]
     assert res["excluded"] == {"d_fresh": 1} and rl["items"] == 3 and rl["at_32k"]["score"] == 100.0
     assert rl["at_32k"]["vs_baseline"]["items"] == 3 and rl["at_32k"]["vs_baseline"]["diff"] == 50.0
+
+
+def test_a_pool_of_seeds_is_one_row_with_the_mean_of_each_item(tmp_path):
+    """RL v2 runs with three seeds (2026-11-15): a pooled row averages each item over the seeds and is tested against
+    SFT like any other row; it is added only when every seed has generations."""
+    from dpt.eval.budget import compare
+
+    ids = ["a", "b", "c", "d"]
+    cfg = _three_budget_cfg(tmp_path, ids)
+    root = tmp_path / "eval_results"
+    _row(root, "sft", [(i, [_sample(RIGHT, 900), _sample(WRONG, 900)]) for i in ids])
+    _row(root, "s1", [(i, [_sample(RIGHT, 900), _sample(RIGHT, 900)]) for i in ids])
+    _row(root, "s2", [(i, [_sample(RIGHT, 900), _sample(WRONG if i in ("a", "b") else RIGHT, 900)]) for i in ids])
+    res = compare(cfg, root, ["sft", "s1", "s2"], "sft", ["d_fresh"], verify=False,
+                  pools={"pooled": ["s1", "s2"], "absent": ["s1", "s3"]})
+    rows = res["sets"]["d_fresh"]
+    assert "absent" not in rows and rows["pooled"]["items"] == 4
+    assert rows["s1"]["at_32k"]["score"] == 100.0 and rows["s2"]["at_32k"]["score"] == 75.0
+    assert rows["pooled"]["at_32k"]["score"] == 87.5 and rows["pooled"]["at_32k"]["vs_baseline"]["diff"] == 37.5
+    assert rows["pooled"]["at_32k"]["outcomes_pct"]["right"] == 87.5
+
+
+def test_the_success_table_marks_intervals_above_zero_and_gives_the_verdict(capsys, tmp_path):
+    from dpt.eval.budget import success_table, three_budget_main
+
+    def entry(d32, low32):
+        e = {f"at_{k}k": {"score": 70.0, "vs_baseline": {"diff": 1.0, "low": -1.0, "high": 3.0}} for k in (16, 32, 64)}
+        e["at_32k"]["vs_baseline"] = {"diff": d32, "low": low32, "high": d32 + 3}
+        return e
+    res = {"baseline": "sft", "sets": {"d_num_hard": {"sft": {}, "rl_v2": entry(4.0, 1.2)},
+                                       "d_fresh": {"sft": {}, "rl_v2": entry(2.0, -0.5)}}}
+    md = success_table(res, ["rl_v2"])
+    assert "| D-Num-hard | rl_v2 | +1.0 [-1.0, +3.0] | **+4.0 [+1.2, +7.0]** |" in md
+    assert "rl_v2: does not pass" in md                                    # D-Fresh is inside the noise
+    res["sets"]["d_fresh"]["rl_v2"] = entry(5.0, 0.4)
+    assert "rl_v2: passes" in success_table(res, ["rl_v2"]) and "通过" in success_table(res, ["rl_v2"], "zh")
+    (tmp_path / "c.json").write_text(json.dumps(res))
+    assert three_budget_main(["table", str(tmp_path / "c.json"), "--rows", "rl_v2"]) == 0
+    assert "rl_v2: passes" in capsys.readouterr().out

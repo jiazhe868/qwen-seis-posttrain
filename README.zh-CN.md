@@ -32,7 +32,7 @@
 
 这些结果为接下来的运行定下了方向。在 32K 下，RL 第 20 步在 D-Num-hard 上比 SFT 高 1.9 个点 [−0.7, +4.6]，在 D-Fresh 上高 4.6 [−0.8, +10.4]，都在噪声以内。在下一次 RL 运行开始之前，我把 32K 下的这种配对比较定为它的成功标准。RL v2 用 SFT 模型重新评定题库难度，让更多的组带有梯度。它去掉了报告任务，把学习率减半，并在开发集回答开始给出错误数值时暂停（§8.3）。对于报告，我让教师对照 3,000 篇开放许可的论文写出回答（§8.4）。
 
-没有人可以来核查这些测试和数据，所以由一个前沿大模型（frontier LLM）完成专家筛查（§8.5）。它在看不到答案的情况下解出了每一道 D-Num-hard 和 D-Fresh 题，220 个标准答案全部成立。去掉被标记的 6 道测试题，没有任何结果改变。它还发现一个生成器印出了错误的震级公式，因此第 1 次运行的训练题库中有 825 道题的标签低了 2.681 个震级单位。题库 v2 不再收录这些题。在 100 条根据论文写出的报告数据中，它只会保留 2 条，删去 50 条：教师凭记忆写出地震事实，其中很多是错的。因此，我放弃了 SFT v2，为它准备的那个 8 节点作业改为用第二个种子再跑一次 RL v2。两次 RL v2 运行都已在队列中，结果还没有出来。
+没有人可以来核查这些测试和数据，所以由一个前沿大模型（frontier LLM）完成专家筛查（§8.5）。它在看不到答案的情况下解出了每一道 D-Num-hard 和 D-Fresh 题，220 个标准答案全部成立。去掉被标记的 6 道测试题，没有任何结果改变。它还发现一个生成器印出了错误的震级公式，因此第 1 次运行的训练题库中有 825 道题的标签低了 2.681 个震级单位。题库 v2 不再收录这些题。在 100 条根据论文写出的报告数据中，它只会保留 2 条，删去 50 条：教师凭记忆写出地震事实，其中很多是错的。因此，我放弃了 SFT v2，为它准备的那个 8 节点作业改为用第二个种子再跑一次 RL v2。第三个种子也已排队，三次运行的结果都还没有出来。
 
 这个月的大部分时间花在了系统上。唯一的那个 8 节点作业运行了 71.9 小时：其中 28.7 小时运行计划内的阶段，43.2 小时花在故障、等待和挂起上，其中 35.1 小时发生在 SFT 能够开始之前（§9.2）。在 40 GB 的 GPU 上跑 9B 模型没有任何余量：流水线（pipeline）最后一段的峰值达到 40,437 MiB 中的 40,366 MiB（§5.3）。每次故障都留下了一个测试或一道防护；值得借鉴的那些写在 [PITFALLS.zh-CN.md](PITFALLS.zh-CN.md) 中。
 
@@ -136,9 +136,10 @@ sbatch -A <allocation> scripts/slurm/data.slurm sft
 # --- 一个 8 节点作业：基线评测 → SFT → SFT 评测 → RL 准入门槛 → RL → 最终评测
 sbatch -A <allocation> scripts/slurm/campaign.slurm
 
-# --- 接下来的运行（§8.3）：RL v2 的两个种子，各为一个 8 节点作业 -------------
+# --- 接下来的运行（§8.3）：RL v2 的三个种子，各为一个 8 节点作业 -------------
 scripts/slurm/submit_window.sh rl-build-queue          # 种子 1：题库 v2（若缺失）→ 24K 测试 → RL v2 → 最终评测
 scripts/slurm/submit_window.sh sft-v2-queue            # 种子 2：同样的步骤（最初为 SFT v2 预留的作业，§8.4）
+scripts/slurm/submit_window.sh rl-seed-queue 3         # 种子 3：同样的步骤
 
 # --- 本 README 中的图，由 docs/talk/data/ 中的结果文件生成 -----------------
 python scripts/readme_figures.py
@@ -581,17 +582,22 @@ P_{\text{mixed}}(r) = 1 - r^{8} - (1 - r)^{8},
 
 **如何运行。** RL v2 是一个 48 小时的 8 节点作业，在它的题库建好之前就已排进队列。如果作业开始时题库还不存在，作业就在自己的节点上构建题库：教师和 Gemma 在 2 个节点上，SFT 模型在另外 6 个节点上，教师节点完成自己的部分后就改为运行 SFT 模型。随后依次是 24K 测试、RL，以及三个预算下的最终评测。作业在开始时才从仓库读取它的步骤，所以在它排队等待的那几天里，这些步骤仍然可以修改（`scripts/slurm/rl_v2_queue.slurm`、`scripts/slurm/rl_v2_job.sh`）。构建题库时，去污染所需的嵌入在 CPU 上计算，因为 GPU 被服务进程占着；第一次构建就在那里耗尽了 GPU 显存。
 
-第二个 8 节点作业用种子 2 运行同样的步骤（`configs/rl/rl_9b_v2_seed2.yaml`）。它原本是为 SFT v2 排进队列的，SFT v2 已被放弃（§8.4），它的脚本保留了最初的名字。如果两个作业开始时都还没有题库，后开始的那个会等先开始的那个构建完成。最终评测把两个种子都与 SFT 比较。
+另外两个 8 节点作业用种子 2 和种子 3 运行同样的步骤（`configs/rl/rl_9b_v2_seed2.yaml`、`configs/rl/rl_9b_v2_seed3.yaml`）。种子 2 的作业原本是为 SFT v2 排进队列的，SFT v2 已被放弃（§8.4），它的脚本保留了最初的名字。如果几个作业开始时都还没有题库，后开始的会等先开始的那个构建完成。一个种子会沿用另一个种子已选定的长度上限，因为模型、布局和长度都相同。最终评测把每个种子与 SFT 比较，也把几个种子合起来比较：每道题的分数取各种子的平均（`dpt.eval.budget compare --pool`）。
 
 ```bash
 scripts/slurm/submit_window.sh rl-build-queue      # 种子 1：题库 v2（若缺失）→ 24K 测试 → RL v2 → 最终评测
 scripts/slurm/submit_window.sh sft-v2-queue        # 种子 2：同样的步骤（scripts/slurm/sft_v2_job.sh）
+scripts/slurm/submit_window.sh rl-seed-queue 3     # 种子 3：同样的步骤
+# 全部完成后：每个种子以及合并后的种子与 SFT 比较，输出本节用的表格
+python -m dpt.eval.budget compare --rows sft,rl_seed1,rl_v2_seed1,rl_v2_seed2,rl_v2_seed3 \
+    --pool rl_v2=rl_v2_seed1,rl_v2_seed2,rl_v2_seed3 --out budgets_rl_v2.json
+python -m dpt.eval.budget table budgets_rl_v2.json --rows rl_seed1,rl_v2_seed1,rl_v2_seed2,rl_v2_seed3,rl_v2 --lang zh
 ```
 
 **要在队列里等好几天的作业，应该在开始时才读取它的步骤。**
 
 坦白地说，有这些局限：
-- RL v2 有两个种子，其他每次运行只有一个；
+- RL v2 有三个种子，其他每次运行只有一个；
 - D-Fresh 只有 60 道题，它的区间约为 ±5 个点；
 - 去掉报告任务之后，RL v2 无法提升 D-Report。
 
@@ -704,8 +710,11 @@ M_L = \log_{10} A + 1.11 \log_{10}(r/100) + 0.00189\,(r - 100) + 3.0 = \log_{10}
 ```bash
 python -m dpt.eval.budget compare --rows sft,rl_seed1,base_medium --baseline sft --exclude <private list>
 python -m dpt.eval.report --row base_medium=… --row sft=… --row rl_seed1=… --exclude <private list> --summary-out …
+python -m dpt.eval.blind_review page --row-dir eval_results/rl_seed1 --swap --out review_batch1_swapped.html
+python -m dpt.eval.blind_review combine --first verdicts_batch1.csv --swapped verdicts_batch1_swapped.csv \
+    --out verdicts_batch1_both.csv                  # 两种顺序一致时，判定才计入
 python -m dpt.eval.blind_review import --row-dir eval_results/rl_seed1 --reviewer model \
-    --verdicts verdicts_batch1.csv verdicts_batch2.csv
+    --verdicts verdicts_batch1_both.csv verdicts_batch2_both.csv
 ```
 
 坦白地说，有这些局限：
@@ -783,10 +792,10 @@ python -m dpt.eval.blind_review import --row-dir eval_results/rl_seed1 --reviewe
 - **评审偏差。** 只按一种顺序评判时，模型评审偏向排在前面的回答。综合两种顺序，它给 RL 第 20 步对基座的胜率为 60.0%，在同样的配对上介于 Gemma（86.7%）和 Luna（45.0%）之间（§8.5）。
 - **尚未测量：**
   - 任何奖励或测试的人工标准答案（由模型评审代替，§8.5）；
-  - 第二个种子（RL v2 的第二个种子已在队列中），以及数据量、模型规模或 RL 步数上的任何缩放曲线；
+  - 第二个种子（RL v2 的种子 2 和种子 3 已在队列中），以及数据量、模型规模或 RL 步数上的任何缩放曲线；
   - 那 27 个不明确的拒答回答；
   - RL 崩溃的原因；
-  - RL v2 能否在 32K 下超过 SFT（§8.3 的标准；两个种子都已在队列中）。
+  - RL v2 能否在 32K 下超过 SFT（§8.3 的标准；它的三个种子都已在队列中）。
 
 ---
 
@@ -797,7 +806,7 @@ python -m dpt.eval.blind_review import --row-dir eval_results/rl_seed1 --reviewe
 | 维度 | 本项目的测量 | 需要补充的 |
 |---|---|---|
 | SFT 数据 | 一种混合：13,095 条对话，44.1M token，一次运行 | 在 D-Num-hard 和 D-Report 上做数据量扫描（¼、½、1×）；从论文写出、每条论断都对应到来源的报告数据（没有对应来源的版本未通过评审，§8.4） |
-| RL 算力 | 56 步 × 1,008 个样本，8 个节点上约 3.7 h；到第 20 步为止都是好的 | 第二个种子（RL v2 的已在队列中，§8.3）；一次能撑过第 20 步的运行 |
+| RL 算力 | 56 步 × 1,008 个样本，8 个节点上约 3.7 h；到第 20 步为止都是好的 | 更多种子（RL v2 另有两个已在队列中，§8.3）；一次能撑过第 20 步的运行 |
 | 模型规模 | 只有 9B（27B 路线做 RL 时放不进 40 GB 的 GPU） | 在 80 GB 的 GPU 上跑 27B，或用 4B 做低成本探针 |
 | 中期训练 | 无（§8.2） | 一次小规模 token 扫描，只在尝试过知识密集的 SFT 数据之后进行 |
 | 测试时计算 | D-Num 上预算 2K–32K、投票 1–64；D-Num-hard 上直到 64K 的预算（§7.3） | 再多一个推理强度 |
@@ -836,7 +845,7 @@ qwen-seis-posttrain/
 ├── configs/             # 模型路线、硬件配置、数据、SFT、RL、评测（每个实验一个 YAML）
 ├── scripts/
 │   ├── 00_setup_env.sh … 08_audit.sh   # 以普通脚本形式实现的各阶段，可在任何机器上运行
-│   ├── slurm/            # Slurm 作业脚本：运行流程与 RL v2 的两个种子（各为一个 8 节点作业）、知识数据（命令见 README.md）
+│   ├── slurm/            # Slurm 作业脚本：运行流程与 RL v2 的三个种子（各为一个 8 节点作业）、知识数据（命令见 README.md）
 │   ├── talk/            # 报告背后的分析：数据收集、失败类型、裁判漂移、拒答
 │   └── readme_figures.py   # 本 README 中的每一张图
 ├── tests/               # CPU 单元测试，目录结构与 src/dpt 对应

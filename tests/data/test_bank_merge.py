@@ -130,10 +130,12 @@ def test_merge_leaves_out_the_faulty_local_magnitude_families(tmp_path):
         {"uid": "t1", "task": "t1_num", "source": {"family": "local_magnitude"}, "answer": {"value": 0.3}},
         {"uid": "t2", "task": "t2_code", "source": {"family": "network_local_magnitude"}},
         {"uid": "t2b", "task": "t2_code", "source": {"family": "local_magnitude", "kind": "physics_function"}},
+        {"uid": "t2c", "task": "t2_code", "source": {"family": None, "kind": "network_local_magnitude"}},
+        {"uid": "t2ok", "task": "t2_code", "source": {"family": None, "kind": "travel_time_residuals"}},
         {"uid": "long", "task": "t1_num", "source": {"family": "locate_then_local_magnitude"}},
         {"uid": "gen", "task": "t1_num", "meta": {"generator": {"name": "local_magnitude"}}},
         {"uid": "ok", "task": "t1_num", "source": {"family": "head_wave_time"}}])
     res = merge([a], tmp_path / "out.jsonl")
-    assert sorted(r["uid"] for r in read_jsonl(tmp_path / "out.jsonl")) == ["long", "ok"]
-    assert res["faulty_dropped"] == {"local_magnitude": 3, "network_local_magnitude": 1}
+    assert sorted(r["uid"] for r in read_jsonl(tmp_path / "out.jsonl")) == ["long", "ok", "t2ok"]
+    assert res["faulty_dropped"] == {"local_magnitude": 3, "network_local_magnitude": 2}
     assert "faulty families left out" in load_manifest(tmp_path / "out.jsonl").notes

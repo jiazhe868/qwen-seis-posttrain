@@ -123,3 +123,32 @@ def test_import_records_the_review_and_the_report_shows_it(tmp_path):
     md = render_markdown(build_summary({"rl_seed1": row}))
     assert "Blind review by a model, rl_seed1 (20 pairs): reviewer win rate" in md
     assert "Blind review, rl_seed1 (20 pairs)" in md
+
+
+def test_a_swapped_page_and_the_combination_of_both_orders(tmp_path):
+    """A model reviewer favoured the first answer (2026-11-15), so a second pass reads each pair swapped and a verdict
+    counts only when both orders agree; a split pair is a tie."""
+    from dpt.eval.blind_review import combine_orders
+
+    review, key = _export()
+    page = render_page(review, 1)
+    swapped = render_page(review, 1, swap=True)
+    first = review[0]
+    assert page != swapped and first["response_1"][:30].replace("<", "\\u003c") in swapped
+    both = combine_orders({"a": {"verdict": "1", "note": "n"}, "b": {"verdict": "2", "note": ""},
+                           "c": {"verdict": "tie", "note": ""}},
+                          {"a": {"verdict": "2", "note": ""}, "b": {"verdict": "2", "note": ""},
+                           "c": {"verdict": "tie", "note": ""}})
+    assert both["a"]["verdict"] == "1" and both["a"]["note"].startswith("both orders agree")
+    assert both["b"]["verdict"] == "tie" and "split" in both["b"]["note"] and both["c"]["verdict"] == "tie"
+    with pytest.raises(ValueError, match="different pairs"):
+        combine_orders({"a": {"verdict": "1"}}, {"b": {"verdict": "1"}})
+    for name, rows in (("first.csv", [("a", "1"), ("b", "2")]), ("swapped.csv", [("a", "2"), ("b", "2")])):
+        with open(tmp_path / name, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["blind_id", "verdict", "note"])
+            w.writerows([(b, v, "") for b, v in rows])
+    assert main(["combine", "--first", str(tmp_path / "first.csv"), "--swapped", str(tmp_path / "swapped.csv"),
+                 "--out", str(tmp_path / "both.csv")]) == 0
+    got = {r["blind_id"]: r["verdict"] for r in csv.DictReader(open(tmp_path / "both.csv"))}
+    assert got == {"a": "1", "b": "tie"}

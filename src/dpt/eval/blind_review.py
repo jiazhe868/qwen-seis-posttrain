@@ -12,6 +12,10 @@ goes to the reviewer):
     python -m dpt.eval.blind_review page   --row-dir eval_results/rl_seed1 --batch 2 --out review_batch2.html
     python -m dpt.eval.blind_review import --row-dir eval_results/rl_seed1 \\
         --verdicts verdicts_batch1.csv verdicts_batch2.csv
+    #   a model reviewer favours the first answer, so it judges both orders (2026-11-15):
+    python -m dpt.eval.blind_review page --row-dir eval_results/rl_seed1 --swap --out review_batch1_swapped.html
+    python -m dpt.eval.blind_review combine --first verdicts_batch1.csv --swapped verdicts_batch1_swapped.csv \\
+        --out verdicts_batch1_both.csv
 
 The page is one HTML file that works offline: the pairs are inline, choices are saved in the browser as
 the reviewer goes, and the verdicts download as a CSV. Responses are shown as plain text, never
@@ -187,10 +191,13 @@ def review_rows(row_dir: str | Path) -> list[dict[str, Any]]:
     return list(read_jsonl(Path(row_dir) / "d_report" / "expert_review.jsonl"))
 
 
-def render_page(rows: Sequence[dict[str, Any]], batch: int) -> str:
-    """The self-contained review page for one batch (no key, no model names)."""
+def render_page(rows: Sequence[dict[str, Any]], batch: int, swap: bool = False) -> str:
+    """The self-contained review page for one batch (no key, no model names). ``swap`` shows each pair's answers in
+    the other order, for a second pass whose verdicts ``combine`` merges with the first."""
     pairs = [{k: r.get(k) for k in ("blind_id", "question", "rubric", "response_1", "response_2")}
              for r in rows if int(r.get("batch", 1)) == batch]
+    if swap:
+        pairs = [{**p, "response_1": p["response_2"], "response_2": p["response_1"]} for p in pairs]
     if not pairs:
         raise ValueError(f"no pairs in batch {batch}")
     page_id = hashlib.sha256(json.dumps(pairs, sort_keys=True).encode()).hexdigest()[:16]
@@ -212,6 +219,21 @@ def read_verdicts(paths: Sequence[str | Path]) -> dict[str, dict[str, str]]:
                 v = (r.get("verdict") or "").strip().lower()
                 if v:
                     out[(r.get("blind_id") or "").strip()] = {"verdict": v, "note": (r.get("note") or "").strip()}
+    return out
+
+
+def combine_orders(first: dict[str, dict[str, str]], swapped: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+    """Verdicts of two passes over the same pairs, the second with the answers swapped (page --swap). A pair keeps
+    its verdict only when both orders agree; otherwise it is a tie. A model reviewer judging one order favoured the
+    first answer: the trained model won 11 of 11 pairs shown first and 8 of 19 shown second (2026-11-15)."""
+    if set(first) != set(swapped):
+        raise ValueError(f"the passes judged different pairs: {sorted(set(first) ^ set(swapped))[:3]}")
+    flip = {"1": "2", "2": "1", "tie": "tie"}
+    out = {}
+    for b, v in first.items():
+        a, s = v["verdict"], flip[swapped[b]["verdict"]]
+        note = "both orders agree" if a == s else f"orders split ({a} vs {s}), counted as a tie"
+        out[b] = {"verdict": a if a == s else "tie", "note": f"{note}; {v.get('note', '')}".strip("; ")[:200]}
     return out
 
 
@@ -272,6 +294,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--row-dir", required=True, help="eval output dir of the row (has d_report/expert_review.jsonl)")
     p.add_argument("--batch", type=int, default=1)
     p.add_argument("--out", required=True)
+    p.add_argument("--swap", action="store_true", help="each pair's answers in the other order (a second pass)")
+    c = sub.add_parser("combine", help="merge a pass and its swapped pass: a verdict counts when both orders agree")
+    c.add_argument("--first", nargs="+", required=True, help="CSV files of the first pass")
+    c.add_argument("--swapped", nargs="+", required=True, help="CSV files of the pass made on the --swap pages")
+    c.add_argument("--out", required=True)
     i = sub.add_parser("import")
     i.add_argument("--row-dir", required=True)
     i.add_argument("--verdicts", nargs="+", required=True, help="CSV files downloaded from the page")
@@ -280,11 +307,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     i.add_argument("--reviewer", choices=("person", "model"), default="person",
                    help="who judged the pairs; a model's review goes to blind_review_model, apart from a person's")
     args = ap.parse_args(argv)
+    if args.cmd == "combine":
+        both = combine_orders(read_verdicts(args.first), read_verdicts(args.swapped))
+        with Path(args.out).open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=VERDICT_COLUMNS)
+            w.writeheader()
+            w.writerows({"blind_id": b, **v} for b, v in both.items())
+        agree = sum(v["note"].startswith("both") for v in both.values())
+        log.info("%d pairs, %d judged the same in both orders → %s", len(both), agree, args.out)
+        return 0
     row_dir = Path(args.row_dir)
     rows = review_rows(row_dir)
 
     if args.cmd == "page":
-        Path(args.out).write_text(render_page(rows, args.batch), encoding="utf-8")
+        Path(args.out).write_text(render_page(rows, args.batch, swap=args.swap), encoding="utf-8")
         log.info("batch %d (%d pairs) → %s: send this file only, never the KEY file", args.batch,
                  sum(int(r.get("batch", 1)) == args.batch for r in rows), args.out)
         return 0

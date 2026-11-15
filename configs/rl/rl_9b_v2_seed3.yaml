@@ -1,0 +1,11 @@
+# =============================================================================
+# RL v2, seed 3 (2026-11-15, the user's decision): the same recipe as rl_9b_v2.yaml with a third seed, so the
+# success test (RL v2 above SFT at 32K, beyond noise) can be read over three seeds. Queued as its own 8-node job:
+#
+#   scripts/slurm/submit_window.sh rl-seed-queue 3     # rl_v2_queue.slurm → rl_v2_job.sh with this config
+# =============================================================================
+defaults_from: rl_9b_v2.yaml
+requires_model_line: qwen35_9b
+
+project:
+  seed: 3

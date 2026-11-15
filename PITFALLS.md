@@ -8,11 +8,11 @@ Every entry is a mistake actually made here, on the Qwen3.5-9B SFT and multi-tas
 Slurm cluster (8 nodes × 3 A100-40GB) in October and November 2026: caught by a measurement, corrected, and
 given a test or a guard. Nothing below is a generic best-practice list.
 
-**The organising observation: most of the expensive failures here were silent.** In thirteen of the
-seventeen entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
+**The organising observation: most of the expensive failures here were silent.** In seventeen of the
+twenty-three entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
 check that checked the other forward pass, a patch that patched nothing, a sandbox that failed closed
 without an alert, framework defaults that overrode the config, a hang that no timeout noticed, a judge that
-graded its own students. The loud failures (a crash, an out-of-memory error) cost minutes; the silent ones
+graded its own students, verifiers that all agreed with the wrong formula they were given. The loud failures (a crash, an out-of-memory error) cost minutes; the silent ones
 cost hours of eight nodes, or a conclusion.
 
 Companion document: [README.md](README.md) explains how the pipeline works and what the run showed.
@@ -25,6 +25,9 @@ Companion document: [README.md](README.md) explains how the pipeline works and w
 |---|---|---|---|---|
 | A1 | Every template rejected: two bugs only real data could show | data pipeline | a bank with no numeric problems, or a fix by hand at scale | loud |
 | A2 | A crash hidden behind a hang | data pipeline | a second failed 8-node launch | silent |
+| A3 | A label that agrees with its own question | data pipeline | 825 training problems teaching a wrong magnitude formula | silent |
+| A4 | A source check that cannot see what the source lacks | data pipeline | an SFT run on data with errors in 98 of 100 rows | silent |
+| A5 | A semicolon that turned an error into a true statement | data pipeline | a rubric that penalises the answer it asks for | silent |
 | B1 | Parity passed, training was wrong: the inverted attention mask | numerics | an RL run optimising noise; an SFT whose attention layers see nothing | silent |
 | B2 | The last pipeline stage: a budget, a probe and a patch that all missed | memory | SFT failing at its first step, and again at its first checkpoint | silent |
 | B3 | No attention kernel at the real sequence length | numerics | no 9B training step at all | loud |
@@ -33,13 +36,16 @@ Companion document: [README.md](README.md) explains how the pipeline works and w
 | C2 | Connection pools and timeouts: one default, three places | environment | throughput capped at a third; lost work at the one-hour mark | silent |
 | C3 | Framework defaults that override the config | environment | Adam β2 0.999 instead of 0.95; a crash at step 50 | silent |
 | C4 | A file lock on NFS: a hang costs more than a crash | environment | 9.6 hours of 8 idle nodes | silent |
+| C5 | A GPU embedder beside the servers | environment | a failed data job and its 4.5-day queue place | loud |
 | D1 | "T4 taught brevity": a story the per-step metrics did not support | analysis | a wrong fix for RL v2 | silent |
 | D2 | One model as reward judge, data filter and evaluator | measurement | "reports improved by 36 points" | silent |
 | D3 | A difficulty filter run with the wrong model | measurement | RL with no gradient on most groups | silent |
 | D4 | Gates on a saturated test | measurement | an 8-node job ended by noise | silent |
 | D5 | A refusal detector too narrow for the model it measures | measurement | a quarter of a safety regression misread | silent |
+| D6 | A reviewer that favours the first answer | measurement | verdicts that follow the order of the answers | silent |
 | E1 | The queue sets the pace | operations | days per failed launch | loud |
 | E2 | Unwatched waits: an idle job and a cleanup that cancelled another | operations | 2 idle hours of 8 nodes; a judge job's 4-day queue place | silent |
+| E3 | A synced file that needed code the cluster did not have | operations | a bank build dying at its first import | loud |
 
 Each incident uses the same template: **Symptom → The false story → Root cause → Fix → Permanent
 regression test → Invalidated artifacts → Generalisable lesson.** "The false story" is the plausible
@@ -95,6 +101,78 @@ node; each failed 8-node launch had cost ~12 minutes of the whole job.
 
 **Generalisable lesson.** Build every training row once, from the real file with the real tokenizer, before
 a multi-node launch. Test data loaders with files, not with the objects the files are meant to produce.
+
+
+## A3 — A label that agrees with its own question
+
+**Symptom.** A review of the 156 problems that verification had set aside found 5 local-magnitude problems
+with labels that were too low. For a Wood–Anderson amplitude of 1 mm at 100 km, the printed relation gives
+ML 0.32, and the scale's definition says 3.0.
+
+**The false story.** "Every kept problem was verified: the generator's solver, the teacher and the judge all
+agreed on its label."
+
+**Root cause.** The family printed ML = log10 A + 1.11 log10 r + 0.00189 r − 2.09 with A in mm. The constant
+−2.09 belongs to the form with A in nm; with A in mm the Hutton–Boore relation has +0.591. Each problem states
+its formula, so every verifier computes the same wrong label from it, and the agreement is perfect. 836 such
+problems passed verification, and run 1's training bank held 825 of them. A code task stated the same relation.
+
+**Fix.** The generator and the code task use +0.591, and bank v2 leaves the old problems out
+(`bank_merge.FAULTY_FAMILIES`). A count on the real bank first found 824 of the 836: 12 code tasks carry their
+name only in `kind`, and the filter now reads it.
+
+**Permanent regression test.** `tests/data/gen/test_t1.py::test_local_magnitude_uses_the_hutton_boore_constant_for_amplitudes_in_mm`;
+`tests/data/gen/test_t2.py::test_network_local_magnitude_gives_ml_3_for_1_mm_at_100_km`;
+`tests/data/test_bank_merge.py::test_merge_leaves_out_the_faulty_local_magnitude_families`.
+
+**Invalidated artifacts.** The 825 problems in run 1's training bank; bank v1 as a source for RL v2.
+
+**Generalisable lesson.** Agreement catches arithmetic, not a wrong formula that every checker is handed.
+Check each generator against a physical anchor: a known input with a known output.
+
+## A4 — A source check that cannot see what the source lacks
+
+**Symptom.** A review of 100 of the 3,262 report rows written from papers would keep 2, fix 48 and drop 50;
+98 rows had at least one factual error.
+
+**The false story.** "Every row was checked against its source section: no contradiction, at most 2 claims
+the section does not support, a knowledge score of at least 3 of 5."
+
+**Root cause.** The questions asked for knowledge a specialist has without the paper. The teacher wrote facts
+the section does not contain from memory, often about named earthquakes and faults, and many were wrong: four
+rows call the East Anatolian Fault right-lateral. A claim the section does not contain cannot contradict it,
+so the check passed it whenever the judge did not know better. About a fifth of the rows came from papers
+with no seismology in them.
+
+**Fix.** No row was trained on. SFT v2 was dropped, and its 8-node job runs RL v2 with another seed
+(README §8.4). A version that could work would match every specific claim to a sentence of the section.
+
+**Permanent regression test.** None in code. The guard is a step before training: a review of a random sample,
+one row per paper, against the field as well as the source.
+
+**Invalidated artifacts.** The 3,262 rows, never trained on.
+
+**Generalisable lesson.** A check against the source covers only what the source says. Review a sample of
+generated knowledge against the field before training on it.
+
+## A5 — A semicolon that turned an error into a true statement
+
+**Symptom.** One D-Report item listed a true statement as an error to penalise, and one of its rubric criteria
+required the same statement.
+
+**The false story.** None was told. The judge saw both and decided each pair as best it could.
+
+**Root cause.** The drafted errors came as one string, and `dpt.eval.autocheck` split it at every ';'. One error
+contained a semicolon, so its second half became an error of its own, and on its own it was true.
+
+**Fix.** A part that starts with a word pointing back (that, this, it, which …) stays with the error before it.
+The frozen set keeps its item, and the screened subset leaves it out (README §8.5).
+
+**Permanent regression test.** `tests/eval/test_autocheck.py::test_an_error_split_at_a_semicolon_keeps_its_back_reference`.
+
+**Invalidated artifacts.** None; the screened scores change no conclusion.
+
+**Generalisable lesson.** Do not split prose at punctuation that prose uses. Ask for a list as a list.
 
 ---
 
@@ -323,6 +401,27 @@ steps, and a supervisor ended the paused copy when the new one exited (E1).
 step for 20 minutes) would have caught the hang in minutes; build it before the run, because nothing else
 notices a hang.
 
+
+## C5 — A GPU embedder beside the servers
+
+**Symptom.** The 2-node bank build failed after 8 minutes: CUDA ran out of memory on GPU 0 in both verification
+clients.
+
+**The false story.** "The verification clients only send requests to the servers, so they need no GPU."
+
+**Root cause.** Decontamination loads an embedding model inside the client, and the embedder takes a GPU
+whenever one is visible. GPU 0 held the teacher, with 36.4 GiB in use.
+
+**Fix.** Those clients run with no visible GPU, so the embedder runs on the CPU. The job was resubmitted and
+lost its place in the queue, which had taken 4.5 days.
+
+**Permanent regression test.** `tests/slurm/test_job_scripts.py::test_data_window_runs_every_server_and_client_on_its_own_two_nodes`.
+
+**Invalidated artifacts.** None.
+
+**Generalisable lesson.** On a node shared with servers, state the devices of every process. A library that
+can use a GPU will.
+
 ---
 
 # D · Measurement and analysis
@@ -444,6 +543,28 @@ The detector for the next run must be fixed before its results.
 **Generalisable lesson.** Widening a detector after a drop is visible lets the measurement absorb the
 regression. Fix the detector first, then look.
 
+
+## D6 — A reviewer that favours the first answer
+
+**Symptom.** A model reviewer judged 30 blind D-Report pairs once each. The trained model won all 11 pairs in
+which its answer came first, and 8 of the 19 in which it came second. The reviewer chose the first answer in
+22 of the 30.
+
+**The false story.** "A careful reader judges each pair on its merits, so one order is enough."
+
+**Root cause.** LLM readers favour a position. The automatic judges were run in both orders for this reason;
+the reviewer was not.
+
+**Fix.** A second pass judged every pair with the answers swapped. A pair counts only when both orders agree,
+and the 6 pairs that split count as ties (`blind_review page --swap`, `blind_review combine`). The result, a
+60.0% win rate for RL step 20 against the base, is recorded as a model review (README §8.5).
+
+**Permanent regression test.** `tests/eval/test_blind_review.py::test_a_swapped_page_and_the_combination_of_both_orders`.
+
+**Invalidated artifacts.** The single-order verdicts.
+
+**Generalisable lesson.** Every LLM reader, judge or reviewer, reads both orders.
+
 ---
 
 # E · Operations
@@ -494,3 +615,25 @@ trainable tensors changed); cleanup depends on why the campaign ended.
 
 **Generalisable lesson.** A held job is still spending. Keep a watcher on every wait, and make every
 cleanup that cancels other work depend on the reason for exiting.
+
+## E3 — A synced file that needed code the cluster did not have
+
+**Symptom.** Right after a one-constant fix was copied to the cluster, importing the problem generators there
+failed with an import error.
+
+**The false story.** "The checksums match, so the cluster runs the fixed file."
+
+**Root cause.** The working copy had a refactor, made for the public export, that had never been copied to the
+cluster. The fixed files came from the working copy and needed names that the cluster's other files did not
+define. A bank build starting in that window would have died at its first import.
+
+**Fix.** Within 15 minutes the cluster got its own versions back, from the 3-hourly backup, with only the fix
+applied. Before a copy, each file is now compared with the cluster's version, and after it the changed modules
+are imported there the way the jobs import them.
+
+**Permanent regression test.** None in code; the check is part of the sync.
+
+**Invalidated artifacts.** None; no job started in the window.
+
+**Generalisable lesson.** A checksum proves the copy, not that it runs. Diff against the target before the copy,
+and import after it.

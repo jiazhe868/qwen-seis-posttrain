@@ -53,6 +53,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -554,8 +555,23 @@ def _criteria_of(row: dict[str, str]) -> list[dict[str, Any]]:
     return out
 
 
+# A drafted error list is one string split at ';'. A part that starts with a word pointing back ("that …",
+# "which …") continues the error before it. Split off, such a part read as a true statement that a rubric criterion
+# required: one D-Report item, found by the 2026-11-14 screening.
+_CONTINUATION = re.compile(r"(that|this|these|those|it|its|which|they|the latter|the former)\b", re.I)
+
+
 def _errors_of(row: dict[str, str]) -> list[str]:
-    return [e.strip() for e in str(row.get("common_errors_to_penalize", "")).split(";") if e.strip()]
+    out: list[str] = []
+    for part in str(row.get("common_errors_to_penalize", "")).split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        if out and _CONTINUATION.match(part):
+            out[-1] = f"{out[-1]}; {part}"
+        else:
+            out.append(part)
+    return out
 
 
 def _parse_verdict(text: str, n_crit: int) -> dict[str, Any]:
