@@ -23,7 +23,9 @@ every checkpoint. Run the RL dataloader with ``num_workers=0`` (set in
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
+from pathlib import Path
 from typing import Any, Iterator, Mapping
 
 from torch.utils.data import Sampler
@@ -68,10 +70,21 @@ def build_pools_and_rates(dataset: Any) -> tuple[dict[str, dict[str, list[str]]]
     return {k: dict(v) for k, v in pools.items()}, index, rates
 
 
+def read_family_map(path: str) -> dict[str, str]:
+    """``{uid: family}`` for the curriculum's family weights (2026-11-15). The published RL rows carry no family, so
+    the RL job writes this map from the bank's stage files (``dpt.data.bank_merge carve-hard-dev``)."""
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"curriculum.family_map {p} does not exist (written by bank_merge carve-hard-dev)")
+    return {str(u): str(f) for u, f in json.loads(p.read_text()).items()}
+
+
 class CurriculumSampler(Sampler[int]):
     def __init__(self, dataset: Any, curriculum_cfg: Mapping[str, Any], total_steps: int) -> None:
         pools, self.index, rates = build_pools_and_rates(dataset)
-        self.curriculum = Curriculum(CurriculumConfig.from_dict(dict(curriculum_cfg)), pools, rates)
+        cfg = CurriculumConfig.from_dict(dict(curriculum_cfg))
+        families = read_family_map(cfg.family_map) if cfg.family_map else None
+        self.curriculum = Curriculum(cfg, pools, rates, families)
         self.prompts_per_step = int(curriculum_cfg["prompts_per_step"])
         self.total_steps = int(total_steps)
         self.next_step = 0

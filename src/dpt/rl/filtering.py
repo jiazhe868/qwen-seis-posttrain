@@ -23,6 +23,12 @@ Truncated responses
 Responses that hit the 24K cap are excluded from the loss (§算法配置 长度控制:
 "被截断的回答不进 loss"). Unfinished is not the same as wrong, and training on
 a cut-off trace teaches the model to stop mid-thought.
+
+RL v2 seed 3 tests the opposite for T1 (2026-11-15, ``rl.sampling.truncated_as_wrong_tasks``). On D-Num-hard at
+32K, 28% of the SFT model's answers never finish, and in 44–87% of those the right value is already in the
+reasoning: the model keeps checking instead of answering. Masked, such an answer gets no gradient, so nothing
+teaches the model to commit. Counted as wrong (score 0, without the overlong penalty, so it is never worse than a
+finished wrong answer) it stays in its group, and a group where another answer finishes right pushes it down.
 """
 
 from __future__ import annotations
@@ -144,3 +150,18 @@ def truncation_loss_mask(response_mask: np.ndarray, truncated: Sequence[bool] | 
     t = np.asarray(truncated, dtype=bool)
     m[t] = 0
     return m
+
+
+def scores_and_validity(scores: Sequence[float] | np.ndarray, task_ids: Sequence[str],
+                        truncated: Sequence[bool] | np.ndarray,
+                        truncated_as_wrong_tasks: Sequence[str] = ()) -> tuple[np.ndarray, np.ndarray]:
+    """The scores and the validity mask the advantage and the zero-advantage filter both use.
+
+    A truncated response is left out (valid False), except for the tasks in ``truncated_as_wrong_tasks``: there it
+    counts as wrong, with score 0 and no overlong penalty, and stays in its group (see the module docstring).
+    """
+    r = np.asarray(scores, dtype=np.float64).copy()
+    cut = np.asarray(truncated, dtype=bool)
+    as_wrong = cut & np.isin(np.asarray([str(t) for t in task_ids], dtype=object), list(truncated_as_wrong_tasks))
+    r[as_wrong] = 0.0
+    return r, ~cut | as_wrong

@@ -47,3 +47,13 @@ def test_keep_multiple_impossible_raises():
 def test_truncation_mask():
     m = truncation_loss_mask(np.ones((3, 4)), [False, True, False])
     assert m.sum(1).tolist() == [4, 0, 4]
+
+
+def test_scores_and_validity_match_for_the_filter_and_the_advantage():
+    from dpt.rl.filtering import scores_and_validity
+
+    r, valid = scores_and_validity([1.0, -0.5, -0.5], ["t1_num", "t1_num", "t4_general"], [False, True, True])
+    assert valid.tolist() == [True, False, False] and r.tolist() == [1.0, -0.5, -0.5]   # default: left out
+    r, valid = scores_and_validity([1.0, -0.5, -0.5], ["t1_num", "t1_num", "t4_general"], [False, True, True],
+                                   ["t1_num"])
+    assert valid.tolist() == [True, True, False] and r.tolist() == [1.0, 0.0, -0.5]

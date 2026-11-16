@@ -148,27 +148,42 @@ def test_describe_reports_progress_for_job_chaining(cluster_environment):
 
 
 def test_rl_9b_v2_renders_bank_v2_weights_and_the_stop_rule(cluster_environment):
-    """RL v2 (2026-11-07, changed 11-11): bank v2 with its hard pool, the dev split without T3, dev and checkpoints
-    every 10 steps, no T3 in training, T4 at 15%, half of run 1's learning rate, and the two dev pause rules."""
+    """RL v2 (2026-11-07, changed 11-11 and 11-15): bank v2 without the held-out hard dev problems, the dev split
+    without T3 plus the hard dev split, dev and checkpoints every 10 steps, no T3 in training, T1 70 / T2 15 / T4 15,
+    steeper difficulty copies, the hard and long families drawn twice as often, half of run 1's learning rate, and
+    the dev pause rules, four of them on the hard dev split. Seed 3 alone counts truncated T1 answers as wrong."""
     from dpt.launch.common import compose_stage
 
     ov = _ov(build("rl/rl_9b_v2.yaml", [f"rl_run.output_dir={cluster_environment}/rl"], require_manifest=False))
-    assert "/v2/rl_main.parquet" in ov["data.train_files"] and "/v2/rl_hard.parquet" in ov["data.train_files"]
-    assert "/v2/rl_dev_no_t3.parquet" in ov["data.val_files"]
+    assert "/v2/rl_main_train.parquet" in ov["data.train_files"]
+    assert "/v2/rl_hard_train.parquet" in ov["data.train_files"]
+    assert "/v2/rl_dev_no_t3.parquet" in ov["data.val_files"] and "/v2/rl_dev_hard.parquet" in ov["data.val_files"]
     assert ov["trainer.test_freq"] == "10" and ov["trainer.save_freq"] == "10"
     assert ov["trainer.experiment_name"] == "rl9b_v2_seed1"
     assert ov["actor_rollout_ref.actor.optim.lr"] == "1e-06" and ov["actor_rollout_ref.actor.optim.min_lr"] == "5e-07"
     assert ov["data.train_batch_size"] == "126" and ov["data.max_response_length"] == "16384"
     cfg = compose_stage("rl/rl_9b_v2.yaml")
-    assert cfg.curriculum.difficulty_weights.enabled and cfg.curriculum.hard_pool_join_step == 34
+    assert cfg.curriculum.difficulty_weights.enabled and cfg.curriculum.hard_pool_join_step == 20
+    assert cfg.curriculum.hard_share == 0.20
     for stage in cfg.curriculum.stages:
-        assert dict(stage.mix) == {"t1_num": 0.60, "t2_code": 0.25, "t3_report": 0.00, "t4_general": 0.15}
-    assert [r.name for r in cfg.monitoring.extra_rules] == ["dev_d_num_best_drop", "dev_t1_wrong_value_rise",
-                                                            "t1_length_drop"]
+        assert dict(stage.mix) == {"t1_num": 0.70, "t2_code": 0.15, "t3_report": 0.00, "t4_general": 0.15}
+    fw = cfg.curriculum.family_weights
+    assert fw.copies == 2 and fw.max_share == 0.06 and len(fw.families) == 18 == len(set(fw.families))
+    assert str(cfg.curriculum.family_map).endswith("/v2/uid_family.json") and cfg.rl_run.hard_dev_per_family == 10
+    assert [r.name for r in cfg.monitoring.extra_rules] == [
+        "dev_d_num_best_drop", "dev_t1_wrong_value_rise", "t1_length_drop", "dev_t1_hard_best_drop",
+        "dev_t1_hard_wrong_value_rise", "dev_t1_hard_unfinished_seen_rise", "dev_t1_hard_length_drop"]
+    assert list(cfg.rl.sampling.truncated_as_wrong_tasks) == []
+    assert list(compose_stage("rl/rl_9b_v2_seed2.yaml").rl.sampling.truncated_as_wrong_tasks) == []
+    seed3 = compose_stage("rl/rl_9b_v2_seed3.yaml")
+    assert list(seed3.rl.sampling.truncated_as_wrong_tasks) == ["t1_num"] and seed3.project.seed == 3
+    assert seed3.rl.sampling.max_response == cfg.rl.sampling.max_response   # the rest of rl.sampling is merged
     from dpt.monitoring.alerts import AlertManager
     from dpt.rl.curriculum import CurriculumConfig
     from omegaconf import OmegaConf
 
-    CurriculumConfig.from_dict(OmegaConf.to_container(cfg.curriculum, resolve=True))
+    cc = CurriculumConfig.from_dict(OmegaConf.to_container(cfg.curriculum, resolve=True))
+    assert cc.family_weights.on and cc.difficulty_weights.copies(0.125) == 4 and cc.difficulty_weights.copies(0.875) == 1
+    assert cc.auto_reweight.weight_factor == 1.0 and cc.auto_reweight.max_hard_share == 0.5   # saturation → hard pool
     mgr = AlertManager.from_config(OmegaConf.to_container(cfg.monitoring, resolve=True))
     assert any(r.kind == "best_drop" for r in mgr.rules)

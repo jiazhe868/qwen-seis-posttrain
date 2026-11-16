@@ -1,11 +1,21 @@
 # =============================================================================
-# RL v2, seed 3 (2026-11-15, the user's decision): the same recipe as rl_9b_v2.yaml with a third seed, so the
-# success test (RL v2 above SFT at 32K, beyond noise) can be read over three seeds. Queued as its own 8-node job:
+# RL v2, seed 3 (2026-11-15, the user's decisions): the recipe of rl_9b_v2.yaml with a third seed and ONE change,
+# so seeds 1–2 are its control. Queued as its own 8-node job:
 #
 #   scripts/slurm/submit_window.sh rl-seed-queue 3     # rl_v2_queue.slurm → rl_v2_job.sh with this config
+#
+# The change: a T1 answer that runs out of tokens counts as wrong instead of leaving the loss. On D-Num-hard at 32K,
+# 28% of the SFT model's answers never finish, and in 44–87% of those the right value is already in the reasoning
+# (docs/talk/data/failure_types.json): the model keeps checking instead of answering. Masked, such an answer gets no
+# gradient. Counted as wrong (score 0, no overlong penalty) it is pushed down whenever another answer in its group
+# finishes right. Read against seeds 1–2: D-Num-hard at 32K, its unfinished and wrong-value shares, and dev/t1_hard.
 # =============================================================================
 defaults_from: rl_9b_v2.yaml
 requires_model_line: qwen35_9b
 
 project:
   seed: 3
+
+rl:
+  sampling:
+    truncated_as_wrong_tasks: [t1_num]

@@ -22,6 +22,10 @@ from dpt.monitoring import keys as K
 # verl files the "core" variable of each data source (acc, else reward) under val-core/ and every
 # other reward_extra_info key (our score, gold_score, ...) under val-aux/ (v1 trainer_base.py ~1358).
 _VAL_RE = re.compile(r"^val-(?:core|aux)/(?P<task>[^/]+)/(?P<var>[^/]+)/mean@\d+$")
+# the hard dev split's gold keys (dpt.verl_ext.reward_fn) → its dev metrics, in percent except the length
+_HARD_DEV = {"gold_score": (K.DEV_T1_HARD, 100.0), "gold_wrong_value": (K.DEV_T1_HARD_WRONG_VALUE, 100.0),
+             "gold_unfinished": (K.DEV_T1_HARD_UNFINISHED, 100.0),
+             "gold_unfinished_seen": (K.DEV_T1_HARD_UNFINISHED_SEEN, 100.0), "gold_len": (K.DEV_T1_HARD_LEN, 1.0)}
 
 
 def to_canonical(metrics: Mapping[str, Any], *, tail_bucket: str = "12k+") -> dict[str, float]:
@@ -73,9 +77,17 @@ def to_canonical(metrics: Mapping[str, Any], *, tail_bucket: str = "12k+") -> di
         elif var in ("gold_wrong_value", "gold_unfinished") and task == "t1_num" and float(v) >= 0:
             # why T1 dev answers fail (dpt.verl_ext.reward_fn): run 1 traded unfinished answers for wrong values
             put(K.DEV_T1_WRONG_VALUE if var == "gold_wrong_value" else K.DEV_T1_UNFINISHED, 100.0 * float(v))
+        elif var == "gold_unfinished_seen" and task == "t1_num" and float(v) >= 0:
+            put(K.DEV_T1_UNFINISHED_SEEN, 100.0 * float(v))
+        elif var == "gold_len" and task == "t1_num" and float(v) >= 0:
+            put(K.DEV_T1_LEN, v)
         elif var == "t2_infra_error" and task == "t2_code":
             # the sandbox fails closed: an ungraded sample scores 0, so this rate is silent in the rewards
             put(K.SANDBOX_INFRA_ERROR, v)
+        if task == "t1_num_hard" and var in _HARD_DEV and float(v) >= 0:
+            # the hard dev split (2026-11-15): the hard and long families on their own, besides gold/t1_num_hard
+            key, scale = _HARD_DEV[var]
+            put(key, scale * float(v))
     gold_t1 = out.get(K.GOLD.format(task="t1_num"))
     if gold_t1 is not None:
         put(K.DEV_D_NUM, 100.0 * gold_t1)                # dev D-Num on the independent (gold) grader

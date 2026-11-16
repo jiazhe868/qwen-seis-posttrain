@@ -48,7 +48,8 @@ PY
 )"
 V2="${DATA}/v2"; CHECK="${V2}/bank_check.json"
 RL_CONFIG="${DPT_RL_CONFIG:-rl/rl_9b_v2.yaml}"; FINAL_ROW="${DPT_FINAL_ROW:-rl_v2_seed1}"
-RUN_DIR="$(json_field "$(python -m dpt.launch.rl --config "${RL_CONFIG}" --describe)" run_dir)"
+DESCRIBE="$(python -m dpt.launch.rl --config "${RL_CONFIG}" --describe)"
+RUN_DIR="$(json_field "${DESCRIBE}" run_dir)"
 RUN_NAME="$(basename "${RUN_DIR}")"; CAP_FILE="${RUN_DIR}.cap.json"
 # 24K: the response cap, the length penalty from 20K (the same 4K ramp as at 16K), and the MTP head frozen
 CAP_24K=(project.thinking.rl_max_response=24576 project.thinking.rl_overlong_start=20480
@@ -126,6 +127,16 @@ fi
 
 # ---- 2. the dev split without T3 -----------------------------------------------------------------------------------
 run python -m dpt.data.bank_merge without-task --task t3_report --out "${V2}/rl_dev_no_t3" "${V2}/rl_dev.jsonl"
+# The hard dev split and the uid → family map (2026-11-15): 10 held-out problems of each hard and long family, with
+# their own pause rules, and the map the curriculum's family weights read. CPU, about a minute; a later seed on the
+# same bank finds hard_dev.json and only reads it.
+HARD_DEV_FAMILIES="$(json_field "${DESCRIBE}" hard_dev_families)"
+HARD_DEV_PER_FAMILY="$(json_field "${DESCRIBE}" hard_dev_per_family)"
+if [[ -n "${HARD_DEV_FAMILIES}" ]] && (( HARD_DEV_PER_FAMILY > 0 )); then
+  run python -m dpt.data.bank_merge carve-hard-dev --stages "${V2}/stages/05_difficulty.jsonl" \
+    --families "${HARD_DEV_FAMILIES}" --per-family "${HARD_DEV_PER_FAMILY}" "${V2}" \
+    || tdie "could not carve the hard dev split from ${V2}"
+fi
 
 # ---- 3. the 24K test -------------------------------------------------------------------------------------------------
 CAP="${DPT_RL_CAP:-${DPT_RL_V2_CAP:-}}"

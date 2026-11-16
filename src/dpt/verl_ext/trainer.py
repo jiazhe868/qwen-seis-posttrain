@@ -196,6 +196,7 @@ class DomainRLTrainer(PPOTrainerColocateAsync):
             nominal_mix=rt.mix_for_batch(self.global_steps - 1, {t for t in task_ids if t}),
             is_padding=is_padding, eps=float(rl["advantage"]["zero_adv_eps"]),
             normalize_by_group_std=rl["advantage"].get("estimator") == "group_mean_std",   # ablation A2
+            truncated_as_wrong_tasks=list(rl["sampling"].get("truncated_as_wrong_tasks") or []),  # RL v2 seed 3
         )
         metrics.update(res.metrics)
         mask = data.batch["response_mask"] * torch.as_tensor(res.valid, dtype=data.batch["response_mask"].dtype,

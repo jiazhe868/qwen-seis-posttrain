@@ -23,6 +23,19 @@
 #     share of T1 dev answers with a wrong value rises 3 points above its lowest.
 # Unchanged from run 1: the SFT start, 126 prompts × 8, the losses, and by default the 16K cap. rl_v2_job.sh
 # switches to 24K with a frozen MTP head when a one-step memory test at full length passes.
+#
+# Changed on 2026-11-15, before any seed started (the user: the target is a large gain on what the model cannot do
+# yet, not 90% → 95% on a saturated set; D-Num is saturated, so lower its weight and raise the weight and the
+# diversity of the harder problems):
+#   - the re-grade runs at 24K (configs/data/pipeline.yaml), so problems solved only past 16K count as solvable;
+#   - mix T1 70 / T2 15 / T4 15 (T2 25% before: T2 is not re-graded, and 90% of run 1's T2 groups were 8/8);
+#   - steeper difficulty copies: 4 / 3 / 2 / 1 for pass rates up to 2/8, 4/8, 6/8 and 7/8;
+#   - the 12 hard and 6 long families drawn twice as often, and no family above 6% of its pool (family_weights);
+#   - the hard pool (0/8 at 24K) from step 20 with a 20% share;
+#   - a second dev split, 10 held-out problems of each hard and long family (rl_dev_hard), with its own pause
+#     rules: its accuracy, its wrong values, its unfinished answers that already hold the right value, its length.
+#     Run 1's pinned dev split held almost only easy problems and saw the trade of unfinished for wrong answers late.
+#   - seed 3 differs in one setting: T1 answers that run out of tokens count as wrong (rl_9b_v2_seed3.yaml).
 # =============================================================================
 defaults_from: rl_9b.yaml
 requires_model_line: qwen35_9b
@@ -36,13 +49,48 @@ curriculum:
   # Run 1's stage boundaries, one mix for all three stages. The stages still set the hard pool's join step and
   # the final LR phase.
   stages:
-    - {name: A_verifiable_warmup, start: 0, end: 34, mix: {t1_num: 0.60, t2_code: 0.25, t3_report: 0.00, t4_general: 0.15}}
-    - {name: B_add_hard_pool, start: 34, end: 86, mix: {t1_num: 0.60, t2_code: 0.25, t3_report: 0.00, t4_general: 0.15}}
-    - {name: C_consolidate, start: 86, end: 120, mix: {t1_num: 0.60, t2_code: 0.25, t3_report: 0.00, t4_general: 0.15}}
-  hard_pool_join_step: 34                   # stage B; 0/8 problems give no signal until the policy has improved
-  hard_share: 0.10
+    - {name: A_verifiable_warmup, start: 0, end: 34, mix: {t1_num: 0.70, t2_code: 0.15, t3_report: 0.00, t4_general: 0.15}}
+    - {name: B_add_hard_pool, start: 34, end: 86, mix: {t1_num: 0.70, t2_code: 0.15, t3_report: 0.00, t4_general: 0.15}}
+    - {name: C_consolidate, start: 86, end: 120, mix: {t1_num: 0.70, t2_code: 0.15, t3_report: 0.00, t4_general: 0.15}}
+  # 0/8 at 24K gives a group of 8 a mixed result only when the policy has improved, so the hard pool still waits,
+  # but 20 steps instead of 34, and a 20% share instead of 10% (scaled down below 300 problems).
+  hard_pool_join_step: 20
+  hard_share: 0.20
   hard_pool_min_size: 300
-  difficulty_weights: {enabled: true, bands: [[0.375, 3], [0.625, 2], [1.0, 1]], unknown: 1}
+  difficulty_weights: {enabled: true, bands: [[0.25, 4], [0.5, 3], [0.75, 2], [1.0, 1]], unknown: 1}
+  # bank v2's hard (3–5 steps) and long (6–8 steps) T1 families, drawn twice as often; no family above 6% of its
+  # pool (bank v1 had 39 T1 families at ~3% each). The map comes from bank_merge carve-hard-dev (rl_v2_job.sh).
+  family_weights:
+    copies: 2
+    max_share: 0.06
+    families:
+      # hard (12)
+      - epicentre_from_three_sp
+      - array_backazimuth
+      - array_apparent_velocity
+      - three_layer_head_wave_time
+      - second_layer_thickness_from_intercepts
+      - dipping_refractor_velocity
+      - dipping_refractor_dip
+      - gr_count_from_magnitude_sample
+      - poisson_ratio_from_wadati_fit
+      - second_interface_reflected_energy
+      - q_from_spectral_ratio
+      - depth_from_pp_delay
+      # long (6)
+      - locate_then_local_magnitude
+      - wadati_origin_then_depth
+      - refraction_then_reflection_time
+      - fault_slip_stress_energy
+      - attenuation_then_amplitude
+      - great_circle_origin_time
+  family_map: ${rl_run.data_dir}/uid_family.json
+  # When T1 saturates during the run (zero-advantage groups above 60% for 30 steps while dev stalls), raise the hard
+  # pool's share (+0.10 per trigger, up to 0.50) and keep T1's weight: cutting it would move prompts to code and
+  # general tasks, which are even more saturated (2026-11-15, the review of the redesign).
+  auto_reweight:
+    weight_factor: 1.0
+    max_hard_share: 0.50
 
 rl_run:
   run_name: rl${project.model.tag}_v2_seed${project.seed}
@@ -50,10 +98,12 @@ rl_run:
   # purges $SCRATCH files left unread for 10 days (checked 2026-11-09).
   init_checkpoint: ${oc.env:WORK,.}/dpt/exports/sft${project.model.tag}_seed${rl_run.sft_seed}
   data_dir: ${project.paths.data_root}/v2
-  train_files: ["${rl_run.data_dir}/rl_main.parquet", "${rl_run.data_dir}/rl_hard.parquet"]
+  # rl_main and rl_hard without the problems held out for rl_dev_hard (bank_merge carve-hard-dev)
+  train_files: ["${rl_run.data_dir}/rl_main_train.parquet", "${rl_run.data_dir}/rl_hard_train.parquet"]
   # The dev split without its T3 rows (python -m dpt.data.bank_merge without-task). With no judge in this job,
-  # T3 rows would score 0 at every dev pass and only cost generation time.
-  dev_files: ["${rl_run.data_dir}/rl_dev_no_t3.parquet"]
+  # T3 rows would score 0 at every dev pass and only cost generation time. Then the hard dev split (2026-11-15).
+  dev_files: ["${rl_run.data_dir}/rl_dev_no_t3.parquet", "${rl_run.data_dir}/rl_dev_hard.parquet"]
+  hard_dev_per_family: 10                   # 18 families × 10 = 180 problems; read by rl_v2_job.sh
   dev_freq: 10
   # Every dev pass has a checkpoint to select: 12 × ~126 GB on $SCRATCH.
   save_freq: 10
@@ -83,3 +133,34 @@ monitoring:
       action: warn
       risk: "T1 answers shrinking fast, as before run 1's collapse; a warning only, since shorter answers are also
         the efficiency RL is for"
+    # The hard dev split (2026-11-15): 180 answers per pass, so about ±7 points at 95%. The thresholds sit above that.
+    - name: dev_t1_hard_best_drop
+      kind: best_drop
+      metric: dev/t1_hard
+      max_drop: 10.0
+      action: pause
+      risk: "the policy is getting worse on the hard and long families, the ones this run is for"
+    - name: dev_t1_hard_wrong_value_rise
+      kind: best_drop
+      better: low
+      metric: dev/t1_hard_wrong_value
+      max_drop: 10.0
+      action: pause
+      risk: "on hard problems, finished wrong answers are replacing unfinished ones (run 1 on D-Num-hard at 32K:
+        unfinished 28.2% → 16.5%, wrong values 3.6% → 12.6%)"
+    - name: dev_t1_hard_unfinished_seen_rise
+      kind: best_drop
+      better: low
+      metric: dev/t1_hard_unfinished_seen
+      max_drop: 12.0
+      action: pause
+      risk: "more hard answers hold the right value and never answer: the model checks instead of committing"
+    - name: dev_t1_hard_length_drop
+      kind: relative_change
+      metric: dev/t1_hard_len
+      window: 30
+      min_history: 3                         # dev passes come every 10 steps
+      drop_frac: 0.5
+      action: pause
+      risk: "hard answers halved in length within 30 steps; run 1's T1 answers fell from 3,071 to 548 tokens
+        before its accuracy collapsed"

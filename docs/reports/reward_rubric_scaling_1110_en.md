@@ -347,14 +347,29 @@ A model review of the tests and the data (README §8.5) adds three things to §4
   and both verifying models all computed the same label from the printed formula, so the 99.3–100% agreement in §4
   included these problems. 825 of them were in run 1's training bank. The generators are fixed and bank v2 leaves the
   old problems out. A physical anchor caught it: 1 mm at 100 km must give ML 3.0, and the printed formula gives 0.32.
-- **The D-Report rubrics are mostly sound.** Of 529 criteria, the review judged 515 sound. 5 questions were flagged:
-  2 rubrics reward wrong physics, 1 lists a true statement as an error, 2 accept only one of several valid readings.
-  Without them, the D-Report win rates move by at most 1.4 points (Gemma) and 0.5 (Luna).
+- **The D-Report rubrics are mostly sound.** Of 529 criteria, the review judged 515 sound. 6 questions were flagged:
+  2 rubrics reward wrong physics, 1 lists a true statement as an error, 2 accept only one of several valid readings,
+  and 1 gives travel times that contradict each other. Without them, the D-Report win rates move by at most 1.2
+  points (Gemma) and 0.5 (Luna).
 - **A model reviewer must read both orders.** Judged in one order, the reviewer favoured the first answer. Over both
   orders, it gives RL step 20 a 60.0% win rate against the base on 30 pairs, between Gemma (86.7%) and Luna (45.0%), and
   agrees with Luna on 63% of the pairs and with Gemma on 53%. That is one more sign that the T3 judge is lenient.
 
 Counts only: `docs/talk/data/screening_1114.json`.
+
+
+## 10. Update (2026-11-15, evening): the reward side of RL v2
+
+I changed one reward rule, on seed 3 only: a numeric answer that runs out of tokens scores 0 and stays in its group.
+I dropped the overlong penalty for it, because a cut-off answer scored below a finished wrong one would teach the
+model to finish wrong rather than late. Everything else in the rewards stays. T1 agrees with the grader on 99.3–100%
+of answers, and run 1's trouble was its bank, which the SFT model had already solved (README §8.3).
+
+I am keeping the report task out of training. On 100 report questions, after a review of all 300 answers, the gold
+labels agree with Luna's pairwise verdicts on 0.78–0.79 of the decisive pairs and with Gemma's on 0.57–0.59. Gemma
+is the T3 reward model, and it calls about 70% of the pairs that the gold labels give to the base a win for the
+trained model. Training on that would teach the model what Gemma likes. A rubric version has to reach about 0.75
+on held-out questions before reports go back in.
 
 ## Data and code
 

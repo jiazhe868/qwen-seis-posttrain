@@ -39,7 +39,7 @@ import numpy as np
 
 from dpt.common.types import TASKS
 from dpt.rl.advantage import TaskAdvantageScaler, TaskLossNormalizer, group_mean_advantage, token_shares
-from dpt.rl.filtering import zero_advantage_mask
+from dpt.rl.filtering import scores_and_validity, zero_advantage_mask
 
 
 def _group_std(r: np.ndarray, gids: Sequence[str], valid: np.ndarray) -> np.ndarray:
@@ -76,6 +76,7 @@ def compute_step_advantages(
     is_padding: Sequence[bool] | np.ndarray | None = None,
     eps: float = 1e-6,
     normalize_by_group_std: bool = False,
+    truncated_as_wrong_tasks: Sequence[str] = (),
 ) -> StepAdvantages:
     r = np.asarray(scores, dtype=np.float64)
     n = len(r)
@@ -85,7 +86,9 @@ def compute_step_advantages(
     gids = [str(g) for g in group_ids]
 
     truncated = (lens >= max_response) & ~pad
-    valid = ~truncated & ~pad
+    # truncated answers are left out, or count as wrong for the tasks listed (RL v2 seed 3, dpt.rl.filtering)
+    r, kept = scores_and_validity(r, list(tids), truncated, truncated_as_wrong_tasks)
+    valid = kept & ~pad
 
     adv = group_mean_advantage(r, gids, valid=valid)
     degenerate = zero_advantage_mask(r, gids, valid=valid, eps=eps)

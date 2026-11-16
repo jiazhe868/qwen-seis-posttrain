@@ -876,7 +876,7 @@
    "sft_eval": "2026-10-29T21:16"
   }
  },
- "collected_at": "2026-11-15T12:17",
+ "collected_at": "2026-11-15T18:17",
  "compute": {
   "balance": {
    "available_su": 4716,
@@ -1722,6 +1722,30 @@
     "state": "PENDING",
     "su": 0.0,
     "submit": "2026-11-14T23:23:03"
+   },
+   {
+    "elapsed_s": 0,
+    "end": "Unknown",
+    "id": "3583946",
+    "name": "dpt-rlv2s3",
+    "nodes": 8,
+    "partition": "gpu-a100",
+    "start": "Unknown",
+    "state": "PENDING",
+    "su": 0.0,
+    "submit": "2026-11-15T12:43:25"
+   },
+   {
+    "elapsed_s": 0,
+    "end": "Unknown",
+    "id": "3584030",
+    "name": "dpt-rubric",
+    "nodes": 1,
+    "partition": "gpu-a100-dev",
+    "start": "Unknown",
+    "state": "PENDING",
+    "su": 0.0,
+    "submit": "2026-11-15T13:24:29"
    }
   ],
   "since": "2026-10-13",
@@ -3737,7 +3761,8 @@
    "general/livecodebench_post_2025_01.jsonl": 70,
    "general/mmlu_pro_2k.jsonl": 2000,
    "general/tool_calling.jsonl": 188,
-   "safety/refusal_regression.jsonl": 650
+   "safety/refusal_regression.jsonl": 650,
+   "safety/unclear_rl_seed1.jsonl": 27
   },
   "frozen_at": "2026-10-23T16:23:37",
   "sets": {

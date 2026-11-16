@@ -105,6 +105,36 @@ class DifficultyWeights:
 
 
 @dataclass
+class FamilyWeights:
+    """More draws for chosen families and a cap on any one family's share (2026-11-15). The user's direction: the
+    model already solves most v1 problems (D-Num is saturated), so lower their weight and raise the weight and the
+    diversity of the harder problems. ``copies`` multiplies the difficulty-band copies of the problems of
+    ``families`` (bank v2's 12 hard and 6 long T1 families). ``max_share`` then caps one family's share of its pool,
+    so a weighted family with many problems cannot crowd out the others (0 = off). Both read the uid → family map
+    that the RL job writes next to the bank (``CurriculumConfig.family_map``)."""
+
+    copies: int = 1
+    families: list[str] = field(default_factory=list)
+    max_share: float = 0.0
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any] | None) -> "FamilyWeights":
+        d = dict(d or {})
+        unknown = set(d) - {"copies", "families", "max_share"}
+        if unknown:
+            raise ValueError(f"unknown family_weights keys {sorted(unknown)}")
+        fw = cls(copies=int(d.get("copies", 1)), families=[str(f) for f in d.get("families", [])],
+                 max_share=float(d.get("max_share", 0.0)))
+        if fw.copies < 1 or not 0.0 <= fw.max_share < 1.0:
+            raise ValueError(f"family_weights needs copies >= 1 and 0 <= max_share < 1: {fw}")
+        return fw
+
+    @property
+    def on(self) -> bool:
+        return (self.copies > 1 and bool(self.families)) or self.max_share > 0
+
+
+@dataclass
 class CurriculumConfig:
     stages: list[Stage]
     prompts_per_step: int = 128
@@ -116,6 +146,8 @@ class CurriculumConfig:
     # A hard pool smaller than this has its share scaled by size / hard_pool_min_size, so a few problems are not
     # drawn a hundred times each (2026-10-27: 26 hard problems would have been 9.5% of all prompts). 0 = off.
     hard_pool_min_size: int = 0
+    family_weights: FamilyWeights = field(default_factory=FamilyWeights)
+    family_map: str = ""                # JSON {uid: family}; read by dpt.verl_ext.sampler, needed by family_weights
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> "CurriculumConfig":
@@ -131,6 +163,8 @@ class CurriculumConfig:
             auto_reweight=ar,
             difficulty_weights=DifficultyWeights.from_dict(d.get("difficulty_weights")),
             hard_pool_min_size=int(d.get("hard_pool_min_size", 0)),
+            family_weights=FamilyWeights.from_dict(d.get("family_weights")),
+            family_map=str(d.get("family_map") or ""),
         )
 
     def validate(self) -> None:
@@ -223,18 +257,19 @@ class Curriculum:
     """
 
     def __init__(self, config: CurriculumConfig, pools: Mapping[str, Mapping[str, Sequence[str]]],
-                 rates: Mapping[str, float | None] | None = None) -> None:
+                 rates: Mapping[str, float | None] | None = None,
+                 families: Mapping[str, str | None] | None = None) -> None:
         config.validate()
+        if config.family_weights.on and not families:
+            raise ValueError("family_weights is on but no uid → family map was given (curriculum.family_map)")
         self.cfg = config
         self.samplers: dict[str, dict[str, PoolSampler]] = {}
-        dw = config.difficulty_weights
         for t in TASKS:
             tp = pools.get(t, {})
-            main = list(tp.get(MAIN, []))
-            if dw.enabled:              # a problem appears copies(rate) times in each epoch of its pool
-                main = [u for u in main for _ in range(dw.copies((rates or {}).get(u)))]
+            main = self._copies(list(tp.get(MAIN, [])), rates or {}, families or {}, weighted=True)
+            hard = self._copies(list(tp.get(HARD, [])), {}, families or {}, weighted=False)
             self.samplers[t] = {MAIN: PoolSampler(main, config.seed, f"{t}/{MAIN}"),
-                                HARD: PoolSampler(tp.get(HARD, []), config.seed, f"{t}/{HARD}")}
+                                HARD: PoolSampler(hard, config.seed, f"{t}/{HARD}")}
         ar = config.auto_reweight
         self.weight_factor = {t: 1.0 for t in TASKS}
         self.hard_share_extra = {t: 0.0 for t in TASKS}
@@ -244,6 +279,34 @@ class Curriculum:
         self.last_trigger_step: dict[str, int | None] = {t: None for t in TASKS}
         self.last_sampled_step = -1
         self.events: list[dict[str, Any]] = []
+
+    def _copies(self, uids: list[str], rates: Mapping[str, float | None], families: Mapping[str, str | None], *,
+                weighted: bool) -> list[str]:
+        """One epoch of a pool: each uid repeated by its difficulty band and family factor (main pool only), then
+        thinned so that no family holds more than ``family_weights.max_share`` of the epoch (both pools)."""
+        dw, fw = self.cfg.difficulty_weights, self.cfg.family_weights
+        boosted = set(fw.families)
+        copies = {u: 1 for u in uids}
+        if weighted:
+            for u in uids:
+                band = dw.copies(rates.get(u)) if dw.enabled else 1
+                copies[u] = band * (fw.copies if families.get(u) in boosted else 1)
+        if fw.max_share > 0 and uids:
+            total = sum(copies.values())
+            per_family: dict[str, int] = {}
+            for u in uids:
+                f = families.get(u)
+                if f is not None:
+                    per_family[f] = per_family.get(f, 0) + copies[u]
+            for f, n in per_family.items():
+                if n <= fw.max_share * total:
+                    continue
+                keep = fw.max_share * total / n       # each copy of this family's problems kept with this chance
+                for u in uids:
+                    if families.get(u) == f:
+                        copies[u] = sum(derive_seed(self.cfg.seed, "family_cap", u, i) / (2**63 - 1) < keep
+                                        for i in range(copies[u]))
+        return [u for u in uids for _ in range(copies[u])]
 
     # -- queries --------------------------------------------------------------------------
     def stage_at(self, step: int) -> Stage:
@@ -370,6 +433,9 @@ class Curriculum:
             out["difficulty_weights"] = {"bands": [list(b) for b in dw.bands], "unknown": dw.unknown}
         if self.cfg.hard_pool_min_size:
             out["hard_pool_min_size"] = self.cfg.hard_pool_min_size
+        fw = self.cfg.family_weights
+        if fw.on:                                          # 2026-11-15
+            out["family_weights"] = {"copies": fw.copies, "families": sorted(fw.families), "max_share": fw.max_share}
         return out
 
     def load_state_dict(self, state: Mapping[str, Any]) -> None:

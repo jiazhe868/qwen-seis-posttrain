@@ -55,3 +55,17 @@ def test_dev_t1_wrong_values_and_unfinished_answers_in_percent():
                         "val-aux/t4_general/gold_wrong_value/mean@4": -1.0})
     assert abs(out[K.DEV_T1_WRONG_VALUE] - 17.8) < 1e-9 and out[K.DEV_T1_UNFINISHED] == 0.0
     assert "gold/t1_num" not in out                                       # the gold score has its own key
+
+
+def test_the_hard_dev_split_gets_its_own_dev_metrics():
+    """2026-11-15: rl_dev_hard (data_source t1_num_hard) → dev/t1_hard*, apart from run 1's dev split."""
+    out = to_canonical({"val-aux/t1_num_hard/gold_score/mean@1": 0.4, "val-aux/t1_num_hard/gold_wrong_value/mean@1": 0.1,
+                        "val-aux/t1_num_hard/gold_unfinished/mean@1": 0.5,
+                        "val-aux/t1_num_hard/gold_unfinished_seen/mean@1": 0.3,
+                        "val-aux/t1_num_hard/gold_len/mean@1": 12000.0,
+                        "val-aux/t1_num/gold_score/mean@1": 0.95, "val-aux/t1_num/gold_unfinished_seen/mean@1": 0.01,
+                        "val-aux/t1_num/gold_len/mean@1": 2500.0})
+    assert out[K.DEV_T1_HARD] == 40.0 and abs(out[K.DEV_T1_HARD_WRONG_VALUE] - 10.0) < 1e-9
+    assert out[K.DEV_T1_HARD_UNFINISHED] == 50.0 and abs(out[K.DEV_T1_HARD_UNFINISHED_SEEN] - 30.0) < 1e-9
+    assert out[K.DEV_T1_HARD_LEN] == 12000.0 and out[K.DEV_D_NUM] == 95.0          # dev D-Num stays run 1's split
+    assert out[K.DEV_T1_UNFINISHED_SEEN] == 1.0 and out[K.DEV_T1_LEN] == 2500.0

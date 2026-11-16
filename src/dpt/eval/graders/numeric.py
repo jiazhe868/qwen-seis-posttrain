@@ -215,3 +215,39 @@ def grade_numeric(
         reason="ok" if ok else "wrong_value",
         details={"answer": ext.answer, "pred_si": p_si, "gold_si": g_si, "tol": tol},
     )
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# The right value in an unfinished answer (the failure types of 2026-11-10; RL dev monitoring, 2026-11-15)
+# --------------------------------------------------------------------------------------------------------------------
+_SUPERSCRIPTS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺", "0123456789-+")
+_SEEN_SCI = re.compile(r"(\d+(?:\.\d+)?)\s*(?:×|x|\\times|\*|·)\s*10\s*\^?\s*\{?\s*([-+−]?\d+)\s*\}?")
+_SEEN_NUMBER = re.compile(r"\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+
+def value_seen(text: str, gold: dict[str, Any]) -> float | None:
+    """How far into ``text`` (0–1) a number matching the gold value first appears; None if it never does.
+
+    For unfinished answers: a trace that holds the right value but never answers kept checking instead of
+    committing (verification loops were the most common cause on D-Num-hard). The tolerance is 1.5× the gold's,
+    since a trace rounds intermediate values; any matching number counts, so this is an upper bound."""
+    v = float(gold["value"])
+    tol = 1.5 * max(float(gold.get("abs_tol") or 0.0), float(gold.get("rel_tol") or 0.01) * abs(v), 1e-12)
+    t = text.translate(_SUPERSCRIPTS).replace("−", "-")
+    hits = []
+    for m in _SEEN_SCI.finditer(t):
+        try:
+            x = float(m.group(1)) * 10 ** int(m.group(2).replace("−", "-"))
+        except (ValueError, OverflowError):
+            continue
+        if abs(abs(x) - abs(v)) <= tol:
+            hits.append(m.start())
+    for m in _SEEN_NUMBER.finditer(t):
+        try:
+            x = float(m.group(0))
+        except ValueError:
+            continue
+        if abs(x - abs(v)) <= tol:
+            hits.append(m.start())
+            break
+    return round(min(hits) / max(1, len(t)), 3) if hits else None

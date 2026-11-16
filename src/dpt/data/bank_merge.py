@@ -18,6 +18,10 @@ by the SFT model gives a group of 8 with mixed results with probability 1 − r�
 gradient. In run 1's steps 1–20, 13% of T1 groups were mixed. Below 40% the bank fails, so an RL job never spends its
 nodes on a bank that is too easy. The estimate is optimistic: a problem graded 7/8 may really be at 0.95.
 
+The check also fails a bank with fewer than ``MIN_LEARNABLE_T1`` T1 main problems graded 1–6 of 8, and it
+lists every T1 family's problems by grade (``t1_families``, from the stage file), so a bank whose hard
+families turned out easy shows it (2026-11-15).
+
 ``pin-dev`` (2026-11-11) makes ``<bank>/rl_dev`` the reference split (v1's) and removes its problems from
 ``rl_main`` and ``rl_hard``. Publish draws the dev split from the problems that survive the difficulty pass. Bank
 v2 re-grades them with the SFT model, which drops every problem it solves 8/8 (88% of run 1's T1 groups), so the
@@ -30,6 +34,13 @@ training. Run 1's dev curve and the pause rules calibrated on it compare only on
 T3 for a run that has no judge::
 
     python -m dpt.data.bank_merge without-task --task t3_report --out $V2/rl_dev_no_t3 $V2/rl_dev.jsonl
+
+``carve-hard-dev`` (2026-11-15) holds out a few problems of each hard and long family as a second dev split
+(``rl_dev_hard``, its own pause rules) and writes the uid → family map the curriculum's family weights
+need::
+
+    python -m dpt.data.bank_merge carve-hard-dev --stages $V2/stages/05_difficulty.jsonl \\
+        --families epicentre_from_three_sp,... --per-family 10 $V2
 """
 
 from __future__ import annotations
@@ -44,6 +55,7 @@ from typing import Any, Sequence
 from dpt.common.io import read_jsonl, write_jsonl
 from dpt.common.logging import get_logger
 from dpt.common.manifest import build_manifest, load_manifest, manifest_path_for, write_manifest
+from dpt.common.seeding import derive_seed
 from dpt.data.rl_build import write_rows
 
 log = get_logger(__name__)
@@ -106,6 +118,10 @@ def task_of(row: dict[str, Any]) -> str | None:
 
 
 MIN_EXPECTED_MIXED_T1 = 0.40
+# RL v2 draws ~8,400 T1 problems from the main pool in 120 steps (70% of 126 prompts, 80% of them from the main pool
+# after step 20). With fewer learnable problems (graded 1–6 of 8) each would be seen 8+ times, and the run would be
+# back to run 1's position of little to learn (2026-11-15).
+MIN_LEARNABLE_T1 = 1000
 
 
 def expected_mixed_share(pass_rates: Sequence[float], group_size: int = 8) -> float:
@@ -115,8 +131,8 @@ def expected_mixed_share(pass_rates: Sequence[float], group_size: int = 8) -> fl
     return sum(1.0 - r ** group_size - (1.0 - r) ** group_size for r in pass_rates) / len(pass_rates)
 
 
-def check(bank: Path, reference_dev: Path | None = None,
-          t3_not_trained: bool = False) -> tuple[dict[str, Any], list[str]]:
+def check(bank: Path, reference_dev: Path | None = None, t3_not_trained: bool = False,
+          min_learnable: int = MIN_LEARNABLE_T1) -> tuple[dict[str, Any], list[str]]:
     main, hard, dev = (_rows(bank / f"rl_{n}.jsonl") for n in ("main", "hard", "dev"))
     problems: list[str] = []
 
@@ -145,11 +161,15 @@ def check(bank: Path, reference_dev: Path | None = None,
     summary["t3_trained"] = not t3_not_trained
     t1_rates = [x for x in (rate_of(r) for r in main if task_of(r) == "t1_num") if isinstance(x, (int, float))]
     summary["expected_mixed_t1_at_step_1"] = round(expected_mixed_share(t1_rates), 3)
+    summary["learnable_t1"] = sum(0.1 < x < 0.8 for x in t1_rates)          # graded 1–6 of 8
+    summary["t1_families"] = t1_family_bands(bank, main, hard)
 
     if not summary["main"].get("t1_num"):
         problems.append("no T1 rows in rl_main")
     if not_atomic and not t3_not_trained:
         problems.append(f"{not_atomic} T3 rubrics are not atomic checks")
+    if t1_rates and summary["learnable_t1"] < min_learnable:
+        problems.append(f"only {summary['learnable_t1']} T1 main problems graded 1–6 of 8 (at least {min_learnable})")
     if t1_rates and summary["expected_mixed_t1_at_step_1"] < MIN_EXPECTED_MIXED_T1:
         problems.append(f"only {100 * summary['expected_mixed_t1_at_step_1']:.0f}% of T1 groups are expected to have "
                         f"mixed results at step 1 (at least {100 * MIN_EXPECTED_MIXED_T1:.0f}%)")
@@ -169,6 +189,31 @@ def check(bank: Path, reference_dev: Path | None = None,
 
 def uid_of(row: dict[str, Any]) -> str | None:
     return (row.get("extra_info") or {}).get("uid")
+
+
+def t1_family_bands(bank: Path, main: list[dict[str, Any]], hard: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Per T1 family: problems in the main pool by grade (0/8 sits in the hard pool, 8/8 was dropped), from the
+    bank's merged stage file (the published rows carry no family). Empty when the stage file is missing."""
+    stage = bank / "stages" / "05_difficulty.jsonl"
+    if not stage.exists():
+        return {}
+    fam = {str(r["uid"]): family_of(r) for r in read_jsonl(stage) if r.get("uid")}
+    out: dict[str, dict[str, int]] = {}
+    for pool, rows in (("main", main), ("hard", hard)):
+        for r in rows:
+            if task_of(r) != "t1_num":
+                continue
+            f = fam.get(str(uid_of(r))) or "unknown"
+            band = "hard_pool" if pool == "hard" else _band((r.get("extra_info") or {}).get("pass_at_8_medium"))
+            out.setdefault(f, {}).setdefault(band, 0)
+            out[f][band] += 1
+    return dict(sorted(out.items()))
+
+
+def _band(rate: float | None) -> str:
+    if not isinstance(rate, (int, float)):
+        return "unknown"
+    return "1_2_of_8" if rate <= 0.25 else "3_4_of_8" if rate <= 0.5 else "5_6_of_8" if rate <= 0.75 else "7_of_8"
 
 
 def _rewrite_split(bank: Path, name: str, rows: list[dict[str, Any]], extra_parents: dict[str, str], notes: str):
@@ -229,6 +274,68 @@ def without_task(source: Path, task: str, out_stem: Path) -> dict[str, Any]:
     return res
 
 
+HARD_DEV_SOURCE = "t1_num_hard"     # the hard dev rows' data_source: verl reports their dev metrics on their own
+
+
+def carve_hard_dev(bank: Path, stages: Sequence[Path], families: Sequence[str], per_family: int,
+                   seed: int = 1) -> dict[str, Any]:
+    """Hold out ``per_family`` T1 problems of each of ``families`` as a second dev split, and write the uid → family
+    map of the bank (2026-11-15).
+
+    Run 1 got shorter on the hard problems and turned unfinished answers into wrong ones, while its dev split (run
+    1's, pinned) held almost only easy problems, so the pause rules saw it late. This split gives the hard and long
+    families their own dev numbers (``dev/t1_hard*``, ``dpt.monitoring.bridge``). Its rows keep the T1 grader but
+    get ``data_source`` ``t1_num_hard`` (``dpt.verl_ext.reward_fn`` grades it as T1). The published rows carry no
+    family, so the family comes from the bank's stage files (``family_of``).
+
+    Writes ``rl_dev_hard``, ``rl_main_train`` and ``rl_hard_train`` (.jsonl, .parquet: rl_main and rl_hard without
+    the held-out problems) and ``uid_family.json``; ``hard_dev.json`` records the inputs, and a later call on the
+    same bank with the same settings only reads it."""
+    fam: dict[str, str] = {}
+    for stage in stages:
+        for row in read_jsonl(stage):
+            f = family_of(row)
+            if row.get("uid") and f:
+                fam[str(row["uid"])] = str(f)
+    main, hard = _rows(bank / "rl_main.jsonl"), _rows(bank / "rl_hard.jsonl")
+    inputs = {name: (load_manifest(bank / f"{name}.jsonl").content_hash
+                     if manifest_path_for(bank / f"{name}.jsonl").exists() else f"{len(rows)} rows")
+              for name, rows in (("rl_main", main), ("rl_hard", hard))}
+    settings = {"inputs": inputs, "families": sorted(families), "per_family": per_family, "seed": seed}
+    record = bank / "hard_dev.json"
+    if record.exists() and {k: v for k, v in json.loads(record.read_text()).items() if k in settings} == settings:
+        log.info("hard dev split already carved for these inputs (%s)", record)
+        return {"skipped": True, **json.loads(record.read_text())}
+
+    wanted = set(families)
+    candidates: dict[str, list[dict[str, Any]]] = {f: [] for f in sorted(wanted)}
+    for r in main + hard:
+        f = fam.get(str(uid_of(r)))
+        if f in wanted and task_of(r) == "t1_num":
+            candidates[f].append(r)
+    held: list[dict[str, Any]] = []
+    for f, rows in candidates.items():   # the same problems for a given bank and seed
+        rows.sort(key=lambda r: derive_seed(seed, "hard_dev", uid_of(r)))
+        for r in rows[:per_family]:
+            held.append({**r, "data_source": HARD_DEV_SOURCE, "extra_info": {**r["extra_info"], "split": "dev"}})
+    if not held:
+        raise ValueError(f"no problem of {sorted(wanted)} in {bank}: wrong family names or stage files {stages}")
+    held_uids = {uid_of(r) for r in held}
+    for name, rows in (("rl_main_train", main), ("rl_hard_train", hard)):
+        _rewrite_split(bank, name, [r for r in rows if uid_of(r) not in held_uids], inputs,
+                       f"{name[:-6]} without the {len(held)} problems of rl_dev_hard")
+    _rewrite_split(bank, "rl_dev_hard", held, inputs,
+                   f"{per_family} T1 problems of each of {len(wanted)} hard and long families, held out")
+    uid_family = {str(uid_of(r)): fam[str(uid_of(r))] for r in main + hard if str(uid_of(r)) in fam}
+    (bank / "uid_family.json").write_text(json.dumps(uid_family, sort_keys=True))
+    per_family_held = {f: min(len(v), per_family) for f, v in candidates.items()}
+    res = {**settings, "held_out": len(held), "per_family_held": per_family_held,
+           "missing_families": sorted(f for f, v in candidates.items() if not v), "family_map": len(uid_family)}
+    record.write_text(json.dumps(res, indent=1))
+    log.info("hard dev split: %s", res)
+    return res
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -242,6 +349,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     c.add_argument("--reference-dev", type=Path, default=None, help="e.g. $DATA/v1/rl_dev.jsonl")
     c.add_argument("--t3-not-trained", action="store_true",
                    help="the run trains no T3: count non-atomic T3 rubrics, but do not fail on them")
+    c.add_argument("--min-learnable", type=int, default=MIN_LEARNABLE_T1,
+                   help="fewest T1 main problems graded 1-6 of 8 for the bank to pass (2026-11-15)")
     d = sub.add_parser("pin-dev")
     d.add_argument("bank", type=Path)
     d.add_argument("--reference-dev", required=True, type=Path, help="e.g. $DATA/v1/rl_dev.jsonl")
@@ -250,7 +359,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     w.add_argument("--task", required=True)
     w.add_argument("--out", required=True, type=Path, help="path stem: writes <out>.jsonl and <out>.parquet")
     w.add_argument("source", type=Path)
+    h = sub.add_parser("carve-hard-dev")
+    h.add_argument("--stages", nargs="+", required=True, type=Path, help="the bank's stage files, for the families")
+    h.add_argument("--families", required=True, help="comma-separated family names")
+    h.add_argument("--per-family", type=int, default=10)
+    h.add_argument("--seed", type=int, default=1)
+    h.add_argument("bank", type=Path)
     a = ap.parse_args(argv)
+    if a.cmd == "carve-hard-dev":
+        families = [f for f in a.families.split(",") if f]
+        print(json.dumps(carve_hard_dev(a.bank, a.stages, families, a.per_family, a.seed)))
+        return 0
     if a.cmd == "merge":
         print(json.dumps(merge(a.inputs, a.out, a.t3_map, name=a.name)))
         return 0
@@ -260,7 +379,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if a.cmd == "without-task":
         print(json.dumps(without_task(a.source, a.task, a.out)))
         return 0
-    summary, problems = check(a.bank, a.reference_dev, t3_not_trained=a.t3_not_trained)
+    summary, problems = check(a.bank, a.reference_dev, t3_not_trained=a.t3_not_trained, min_learnable=a.min_learnable)
     (a.bank / "bank_check.json").write_text(json.dumps(summary, indent=1))
     print(json.dumps(summary, indent=1))
     return 1 if problems else 0

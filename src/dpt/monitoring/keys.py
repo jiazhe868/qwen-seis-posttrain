@@ -50,6 +50,14 @@ DEV_D_NUM = "dev/d_num"
 DEV_D_NUM_CI = "dev/d_num_ci_halfwidth"
 DEV_T1_WRONG_VALUE = "dev/t1_wrong_value"  # % of T1 dev answers that finished with a wrong value (gold grader)
 DEV_T1_UNFINISHED = "dev/t1_unfinished"  # % of T1 dev answers whose thinking never ended
+DEV_T1_UNFINISHED_SEEN = "dev/t1_unfinished_seen"  # % of T1 dev answers unfinished with the right value seen
+DEV_T1_LEN = "dev/t1_len"  # mean T1 dev answer length, tokens estimated from characters
+# the hard dev split: bank v2's hard and long families, held out (2026-11-15)
+DEV_T1_HARD = "dev/t1_hard"  # % right on the gold grader
+DEV_T1_HARD_WRONG_VALUE = "dev/t1_hard_wrong_value"
+DEV_T1_HARD_UNFINISHED = "dev/t1_hard_unfinished"
+DEV_T1_HARD_UNFINISHED_SEEN = "dev/t1_hard_unfinished_seen"
+DEV_T1_HARD_LEN = "dev/t1_hard_len"
 GENERAL_REPLAY_REWARD = TASK_REWARD.format(task="t4_general")
 
 

@@ -160,3 +160,14 @@ def test_subscripted_magnitude_labels_are_dimensionless(ans):
 
     assert grade_numeric(f"\\boxed{{{ans}}}", {"value": 8.07, "unit": "", "abs_tol": 0.05, "rel_tol": 0.0},
                          missing_unit="strict").correct
+
+
+def test_value_seen_finds_the_gold_value_in_an_unfinished_trace():
+    """Moved from scripts/talk/failure_types.py (2026-11-15): where a trace first states the right value, if ever."""
+    from dpt.eval.graders.numeric import value_seen
+
+    gold = {"value": 3.04e19, "rel_tol": 0.01, "abs_tol": 0.0}
+    assert value_seen("so M0 = 3.04 × 10^19 N m, let me check the area again", gold) == round(8 / 53, 3)
+    assert value_seen("first 2.1 × 10^19, then 3.05 × 10¹⁹", gold) is not None
+    assert value_seen("M0 = 1.2 × 10^18 N m", gold) is None
+    assert value_seen("t = 20.1 s", {"value": 20.0, "rel_tol": 0.01, "abs_tol": None}) is not None

@@ -75,6 +75,7 @@ from dpt.common.io import read_jsonl
 from dpt.data.gen import families as F
 from dpt.data.gen import seismology_hard  # noqa: F401  (registers the hard and held-out families)
 from dpt.eval.graders.numeric import extract_final_answer, grade_numeric
+from dpt.eval.graders.numeric import value_seen as gold_seen   # moved into the package on 2026-11-15
 
 WORK = Path(os.environ.get("WORK", "."))
 R = WORK / "dpt" / "eval_results"
@@ -103,35 +104,6 @@ def signature(pred: float, gold: float, tol: float) -> str:
     if any(abs(r / f - 1) < 0.01 for f in FACTORS.values()):
         return "simple_factor"
     return "other"
-
-
-SUP = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺", "0123456789-+")
-SCI = re.compile(r"(\d+(?:\.\d+)?)\s*(?:×|x|\\times|\*|·)\s*10\s*\^?\s*\{?\s*([-+−]?\d+)\s*\}?")
-NUMBER = re.compile(r"\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
-
-
-def gold_seen(thinking: str, gold: dict[str, Any]) -> float | None:
-    """How far into the reasoning (0–1) a number matching the gold value first appears; None if it never does."""
-    v = float(gold["value"])
-    tol = 1.5 * max(float(gold.get("abs_tol", 0.0)), float(gold.get("rel_tol", 0.01)) * abs(v), 1e-12)
-    t = thinking.translate(SUP).replace("−", "-")
-    hits = []
-    for m in SCI.finditer(t):
-        try:
-            x = float(m.group(1)) * 10 ** int(m.group(2).replace("−", "-"))
-        except (ValueError, OverflowError):
-            continue
-        if abs(abs(x) - abs(v)) <= tol:
-            hits.append(m.start())
-    for m in NUMBER.finditer(t):
-        try:
-            x = float(m.group(0))
-        except ValueError:
-            continue
-        if abs(x - abs(v)) <= tol:
-            hits.append(m.start())
-            break
-    return round(min(hits) / max(1, len(t)), 3) if hits else None
 
 
 def grade(text: str, gold: dict[str, Any]) -> dict[str, Any]:

@@ -41,6 +41,14 @@ those unfinished answers would have finished and been right. The bridge turns bo
 ``dev/t1_wrong_value`` and ``dev/t1_unfinished`` (percent), and rl_9b_v2.yaml pauses on the first.
 Other rows get −1 for both.
 
+The hard dev split and two more T1 keys (2026-11-15)
+----------------------------------------------------
+``gold_unfinished_seen`` is 1 for an unfinished T1 answer whose trace already holds the right value (it kept
+checking instead of answering; 44–87% of the SFT model's unfinished D-Num-hard answers at 32K), and ``gold_len`` is
+the answer's length in tokens, estimated from its characters. The hard dev split (``data_source`` ``t1_num_hard``,
+dpt.data.bank_merge carve-hard-dev) is graded as T1 under its own name, so the bridge reports ``dev/t1_hard`` and
+its wrong-value, unfinished, unfinished-with-the-value and length shares apart from run 1's dev split.
+
 Output keys are identical for every sample (``dpt.rewards.router.VERL_KEYS`` + the three
 ``gold_*`` keys). verl requires this, because it turns per-sample dicts into columns.
 """
@@ -87,11 +95,12 @@ def compute_score(data_source: str, solution_str: str, ground_truth: Any,
     # verl may pass reward_router_address / reward_model_tokenizer; graders do not use them.
     kwargs.pop("reward_router_address", None)
     kwargs.pop("reward_model_tokenizer", None)
-    out = _router.compute_score(data_source, solution_str, ground_truth, extra_info, **kwargs)
+    task = DEV_ALIASES.get(str(data_source), str(data_source))
+    out = _router.compute_score(task, solution_str, ground_truth, extra_info, **kwargs)
     out.update(NO_GOLD)
     if (extra_info or {}).get("split") == "dev":
         try:
-            out.update(gold_grade(str(data_source), solution_str, ground_truth, out))
+            out.update(gold_grade(task, solution_str, ground_truth, out))
         except Exception as e:  # gold is a monitor; never fail the reward because of it
             log.warning("gold grading failed (%s: %s)", type(e).__name__, e)
             out["gold_score"] = 0.0
@@ -99,7 +108,12 @@ def compute_score(data_source: str, solution_str: str, ground_truth: Any,
 
 
 # −1 = not computed for this row (training rows, and the T1-only keys on other tasks)
-NO_GOLD = {"gold_score": -1.0, "gold_wrong_value": -1.0, "gold_unfinished": -1.0}
+NO_GOLD = {"gold_score": -1.0, "gold_wrong_value": -1.0, "gold_unfinished": -1.0, "gold_unfinished_seen": -1.0,
+           "gold_len": -1.0}
+# The hard dev split (dpt.data.bank_merge carve-hard-dev) is T1 under its own data_source, so verl reports its dev
+# metrics apart from run 1's dev split (dev/t1_hard*, dpt.monitoring.bridge).
+DEV_ALIASES = {"t1_num_hard": T1_NUM}
+CHARS_PER_TOKEN = 3.2                  # rewards.length.est_chars_per_token; gold_len is for trends only
 
 
 def gold_grade(task: str, solution_str: str, ground_truth: Any, proxy: dict[str, Any]) -> dict[str, float]:
@@ -109,8 +123,16 @@ def gold_grade(task: str, solution_str: str, ground_truth: Any, proxy: dict[str,
     answer = strip_thinking(solution_str)
     if task == T2_CODE:
         return {"gold_score": float(proxy.get("t2_hidden_pass", 0.0))}
+    length = {"gold_len": len(solution_str) / CHARS_PER_TOKEN} if task == T1_NUM else {}
     if answer is None:
-        return {"gold_score": 0.0, **({"gold_wrong_value": 0.0, "gold_unfinished": 1.0} if task == T1_NUM else {})}
+        if task != T1_NUM:
+            return {"gold_score": 0.0}
+        # unfinished; did the trace already hold the right value? (the model kept checking instead of answering)
+        from dpt.eval.graders.numeric import value_seen
+
+        seen = value_seen(solution_str, gt) is not None
+        return {"gold_score": 0.0, "gold_wrong_value": 0.0, "gold_unfinished": 1.0,
+                "gold_unfinished_seen": float(seen), **length}
     if task == T1_NUM or (task == T4_GENERAL and gt.get("kind") == "math"):
         from dpt.eval.graders.numeric import grade_numeric
 
@@ -118,7 +140,7 @@ def gold_grade(task: str, solution_str: str, ground_truth: Any, proxy: dict[str,
         if task != T1_NUM:
             return {"gold_score": float(grade.correct)}
         return {"gold_score": float(grade.correct), "gold_wrong_value": float(grade.reason == "wrong_value"),
-                "gold_unfinished": 0.0}
+                "gold_unfinished": 0.0, "gold_unfinished_seen": 0.0, **length}
     if task == T4_GENERAL and gt.get("kind") == "ifeval":
         from dpt.eval.graders.ifeval import grade_ifeval
 

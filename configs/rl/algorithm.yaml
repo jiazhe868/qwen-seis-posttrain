@@ -14,6 +14,9 @@ rl:
     top_p: 1.0                   # top-p < 1 makes the sampling distribution differ from the scored one
     effort: ${project.thinking.train_effort}        # medium (A5: xhigh +1.2 but 2.6× tokens/step)
     max_response: ${project.thinking.rl_max_response}  # 24,576
+    # Tasks whose truncated answers count as wrong (score 0, kept in the group) instead of leaving the loss.
+    # Empty everywhere except RL v2 seed 3, which tests [t1_num] (dpt.rl.filtering, 2026-11-15).
+    truncated_as_wrong_tasks: []
 
   length:
     overlong_start: ${project.thinking.rl_overlong_start}       # 20,480

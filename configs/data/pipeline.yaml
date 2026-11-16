@@ -101,7 +101,10 @@ data_pipeline:
     audit: {per_group: 20, drop_share: 0.9, hard_share: 0.9}
     n_samples: 8
     effort: medium                     # must match RL rollout settings
-    max_tokens: ${project.thinking.rl_max_response}
+    # 24K whatever the model line's RL cap (16K on the 9B line), 2026-11-15: RL v2 trains at 24K once its memory test
+    # passes, and at 16K a problem the SFT model solves only past 16K was graded 0/8 and sent to the hard pool.
+    # On D-Num-hard at 32K, 28% of the SFT model's answers run out of tokens (docs/talk/data/numhard_64k.json).
+    max_tokens: 24576
     correct_threshold: {t1_num: 1.0, t2_code: 1.0, t3_report: 0.9, t4_general: 1.0}
     drop_all_correct: true             # 8/8 = zero advantage in GRPO
     hard_pool_if_none_correct: true    # 0/8 → hard pool, joins RL after step 150

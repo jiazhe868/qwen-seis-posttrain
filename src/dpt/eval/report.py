@@ -179,7 +179,7 @@ def render_markdown(summary: dict[str, Any], labels: dict[str, str] | None = Non
     ]
     if summary.get("screened"):
         lost = summary["screened"]["items_left_out"]
-        notes.append("Screened subset: items flagged by the 2026-11-14 review are left out ("
+        notes.append("Screened subset: items flagged by the model review of the test sets (11-14/15) are left out ("
                      + (", ".join(f"{k} {v}" for k, v in sorted(lost.items())) or "none in these sets")
                      + "); the rescored sets have no interval.")
     judged = {n: r["d_report_by_judge"] for n, r in summary["rows"].items() if r.get("d_report_by_judge")}

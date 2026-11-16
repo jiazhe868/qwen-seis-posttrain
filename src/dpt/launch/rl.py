@@ -148,9 +148,13 @@ def describe(config: str, overrides: list[str], *, ablation: str | None = None) 
     latest = run_dir / "latest_checkpointed_iteration.txt"
     step = int(latest.read_text().strip()) if latest.exists() else 0
     total = int(cfg.verl["trainer.total_training_steps"])
+    # the hard dev split's families and size (RL v2, 2026-11-15): rl_v2_job.sh carves it before RL starts
+    families = list(((cfg.get("curriculum") or {}).get("family_weights") or {}).get("families") or [])
     return {"run_name": str(cfg.rl_run.run_name), "run_dir": str(run_dir), "latest_step": step,
             "total_steps": total, "done": step >= total, "paused": (run_dir / "PAUSED.json").exists(),
-            "walltime": (run_dir / "WALLTIME.json").exists(), "held": (run_dir / "HOLD.json").exists()}
+            "walltime": (run_dir / "WALLTIME.json").exists(), "held": (run_dir / "HOLD.json").exists(),
+            "hard_dev_families": ",".join(str(f) for f in families),
+            "hard_dev_per_family": int(cfg.rl_run.get("hard_dev_per_family") or 0)}
 
 
 def build(config: str, overrides: list[str], *, ablation: str | None = None, require_manifest: bool = True,

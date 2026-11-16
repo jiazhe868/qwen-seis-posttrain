@@ -27,6 +27,20 @@ def test_truncated_excluded_from_baseline_and_loss():
     np.testing.assert_allclose(out.seq_adv[:3], [1 / 3, -2 / 3, 1 / 3])
 
 
+def test_truncated_t1_answers_count_as_wrong_when_asked():
+    """RL v2 seed 3 (2026-11-15): a T1 answer that runs out of tokens counts as wrong, at 0 even though the overlong
+    penalty scored it -0.5, so it is never worse than a finished wrong answer; other tasks still leave the loss."""
+    kw = dict(max_response=24576, scaler=TaskAdvantageScaler(), normalizer=None, nominal_mix=MIX,
+              truncated_as_wrong_tasks=["t1_num"])
+    out = compute_step_advantages([1, -0.5, -0.5, -0.5], ["g"] * 4, ["t1_num"] * 4, [100, 24576, 24576, 24576], **kw)
+    assert out.valid.all() and out.truncated.tolist() == [False, True, True, True]
+    np.testing.assert_allclose(out.seq_adv, [0.75, -0.25, -0.25, -0.25])      # baseline 1/4 over all four
+    wrong = compute_step_advantages([0, -0.5], ["g"] * 2, ["t1_num"] * 2, [100, 24576], **kw)
+    np.testing.assert_allclose(wrong.seq_adv, [0.0, 0.0])                    # finished wrong == truncated
+    code = compute_step_advantages([1, 0], ["g"] * 2, ["t2_code"] * 2, [100, 24576], **kw)
+    assert code.valid.tolist() == [True, False] and code.seq_adv[1] == 0.0
+
+
 def test_padding_rows_ignored_and_never_raise():
     out = compute_step_advantages(
         [1, 0, 0], ["g", "g", "pad1"], ["t1_num", "t1_num", ""], [10, 10, 128],

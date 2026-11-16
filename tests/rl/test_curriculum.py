@@ -188,3 +188,41 @@ def test_a_small_hard_pool_gets_a_proportionally_smaller_share():
     cur = Curriculum(cfg, _pools(n_hard=30))
     assert abs(cur.hard_share("t1_num", 0) - 0.02) < 1e-9
     assert Curriculum(_cfg(hard_pool_join_step=0, hard_share=0.2), _pools(n_hard=30)).hard_share("t1_num", 0) == 0.2
+
+
+def test_family_weights_draw_chosen_families_more_and_cap_any_one_family():
+    """2026-11-15: the hard and long families drawn twice as often, and no family above max_share of its pool."""
+    from dpt.rl.curriculum import FamilyWeights
+
+    uids = [f"t1_num-m{i}" for i in range(400)]
+    families = {u: ("big" if i < 200 else "hard_a" if i < 260 else f"v1_{i % 10}") for i, u in enumerate(uids)}
+    pools = {"t1_num": {"main": uids, "hard": []}, "t2_code": {"main": ["c"], "hard": []},
+             "t3_report": {"main": ["r"], "hard": []}, "t4_general": {"main": ["g"], "hard": []}}
+    plain = Curriculum(_cfg(), pools, {}, families).samplers["t1_num"]["main"].items
+    assert Counter(families[u] for u in plain)["hard_a"] == 60
+    boosted = Curriculum(_cfg(family_weights={"copies": 2, "families": ["hard_a"]}), pools, {}, families)
+    items = boosted.samplers["t1_num"]["main"].items
+    assert Counter(families[u] for u in items)["hard_a"] == 120 and len(items) == 460
+    capped = Curriculum(_cfg(family_weights={"copies": 2, "families": ["hard_a"], "max_share": 0.2}),
+                        pools, {}, families)
+    share = Counter(families[u] for u in capped.samplers["t1_num"]["main"].items)
+    # both families above 0.2 × 460 = 92 copies are thinned to about 92; the small ones keep their 14 each
+    assert abs(share["big"] - 92) < 25 and abs(share["hard_a"] - 92) < 25
+    assert all(share[f"v1_{k}"] == 14 for k in range(10))
+    again = Curriculum(_cfg(family_weights={"copies": 2, "families": ["hard_a"], "max_share": 0.2}),
+                       pools, {}, families)
+    assert again.samplers["t1_num"]["main"].items == capped.samplers["t1_num"]["main"].items   # deterministic
+    with pytest.raises(ValueError):                                              # resume with other weights
+        Curriculum(_cfg(), pools, {}, families).load_state_dict(capped.state_dict())
+    with pytest.raises(ValueError):                                              # weights need the family map
+        Curriculum(_cfg(family_weights={"copies": 2, "families": ["hard_a"]}), pools, {})
+    with pytest.raises(ValueError):
+        FamilyWeights.from_dict({"copies": 0})
+    with pytest.raises(ValueError):
+        FamilyWeights.from_dict({"typo": 1})
+
+
+def test_no_family_weights_keep_the_old_fingerprint_and_draws():
+    a, b = Curriculum(_cfg(), _pools()), Curriculum(_cfg(family_weights={}), _pools(), {}, {"x": "y"})
+    assert a.state_dict()["config_fingerprint"] == b.state_dict()["config_fingerprint"]
+    assert [d.uid for d in a.sample(0)] == [d.uid for d in b.sample(0)]

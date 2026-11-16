@@ -21,11 +21,12 @@
    "criteria": 529,
    "criteria_judged_sound": 515,
    "common_errors": 412,
-   "flagged": 5,
+   "flagged": 6,
    "flag_kinds": {
     "a rubric rewards wrong physics": 2,
     "a true statement listed as an error": 1,
-    "the rubric accepts one of several valid readings": 2
+    "the rubric accepts one of several valid readings": 2,
+    "supplied travel times contradict each other (found by the gold-label review, 11-15)": 1
    },
    "minor_kept": 14
   }
@@ -33,7 +34,8 @@
  "screened_subset": {
   "items_left_out": {
    "d_num_hard": 0,
-   "d_fresh": 1
+   "d_fresh": 1,
+   "d_report": 6
   },
   "run1_step20_vs_sft_32k": {
    "d_num_hard": {
@@ -78,12 +80,12 @@
    },
    "screened": {
     "sft": {
-     "gemma": 87.4,
+     "gemma": 87.2,
      "luna": 49.5
     },
     "rl_seed1": {
-     "gemma": 88.9,
-     "luna": 49.5
+     "gemma": 88.8,
+     "luna": 48.9
     }
    }
   }

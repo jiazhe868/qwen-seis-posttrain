@@ -50,3 +50,21 @@ def test_a_wrong_t1_dev_answer_is_either_a_wrong_value_or_unfinished():
     assert train["gold_wrong_value"] == train["gold_unfinished"] == -1.0
     assert general["gold_wrong_value"] == general["gold_unfinished"] == -1.0
     assert set(wrong) == set(train) == set(general), "verl needs identical keys for every sample"
+
+
+def test_the_hard_dev_split_is_graded_as_t1_and_unfinished_answers_with_the_value_are_flagged():
+    """2026-11-15: t1_num_hard rows are T1 under their own name; an unfinished answer whose trace already holds the
+    right value is gold_unfinished_seen (the model kept checking instead of answering)."""
+    hard = reward_fn.compute_score("t1_num_hard", GOOD, GT, {"split": "dev"})
+    t1 = reward_fn.compute_score("t1_num", GOOD, GT, {"split": "dev"})
+    assert hard["score"] == t1["score"] == pytest.approx(1.0) and hard["gold_score"] == 1.0
+    assert hard["gold_unfinished_seen"] == 0.0 and hard["gold_len"] == pytest.approx(len(GOOD) / 3.2)
+    looping = reward_fn.compute_score("t1_num_hard", "t = 120 / 6 = 20 s. Let me check that again, 120 / 6 ...",
+                                      GT, {"split": "dev"})
+    lost = reward_fn.compute_score("t1_num_hard", "t = 120 / 4 = 30 s. Hmm, let me redo the distance ...",
+                                   GT, {"split": "dev"})
+    assert (looping["gold_unfinished"], looping["gold_unfinished_seen"]) == (1.0, 1.0)
+    assert (lost["gold_unfinished"], lost["gold_unfinished_seen"]) == (1.0, 0.0)
+    train = reward_fn.compute_score("t1_num", GOOD, GT, {"split": "train"})
+    assert train["gold_unfinished_seen"] == train["gold_len"] == -1.0
+    assert set(hard) == set(train), "verl needs identical keys for every sample"

@@ -6,7 +6,8 @@ import json
 
 from dpt.common.io import read_jsonl, write_jsonl
 from dpt.common.manifest import build_manifest, load_manifest, write_manifest
-from dpt.data.bank_merge import FAULTY_FAMILIES, check, expected_mixed_share, merge, pin_dev, without_task
+from dpt.data.bank_merge import (FAULTY_FAMILIES, carve_hard_dev, check, expected_mixed_share, merge, pin_dev,
+                                 without_task)
 
 RUB = [{"criterion": "States X", "weight": 2}]
 
@@ -41,12 +42,12 @@ def test_check_flags_non_atomic_rubrics_and_easy_banks(tmp_path):
     write_jsonl(tmp_path / "rl_main.jsonl", [row(f"t{i}", "t1_num", 0.875) for i in range(20)]
                 + [row("r", "t3_report", rubric=RUB)])
     write_jsonl(tmp_path / "rl_dev.jsonl", [row("d", "t1_num")])
-    summary, problems = check(tmp_path)
+    summary, problems = check(tmp_path, min_learnable=0)
     assert summary["pass_rate_bands"]["t1_num"]["6_7_of_8"] == 20
     assert any("not atomic" in p for p in problems) and any("5/8 or below" in p for p in problems)
     write_jsonl(tmp_path / "rl_main.jsonl", [row(f"t{i}", "t1_num", 0.25) for i in range(20)]
                 + [row("r", "t3_report", rubric=[{"check": "The answer states X.", "weight": 2}])])
-    summary, problems = check(tmp_path, reference_dev=tmp_path / "rl_dev.jsonl")
+    summary, problems = check(tmp_path, reference_dev=tmp_path / "rl_dev.jsonl", min_learnable=0)
     assert problems == [] and summary["dev_same_as_reference"]
 
 
@@ -61,11 +62,11 @@ def test_a_run_without_t3_keeps_its_rubrics_but_the_easy_bank_gate_still_holds(t
     fails a bank whose T1 problems are nearly solved (run 1: 13% of T1 groups mixed in steps 1-20)."""
     write_jsonl(tmp_path / "rl_main.jsonl", [_row(f"t{i}", "t1_num", 0.25) for i in range(20)]
                 + [_row("r", "t3_report", rubric=RUB)])
-    summary, problems = check(tmp_path, t3_not_trained=True)
+    summary, problems = check(tmp_path, t3_not_trained=True, min_learnable=0)
     assert problems == [] and summary["t3_not_atomic"] == 1 and summary["t3_trained"] is False
     assert summary["expected_mixed_t1_at_step_1"] == round(1 - 0.25 ** 8 - 0.75 ** 8, 3)
     write_jsonl(tmp_path / "rl_main.jsonl", [_row(f"t{i}", "t1_num", 0.95) for i in range(20)])
-    summary, problems = check(tmp_path, t3_not_trained=True)
+    summary, problems = check(tmp_path, t3_not_trained=True, min_learnable=0)
     assert any("mixed results at step 1" in p for p in problems)
     assert expected_mixed_share([0.5]) == 1 - 2 * 0.5 ** 8 and expected_mixed_share([]) == 0.0
 
@@ -95,7 +96,7 @@ def test_pin_dev_restores_the_reference_split_and_keeps_it_out_of_training(tmp_p
     write_manifest(build_manifest(v2 / "rl_main.jsonl", name="rl_main", version="v2"))
     write_jsonl(v2 / "rl_hard.jsonl", [_row("d2", "t1_num", 0.0), _row("h1", "t1_num", 0.0)])
     write_jsonl(v2 / "rl_dev.jsonl", [_row("x9", "t1_num", 0.25)])                      # what publish drew
-    summary, problems = check(v2, reference_dev=v1 / "rl_dev.jsonl", t3_not_trained=True)
+    summary, problems = check(v2, reference_dev=v1 / "rl_dev.jsonl", t3_not_trained=True, min_learnable=0)
     assert any("dev split differs" in p for p in problems)
     res = pin_dev(v2, v1 / "rl_dev.jsonl")
     assert res["removed_from_training"] == {"rl_main": 1, "rl_hard": 1} and res["dev_rows"] == 3
@@ -103,7 +104,7 @@ def test_pin_dev_restores_the_reference_split_and_keeps_it_out_of_training(tmp_p
     assert [r["extra_info"]["uid"] for r in read_jsonl(v2 / "rl_hard.jsonl")] == ["h1"]
     assert load_manifest(v2 / "rl_main.jsonl").name == "rl_main"
     assert load_manifest(v2 / "rl_dev.jsonl").parents["pinned_dev"] == load_manifest(v1 / "rl_dev.jsonl").content_hash
-    summary, problems = check(v2, reference_dev=v1 / "rl_dev.jsonl", t3_not_trained=True)
+    summary, problems = check(v2, reference_dev=v1 / "rl_dev.jsonl", t3_not_trained=True, min_learnable=0)
     assert problems == [] and summary["dev_same_as_reference"]
 
 
@@ -139,3 +140,42 @@ def test_merge_leaves_out_the_faulty_local_magnitude_families(tmp_path):
     assert sorted(r["uid"] for r in read_jsonl(tmp_path / "out.jsonl")) == ["long", "ok", "t2ok"]
     assert res["faulty_dropped"] == {"local_magnitude": 3, "network_local_magnitude": 2}
     assert "faulty families left out" in load_manifest(tmp_path / "out.jsonl").notes
+
+
+def test_carve_hard_dev_holds_out_each_family_and_writes_the_family_map(tmp_path):
+    """2026-11-15: a few problems of each hard and long family become rl_dev_hard (T1 under its own data_source),
+    leave the training files, and the uid → family map comes from the stage file; a second call only reads."""
+    stage = tmp_path / "stages" / "05_difficulty.jsonl"
+    stage.parent.mkdir()
+    fams = {f"h{i}": ("hard_a" if i < 12 else "long_b") for i in range(20)} | {f"v{i}": "v1_fam" for i in range(10)}
+    write_jsonl(stage, [{"uid": u, "task": "t1_num", "source": {"family": f}} for u, f in fams.items()])
+    write_jsonl(tmp_path / "rl_main.jsonl", [_row(u, "t1_num", 0.5) for u in fams if u != "h3"])
+    write_jsonl(tmp_path / "rl_hard.jsonl", [_row("h3", "t1_num", 0.0)])
+    res = carve_hard_dev(tmp_path, [stage], ["hard_a", "long_b", "missing_c"], per_family=3)
+    assert res["held_out"] == 6 and res["per_family_held"] == {"hard_a": 3, "long_b": 3, "missing_c": 0}
+    assert res["missing_families"] == ["missing_c"]
+    dev = list(read_jsonl(tmp_path / "rl_dev_hard.jsonl"))
+    assert {r["data_source"] for r in dev} == {"t1_num_hard"} and {r["extra_info"]["split"] for r in dev} == {"dev"}
+    held = {r["extra_info"]["uid"] for r in dev}
+    train = [r["extra_info"]["uid"] for n in ("rl_main_train", "rl_hard_train") for r in read_jsonl(tmp_path / f"{n}.jsonl")]
+    assert len(train) == 30 - 6 and not held & set(train)
+    assert json.loads((tmp_path / "uid_family.json").read_text())["v1"] == "v1_fam"
+    assert carve_hard_dev(tmp_path, [stage], ["hard_a", "long_b", "missing_c"], per_family=3)["skipped"]
+    assert not carve_hard_dev(tmp_path, [stage], ["hard_a"], per_family=2).get("skipped")   # other settings: redo
+
+
+def test_check_needs_enough_learnable_t1_problems_and_lists_families(tmp_path):
+    """2026-11-15: at least MIN_LEARNABLE_T1 T1 main problems graded 1–6 of 8, and each family by grade."""
+    from dpt.data.bank_merge import MIN_LEARNABLE_T1
+
+    (tmp_path / "stages").mkdir()
+    write_jsonl(tmp_path / "stages" / "05_difficulty.jsonl",
+                [{"uid": f"t{i}", "task": "t1_num", "source": {"family": "fam_a" if i < 5 else "fam_b"}} for i in range(12)])
+    write_jsonl(tmp_path / "rl_main.jsonl", [_row(f"t{i}", "t1_num", 0.5) for i in range(10)]
+                + [_row("t10", "t1_num", 0.875)])
+    write_jsonl(tmp_path / "rl_hard.jsonl", [_row("t11", "t1_num", 0.0)])
+    summary, problems = check(tmp_path, t3_not_trained=True)
+    assert summary["learnable_t1"] == 10 and MIN_LEARNABLE_T1 == 1000
+    assert any("graded 1–6 of 8" in p for p in problems)
+    assert summary["t1_families"] == {"fam_a": {"3_4_of_8": 5}, "fam_b": {"3_4_of_8": 5, "7_of_8": 1, "hard_pool": 1}}
+    assert not any("graded 1–6 of 8" in p for p in check(tmp_path, t3_not_trained=True, min_learnable=10)[1])

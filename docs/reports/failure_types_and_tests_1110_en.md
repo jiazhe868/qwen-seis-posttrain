@@ -359,13 +359,13 @@ recorded as a model review, and its notes on single items stay private. Counts o
 |---|---|---|
 | D-Num-hard | 160 | every gold answer right (solved before the answer was shown); 0 flagged |
 | D-Fresh | 60 | every gold answer right; 1 flagged (an unstated convention under a 0.1% tolerance) |
-| D-Report | 100 questions, 529 criteria | 515 criteria sound; 5 questions flagged (2 rubrics reward wrong physics, 1 lists a true statement as an error, 2 accept one of several valid readings) |
+| D-Report | 100 questions, 529 criteria | 515 criteria sound; 6 questions flagged (2 rubrics reward wrong physics, 1 lists a true statement as an error, 2 accept one of several valid readings, 1 gives travel times that contradict each other) |
 | the bank's expert queue | 156 | 150 labels sound; one generator bug |
 | knowledge report rows | 100 | 2 keep, 48 fix, 50 drop |
 
 What this means for the sections above:
 - §5 (the tests): the numeric gold answers hold, so D-Num-hard's and D-Fresh's weaknesses are the ones listed there,
-  not wrong answers. Leaving out the 6 flagged items changes no result: at 32K, RL step 20 − SFT is +1.9 [−0.7, +4.6]
+  not wrong answers. Leaving out the 7 flagged items changes no result: at 32K, RL step 20 − SFT is +1.9 [−0.7, +4.6]
   on D-Num-hard (no item left out) and +3.6 [−1.5, +9.1] on D-Fresh (59 items).
 - §5 (D-Report, "no human gold"): the 30 blind pairs were judged by the model reviewer in both orders. Judged in one
   order, it favoured the first answer: the trained model won all 11 pairs it led and 8 of the 19 it trailed. Over both
@@ -376,3 +376,15 @@ What this means for the sections above:
   dropped, and RL v2 runs with three seeds.
 - The data generator for local magnitudes printed the constant for amplitudes in nm with amplitudes in mm, so 825
   problems in run 1's training bank carried labels 2.681 too low. Bank v2 leaves them out.
+
+## 10. Update (2026-11-15, evening): what these counts did to RL v2
+
+§3 and §8 changed my view of what RL should train. On D-Num-hard at 32K the SFT model is unfinished on 28.2% of its
+answers and wrong on 3.6%, and most unfinished answers loop on checking a value they already have. Run 1 shortened
+its answers and turned most of those into wrong values. RL v2 now gives the hard and long families more weight and a
+dev split of their own, and seed 3 counts a run-out answer as wrong (README §8.3).
+
+The first pilot family says the weights alone will not do it. At 24K the SFT model solved all six problems 8 of 8,
+with answers of 3,800–19,400 tokens. A problem the model always finishes and always gets right teaches nothing,
+however long its answers are. The same family at 16K, with cut-off answers counted wrong, puts gradient on a third
+of its groups. If that holds across the families, the budget is the lever for the unfinished answers.

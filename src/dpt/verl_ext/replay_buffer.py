@@ -43,7 +43,7 @@ from transfer_queue import KVBatchMeta
 from verl.trainer.ppo.v1.replay_buffer import ReplayBufferAsync
 
 from dpt.common.logging import get_logger
-from dpt.rl.filtering import filter_zero_advantage
+from dpt.rl.filtering import filter_zero_advantage, scores_and_validity
 from dpt.rl.pipeline import panel_metrics
 from dpt.verl_ext.runtime import get_runtime, row_sums, to_str_list
 
@@ -107,8 +107,12 @@ class ZeroAdvantageFilteringReplayBuffer(ReplayBufferAsync):
 
     def _filter(self, batch: KVBatchMeta, metrics: dict, rt: Any, view: dict[str, Any]) -> tuple[KVBatchMeta, dict]:
         group_ids = view["groups"]
-        res = filter_zero_advantage(view["scores"], group_ids, task_ids=view["tasks"],
-                                    response_lengths=view["lengths"], valid=~view["truncated"],
+        # the same scores and validity the advantage uses, so a group whose truncated T1 answers count as wrong
+        # (RL v2 seed 3) is not dropped here as "one valid answer"
+        scores, valid = scores_and_validity(view["scores"], view["tasks"], view["truncated"],
+                                            rt.cfg["rl"]["sampling"].get("truncated_as_wrong_tasks") or [])
+        res = filter_zero_advantage(scores, group_ids, task_ids=view["tasks"],
+                                    response_lengths=view["lengths"], valid=valid,
                                     eps=float(rt.cfg["rl"]["advantage"]["zero_adv_eps"]))
         metrics.update(res.stats)
         rt.last_filter_stats = dict(res.stats)                   # read by the trainer for the curriculum

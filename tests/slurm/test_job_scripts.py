@@ -654,6 +654,9 @@ def test_rl_v2_job_builds_the_bank_tests_24k_trains_and_evaluates(tmp_path):
              and "memtest" not in line]
     assert len(train) == 1 and "project.thinking.rl_max_response=24576" in train[0]   # dry: the test "passes"
     assert out.index("rl9b_v2_seed1_memtest24k") < out.index(train[0]) < out.index("rl9b_v2_seed1/global_step_120")
+    carve = next(line for line in out.splitlines() if "bank_merge carve-hard-dev" in line)   # 2026-11-15
+    assert "--per-family 10" in carve and "epicentre_from_three_sp" in carve and "stages/05_difficulty.jsonl" in carve
+    assert out.index("without-task") < out.index("carve-hard-dev") < out.index(train[0])
     assert "sbatch" not in out                                                     # RL has no successor job
     assert len(_model_servers(out, "rl_v2_seed1", 40960)) == 21
     assert len(_model_servers(out, "rl_v2_seed1", 67584)) == 24 and "budget compare" in out

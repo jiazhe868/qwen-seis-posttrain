@@ -71,14 +71,17 @@ not the next step for the numbers. For the reports, the cheapest test is knowled
 
 These results set up the next runs. At 32K, RL step 20 is above SFT by 1.9 points on D-Num-hard [−0.7, +4.6] and
 by 4.6 on D-Fresh [−0.8, +10.4], both inside the noise. Before the next RL run started, I fixed this paired
-comparison at 32K as its test of success. RL v2 re-grades the bank with the SFT model so that more of the groups
-carry gradient. It leaves the report task out, halves the learning rate, and pauses when its dev answers start to
-give wrong values (§8.3). For the reports, I had the teacher write answers from 3,000 openly licensed papers
+comparison at 32K as its test of success. What I want from RL now is a large gain where the model is weak, and on
+D-Num-hard the weakness is finishing: at 32K the SFT model runs out of tokens on 28% of its answers and finishes
+with a wrong value on 4%. RL v2 re-grades the bank with the SFT model, keeps the problems it solves only sometimes,
+and adds 18 longer families with a dev split of their own. Seed 3 also counts an answer that runs out of tokens as
+wrong. I expect that rule to matter more than any of the weights, but only at a budget where answers do run out
+(§8.3). For the reports, I had the teacher write answers from 3,000 openly licensed papers
 (§8.4).
 
 No person was available to check the tests or the data, so a frontier LLM did the expert screening (§8.5). It
 solved every D-Num-hard and D-Fresh problem without seeing the answers, and all 220 gold answers held. Leaving out the
-6 flagged test items changes no result. It also found a generator that printed a wrong magnitude formula, so
+7 flagged test items changes no result. It also found a generator that printed a wrong magnitude formula, so
 825 problems in run 1's training bank carried labels 2.681 units too low. Bank v2 leaves them out. Of 100 rows of
 the paper-based report data, it would keep 2 and drop 50: the teacher wrote earthquake facts from memory, and
 many were wrong. Therefore, I dropped SFT v2, and the 8-node job planned for it runs RL v2 again with a second
@@ -580,8 +583,8 @@ The difficulty filter (§4.3) ran with the base model. For the base, half of T1 
 The SFT policy is much stronger, so by step 1 most groups were all right, and 88–272 of the 1,008 samples
 in a step had a non-zero advantage. T4, the least solved task, had a quarter of the prompts and
 supplied a median 57% of the gradient in steps 1–20. **How hard a bank is depends on the model that trains
-on it.** Therefore, RL v2 re-grades the bank with the SFT policy, and at step 1 at least 40% of T1 groups
-must be mixed, or RL does not start (§8.3).
+on it.** Therefore, RL v2 re-grades the bank with the SFT policy. At step 1 at least 40% of T1 groups must be
+mixed, and at least 1,000 T1 problems must be graded 1–6 of 8, or RL does not start (§8.3).
 
 ### 6.4 Twenty good steps, then a collapse
 
@@ -859,14 +862,17 @@ Run 1 passes at 16K and fails at 32K. It made the model faster and did not make 
 
 | change | evidence from run 1 | where |
 |---|---|---|
-| the bank re-graded with the SFT model (8 samples, 16K): problems solved 8/8 dropped, problems solved 0/8 in a hard pool that joins at step 34 with a 10% share; harder problems drawn 3, 2 or 1 times per epoch (pass rate ≤ 3/8, ≤ 5/8, ≤ 7/8); 12 hard and 6 long numeric families added | in steps 1–20, 87% of the numeric and code groups had all 8 samples right and gave no gradient (§6.3) | `dpt.data.difficulty`, `configs/rl/rl_9b_v2.yaml` |
-| a bank gate: at least 40% of numeric groups expected to have mixed results at step 1 | run 1 had 13% | `dpt.data.bank_merge check` |
+| the bank re-graded with the SFT model (8 answers, 24K tokens): problems solved 8/8 dropped, problems solved 0/8 in a hard pool that joins at step 20 with a 20% share; harder problems drawn 4, 3, 2 or 1 times per epoch (pass rate ≤ 2/8, ≤ 4/8, ≤ 6/8, 7/8) | in steps 1–20, 87% of the numeric and code groups had all 8 answers right and gave no gradient (§6.3) | `dpt.data.difficulty`, `configs/rl/rl_9b_v2.yaml` |
+| 12 hard and 6 long numeric families added (3–8 steps, 10,780 problems), drawn twice as often, and no family above 6% of its pool | the headroom is in long, hard problems: on D-Num-hard at 32K the SFT model runs out of tokens on 28.2% of its answers | `dpt.rl.curriculum.FamilyWeights`, `configs/rl/rl_9b_v2.yaml` |
+| bank gates: at least 40% of numeric groups expected to have mixed results at step 1, and at least 1,000 numeric problems graded 1–6 of 8; each family's grades listed | run 1 had 13% | `dpt.data.bank_merge check` |
 | run 1's dev split kept, and its problems kept out of training | the re-grading drops the dev problems the SFT model solves, so a newly drawn split would differ from run 1's and leak its problems into training | `dpt.data.bank_merge pin-dev` |
+| a second dev split: 10 held-out problems from each hard and long family, with four pause rules (accuracy 10 points below its best, wrong values 10 above their lowest, unfinished answers that already hold the right value 12 above, length halved within 30 steps) | run 1's dev split held mostly easy problems; on D-Num-hard at 32K, run 1 turned 11.7 points of unfinished answers into 9.0 points of wrong values and 2.0 of right ones | `dpt.data.bank_merge carve-hard-dev`, `dpt.monitoring.bridge` |
 | the local-magnitude problems left out (836 in the verified bank) | their printed formula is wrong for amplitudes in mm, so every label is 2.681 too low (§8.5) | `dpt.data.bank_merge.FAULTY_FAMILIES` |
-| no report task in training; numeric 60%, code 25%, general 15% of the prompts | the test is numeric; the report reward is lenient (§6.5), and its atomic version is not yet checked against the second judge; the general tasks were 21% of the prompts and gave a median 57% of the gradient | `configs/rl/rl_9b_v2.yaml` |
+| no report task in training; numeric 70%, code 15%, general 15% of the prompts | the test is numeric; the report reward is lenient (§6.5); code is not re-graded and 90% of its groups were 8/8; the general tasks were 21% of the prompts and gave a median 57% of the gradient | `configs/rl/rl_9b_v2.yaml` |
 | half the learning rate: 1e-6, then 5e-7 | run 1 (2e-6, then 1e-6) peaked on dev at step 20 and drifted after it (§6.4) | `configs/rl/rl_9b_v2.yaml` |
 | 24K-token responses with the MTP head frozen, if one training step at full length fits in memory; else 16K | run 1 trained at 16K and was tested at 32K; with the MTP head trained, 24K does not fit the last pipeline stage (§6.1) | `scripts/slurm/rl_v2_job.sh` |
 | a dev pass and a checkpoint every 10 steps; a pause when dev D-Num falls 3 points below its best, or when the share of numeric dev answers with a wrong value rises 3 points above its lowest | from step 20 to step 40, dev D-Num went from 97.3 to 78.9, wrong values from 1.8% to 17.8%, and unfinished answers from 0.8% to 0% | `dpt.monitoring.alerts`, `docs/talk/data/run1_dev_outcomes.json` |
+| seed 3 only: a numeric answer that runs out of tokens counts as wrong (score 0, without the length penalty) instead of leaving the loss | on D-Num-hard at 32K, in 44–87% of the SFT model's unfinished answers the right value is already in the reasoning: it keeps checking instead of answering | `dpt.rl.filtering`, `configs/rl/rl_9b_v2_seed3.yaml` |
 
 The bank gate uses each problem's pass rate $`r`$ under the SFT model. A group of 8 samples of that problem has
 mixed results with probability
@@ -881,10 +887,41 @@ graded 7/8 may really be solved 95% of the time.
 The atomic report rubrics are built: each criterion becomes 1–6 yes/no checks, and each "yes" needs a quoted
 span. They wait for a run that trains reports again, and before that they have to agree with the second judge.
 
+**Why I changed the design on November 15.** I had been treating run 1 as an algorithm problem, and it wasn't one.
+Its loss already sums tokens and divides by a fixed constant, its advantage has no standard deviation in it, its
+clip is wider upward than downward, and an answer longer than 16K new tokens is carried into the next step. What it
+lacked was something to learn. In its first 26 steps, 83–91% of the answers sat in groups where every answer got
+the same reward, because the SFT model had already solved the bank.
+
+The target also moved, from D-Num, which the base model already passes, to D-Num-hard. At 32K the SFT model runs
+out of tokens on 28.2% of its D-Num-hard answers. With 64K it gets 83.9% right, so most of what it misses it can
+do. It is slow, and it keeps checking a value it has already found: in 44–87% of its unfinished answers the right
+number is already written. So before any seed started I re-graded the bank at 24K, moved its weight to the
+problems the model solves only sometimes and to 18 new hard and long families, and gave those families a dev split
+whose pause rules fire when unfinished answers turn into wrong ones.
+
+**The first pilot family surprised me.** I expected the new families to be hard. I graded 6 problems of the first
+one, `array_apparent_velocity`, with the SFT model, 8 answers each at 24K, and it got 8 of 8 on all six, with
+3,800–19,400 tokens per answer (`scripts/talk/difficulty_pilot.py`). These families state their method in the
+question. They test long computation, and this model can compute; it only takes a long time. At a 24K cap such a
+problem gives no gradient, because every answer finishes and every answer is right.
+
+What can make them useful is the budget. At 16K, 12% of those answers would be cut off. If a cut-off answer counts
+as wrong, a third of these groups carry gradient, and that gradient asks for what D-Num-hard needs: finish in time
+and stay right. If cut-off answers are left out of the loss, as seeds 1–2 do and as the usual advice says, the same
+groups carry nothing. At 24K, seed 3's rule hardly fires on this family, whose longest answer was 19,400 tokens. I
+think the cap and this rule now matter more for the goal than every weight in the table above. The rest of the
+pilot, 6 problems from each of the 18 families, will show whether that holds beyond one family.
+
+**For this model, hard mostly means long: on D-Num-hard at 32K it runs out of tokens eight times as often as it
+finishes wrong.**
+
 **How it runs.** RL v2 is one 8-node job of 48 hours, queued before its bank existed. If the bank is missing when
 the job starts, the job builds it on its own nodes: the teacher and Gemma on 2 nodes and the SFT model on the
 other 6, and the teacher nodes switch to the SFT model when their part is done. Then come the 24K test, RL, and
-the final evaluation at the three budgets. The job reads its steps from the repository when it starts, so they
+the final evaluation at the three budgets. Before RL, it holds out the hard dev split and writes the family map
+that the curriculum's family weights read (`bank_merge carve-hard-dev`). The job reads its steps from the repository
+when it starts, so they
 can still be fixed during the days it waits in the queue (`scripts/slurm/rl_v2_queue.slurm`,
 `scripts/slurm/rl_v2_job.sh`). The bank build embeds problems for decontamination on the CPU, because the GPUs
 hold the servers. A first build ran out of GPU memory there.
@@ -909,8 +946,11 @@ python -m dpt.eval.budget table budgets_rl_v2.json --rows rl_seed1,rl_v2_seed1,r
 **A job that waits days in the queue should read its steps when it starts.**
 
 Caveats, plainly:
-- three seeds of RL v2, and one of every other run;
+- three seeds of RL v2, and one of every other run; seed 3 differs in one setting, so its comparison with seeds 1–2
+  rests on one seed;
 - D-Fresh has 60 problems, so its interval is about ±5 points;
+- the pilot so far covers one family in full; bank v2's real grades are known only after its build, and a bank with
+  fewer than 1,000 learnable numeric problems stops the job before RL;
 - with the report task left out, RL v2 cannot improve D-Report.
 
 ### 8.4 Knowledge-dense report data and SFT v2
@@ -1018,22 +1058,22 @@ private, since the test sets are unpublished.
 |---|---|---|
 | D-Num-hard | 160 | every gold answer right; one solver per family, written from the question text, agrees to about 1e-14; 0 flagged |
 | D-Fresh | 60 | every gold answer right; 1 flagged: its answer depends on an unstated convention, and its tolerance is 0.1% |
-| D-Report | 100 questions, 529 criteria, 412 listed errors | 515 criteria sound; 5 questions flagged: 2 rubrics reward wrong physics, 1 lists a true statement as an error, 2 accept only one of several valid readings |
+| D-Report | 100 questions, 529 criteria, 412 listed errors | 515 criteria sound; 6 questions flagged: 2 rubrics reward wrong physics, 1 lists a true statement as an error, 2 accept only one of several valid readings, and 1, found by a later review, gives travel times that contradict each other |
 | bank expert queue | 156 | 150 labels sound, 6 dropped, 1 generator bug |
 | knowledge rows | 100 | 2 keep, 48 fix, 50 drop (§8.4) |
 
 24 D-Fresh problems do not name the unit of the answer. The grader asks every answer for a unit and converts
 between units, so those are graded fairly.
 
-**The screened subset.** I scored the rows again without the 6 flagged test items (`--exclude`, with the
+**The screened subset.** I scored the rows again without the 7 flagged test items (`--exclude`, with the
 private list):
 
 | | frozen | screened |
 |---|---|---|
 | D-Num-hard, RL step 20 − SFT at 32K | +1.9 [−0.7, +4.6] | the same (no item left out) |
 | D-Fresh, RL step 20 − SFT at 32K | +4.6 [−0.8, +10.4] | +3.6 [−1.5, +9.1] |
-| D-Report vs base, SFT (Gemma / Luna) | 86.0 / 49.0 | 87.4 / 49.5 |
-| D-Report vs base, RL step 20 (Gemma / Luna) | 88.5 / 49.0 | 88.9 / 49.5 |
+| D-Report vs base, SFT (Gemma / Luna) | 86.0 / 49.0 | 87.2 / 49.5 |
+| D-Report vs base, RL step 20 (Gemma / Luna) | 88.5 / 49.0 | 88.8 / 48.9 |
 
 No conclusion changes (`docs/talk/data/budgets_screened_1115.json`, `docs/talk/data/screening_1114.json`).
 
@@ -1179,7 +1219,7 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   under a broad detector, mostly on unsafe prompts worded like harmless ones (§7.4).
 - **Systems.** 60% of the main job's hours went to incidents, waits and holds; the last pipeline stage ran at
   40,366 of 40,437 MiB (§9).
-- **Screening.** A model review found every one of the 220 numeric gold answers right and flagged 6 of 320 test
+- **Screening.** A model review found every one of the 220 numeric gold answers right and flagged 7 of 320 test
   items; without them no result changes. It found a generator whose magnitude labels were 2.681 too low in 825
   training problems of run 1 (§8.5).
 - **Report data.** Of 100 report rows written from papers, the review would keep 2 and drop 50. The teacher
