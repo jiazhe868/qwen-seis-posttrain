@@ -373,12 +373,13 @@ is the T3 reward model, and it calls about 70% of the pairs that the gold labels
 trained model. Training on that would teach the model what Gemma likes. A rubric version has to reach about 0.75
 on held-out questions before reports go back in.
 
-Criterion by criterion (2026-11-16, 31 held-out questions; `dpt.eval.rubric_calibration`), the reward judge passes
-23% of the criteria the gold marks not met and fails 2% of those it marks met, but it calls 84% of the partly met
-ones met, and the gold marks 41% of all criteria partly met. Per answer, at its best pass mark, it passes 71% of the
-answers the gold scores below 60. The same criteria as yes/no checks with a quoted span pass 45% and fail 24%, and on
-pairs of answers to the same question both versions order 65–68% of the pairs the way the gold does. The next
-version gives the judge three levels per criterion, full, partial or none (README §6.5).
+Criterion by criterion (2026-11-16, 31 held-out questions; `dpt.eval.rubric_calibration`; every format scored on
+one machine), the reward judge fails 1% of the criteria the gold marks met and passes 23% of those it marks not
+met, but it calls 83% of the partly met ones met, and the gold marks 41% of all criteria partly met. Per answer, at
+its best pass mark, it passes 69% of the answers the gold scores below 60. Yes/no checks with a quoted span pass 45%
+and fail 28%. Three levels per criterion (full, partial, none) pass 51% and fail 6%, the best balance (0.72 against
+0.63), yet the judge still calls 82% of the partly met criteria full. All three order pairs of answers to the same
+question alike (66–67%). The partly met need a stronger judge or smaller criteria (README §6.5).
 
 ## Data and code
 

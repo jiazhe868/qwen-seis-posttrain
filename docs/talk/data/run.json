@@ -876,10 +876,10 @@
    "sft_eval": "2026-10-29T21:16"
   }
  },
- "collected_at": "2026-11-16T09:17",
+ "collected_at": "2026-11-16T12:17",
  "compute": {
   "balance": {
-   "available_su": 4715,
+   "available_su": 4714,
    "expires": "2026-11-30"
   },
   "jobs": [
@@ -1580,7 +1580,7 @@
     "submit": "2026-11-11T22:03:38"
    },
    {
-    "elapsed_s": 3274,
+    "elapsed_s": 14074,
     "end": "Unknown",
     "id": "3576284",
     "name": "dpt-rlv2",
@@ -1588,7 +1588,7 @@
     "partition": "gpu-a100",
     "start": "2026-11-16T08:22:47",
     "state": "RUNNING",
-    "su": 21.83,
+    "su": 93.83,
     "submit": "2026-11-11T22:05:31"
    },
    {
@@ -1761,15 +1761,27 @@
    },
    {
     "elapsed_s": 0,
-    "end": "Unknown",
+    "end": "2026-11-16T11:05:13",
     "id": "3586215",
     "name": "dpt-rubric",
     "nodes": 1,
     "partition": "gpu-a100-dev",
-    "start": "Unknown",
-    "state": "PENDING",
+    "start": "None",
+    "state": "CANCELLED",
     "su": 0.0,
     "submit": "2026-11-16T09:07:12"
+   },
+   {
+    "elapsed_s": 0,
+    "end": "2026-11-16T11:21:02",
+    "id": "3586743",
+    "name": "dpt-rubric",
+    "nodes": 1,
+    "partition": "gpu-a100-dev",
+    "start": "None",
+    "state": "CANCELLED",
+    "su": 0.0,
+    "submit": "2026-11-16T11:05:14"
    }
   ],
   "since": "2026-10-13",

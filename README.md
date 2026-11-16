@@ -652,14 +652,18 @@ judge fails.
 were checked. GPT-6.1 Sol marked each rubric criterion of the 300 D-Report answers of the base, SFT and RL models
 as met, partly met or not met, and scored each answer; a model review, as in §8.5, checked the references it
 worked from and corrected eight of them (v3). The labels only measure and never enter training or a reward
-prompt. On 31 held-out questions, the judge gets most single criteria right: it passes 23% of the criteria the
-gold marks not met and fails 2% of those it marks met. The trouble is the criteria in between: the gold marks 41%
-of all criteria partly met, and the judge calls 84% of those met. Per answer, at its best pass mark the reward passes 71%
-of the answers the gold scores below 60 and fails 6% of the rest, and it is most lenient with the SFT model's
-answers. Asked as yes/no checks with a quoted span, the same criteria pass 45% and fail 24% of the answers: a
-stricter threshold on much the same judgment. On pairs of answers to the same question, the comparison GRPO makes,
-both versions order 65–68% of the pairs the way the gold does (`dpt.eval.rubric_calibration`). Next the judge gets
-a third level, full, partial or none, which leaves it a place for the partly met.
+prompt. I scored the same answers with the reward judge in three formats, on one machine: the reward's 0–10 per
+criterion, yes/no checks with a quoted span, and three levels, full, partial or none. On 31 held-out questions all
+three get most single criteria right: they fail 1–4% of the criteria the gold marks met and pass 14–23% of those it
+marks not met. The trouble is the criteria in between. The gold marks 41% of all criteria partly met, and the judge
+calls 82–84% of those met in every format; given a level for them, it used it 15% of the time. Per answer, at each
+format's best pass mark, the 0–10 reward passes 69% of the answers the gold scores below 60 and fails 6% of the
+rest, and it is most lenient with the SFT model's answers. The yes/no checks pass 45% and fail 28%. The three levels
+pass 51% and fail 6%, the best balance of the three (0.72, against 0.63). On pairs of answers to the same question,
+the comparison GRPO makes, all three order 66–67% of the pairs the way the gold does (`dpt.eval.rubric_calibration`;
+the 0–10 scores match the cluster's run of the same judge at r = 0.99). A format can move the pass mark. It cannot
+make this judge see what a partly met answer leaves out; that needs a stronger judge, or criteria split into smaller
+checks.
 
 <p align="center"><img src="assets/two_judges_en.png" width="92%"></p>
 
