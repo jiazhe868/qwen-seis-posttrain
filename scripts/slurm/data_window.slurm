@@ -164,12 +164,14 @@ proxy_here sft_audit 8200 "${SFT_URLS[@]}"; publish sft_audit "http://${N1}:8200
 # ---- phase A ----------------------------------------------------------------------------------------------------
 tlog "phase A: hard + long verification$( [[ "${SKIP_T3}" == 1 ]] || echo ', atomic T3'), v1 difficulty"
 # The verification clients embed for decontamination on the CPU (CUDA_VISIBLE_DEVICES empty): node 1's GPUs hold the
-# teacher and Gemma, and window 1's embedder ran out of memory on GPU 0 there (job 3571166, 2026-11-14).
-bg hard.log env CUDA_VISIBLE_DEVICES= DPT_BANK_OUT="${DATA}/v1_hard" DPT_BANK_NAME=hard \
+# teacher and Gemma, and window 1's embedder ran out of memory on GPU 0 there (job 3571166, 2026-11-14). Each gets 48
+# of the node's 128 cores: a job submitted from a login node inherits env.sh's OMP_NUM_THREADS=1, and on one thread
+# seed 1's decontamination embedded for 8 hours without reaching the teacher (2026-11-16).
+bg hard.log env CUDA_VISIBLE_DEVICES= OMP_NUM_THREADS=48 MKL_NUM_THREADS=48 DPT_BANK_OUT="${DATA}/v1_hard" DPT_BANK_NAME=hard \
   DPT_BANK_CANDIDATES="${G}/t1_hard_candidates.jsonl" DPT_BANK_STAGES=ingest,quality,dedup,decontam,verify \
   DPT_JUDGE_ENDPOINT=judge_v bash scripts/slurm/data.slurm bank
 A_HARD=${BG}
-bg long.log env CUDA_VISIBLE_DEVICES= DPT_BANK_OUT="${DATA}/v1_long" DPT_BANK_NAME=long \
+bg long.log env CUDA_VISIBLE_DEVICES= OMP_NUM_THREADS=48 MKL_NUM_THREADS=48 DPT_BANK_OUT="${DATA}/v1_long" DPT_BANK_NAME=long \
   DPT_BANK_CANDIDATES="${G}/t1_long_candidates.jsonl" DPT_BANK_STAGES=ingest,quality,dedup,decontam,verify \
   DPT_JUDGE_ENDPOINT=judge_v bash scripts/slurm/data.slurm bank
 A_LONG=${BG}

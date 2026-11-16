@@ -27,6 +27,7 @@ are uniformly near-perfect.
 
 from __future__ import annotations
 
+import hashlib
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -63,6 +64,10 @@ class DifficultyConfig:
     # More budgets (tokens) whose pass rates are only recorded, pass_at_8_medium_<n>k, for runs that train there; the
     # drop and the mastered test stay on short_budget (2026-11-15: 20K, a candidate budget for RL v2 seed 3).
     extra_budgets: list[int] = field(default_factory=list)
+    # At most this many problems of one family are graded and kept (0 = all), 2026-11-16, the user's choice: bank v2's
+    # 18 new families have 600 problems each, and grading all 10,800 at 24K would take ~32 hours on RL v2's 24
+    # replicas, more than the job has before RL. 200 per family keeps every family and leaves RL ~17 hours.
+    max_per_family: int = 0
 
     def budget_key(self, budget: int) -> str:
         return f"pass_at_{self.n_samples}_{self.effort}_{budget // 1024}k"
@@ -90,6 +95,25 @@ class DifficultyResult:
 
 
 LengthFn = Callable[[str], int]
+
+
+def cap_per_family(problems: list[Problem], max_per_family: int) -> tuple[list[Problem], list[dict[str, Any]]]:
+    """At most ``max_per_family`` problems of each family (``source.family``), the first in a fixed order hashed
+    from the uid, so every template of the family is sampled and a rerun keeps the same ones. Problems without a
+    family are all kept. Returns (kept, dropped as {"uid", "reason": "family_cap", "k": None})."""
+    if max_per_family <= 0:
+        return list(problems), []
+    by_family: dict[str, list[Problem]] = {}
+    for p in problems:
+        fam = p.source.get("family") or p.meta.get("family")
+        if fam:
+            by_family.setdefault(str(fam), []).append(p)
+    capped: set[str] = set()
+    for members in by_family.values():
+        order = sorted(members, key=lambda p: hashlib.sha256(f"family-cap:{p.uid}".encode()).hexdigest())
+        capped.update(p.uid for p in order[max_per_family:])
+    return ([p for p in problems if p.uid not in capped],
+            [{"uid": p.uid, "reason": "family_cap", "k": None} for p in problems if p.uid in capped])
 
 
 def chars_as_tokens(text: str) -> int:

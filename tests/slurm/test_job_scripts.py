@@ -419,6 +419,10 @@ def test_data_window_on_eight_nodes_with_two_teacher_nodes_and_no_t3(tmp_path):
     assert "t3_atomic.slurm" not in out and "--t3-map" not in out and "--t3-not-trained" in out
     assert "bank_merge pin-dev" in out
     assert "DPT_DIFFICULTY_CONCURRENCY=576 " in out and "DPT_DIFFICULTY_CONCURRENCY=768 " in out
+    # the CPU embedders of decontamination get threads of their own, whatever the submitting shell set (2026-11-16)
+    for name in ("hard", "long"):
+        line = next(x for x in lines if f"DPT_BANK_NAME={name} " in x)
+        assert "CUDA_VISIBLE_DEVICES= " in line and "OMP_NUM_THREADS=48" in line and "MKL_NUM_THREADS=48" in line
 
 
 def test_data_window_as_its_own_job_gives_way_to_a_builder_and_to_a_ready_bank(tmp_path):

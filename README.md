@@ -892,7 +892,7 @@ Run 1 passes at 16K and fails at 32K. It made the model faster and did not make 
 | change | evidence from run 1 | where |
 |---|---|---|
 | the bank re-graded with the SFT model (8 answers, 24K tokens, each answer also checked against 16K): a problem is dropped only when all 8 answers are right within 16K, problems solved 0/8 go to a hard pool that joins at step 20 with a 20% share; harder problems drawn 4, 3, 2 or 1 times per epoch (pass rate ≤ 2/8, ≤ 4/8, ≤ 6/8, 7/8) | in steps 1–20, 87% of the numeric and code groups had all 8 answers right and gave no gradient (§6.3) | `dpt.data.difficulty`, `configs/rl/rl_9b_v2.yaml` |
-| 12 hard and 6 long numeric families added (3–8 steps, 10,780 problems), drawn twice as often, and no family above 6% of its pool | the headroom is in long, hard problems: on D-Num-hard at 32K the SFT model runs out of tokens on 28.2% of its answers | `dpt.rl.curriculum.FamilyWeights`, `configs/rl/rl_9b_v2.yaml` |
+| 12 hard and 6 long numeric families added (3–8 steps; 10,800 generated, 200 per family graded and kept), drawn twice as often, and no family above 6% of its pool | the headroom is in long, hard problems: on D-Num-hard at 32K the SFT model runs out of tokens on 28.2% of its answers | `dpt.rl.curriculum.FamilyWeights`, `configs/rl/rl_9b_v2.yaml` |
 | bank gates: at least 40% of numeric groups expected to have mixed results at step 1, and at least 1,000 numeric problems graded 1–6 of 8; each family's grades listed | run 1 had 13% | `dpt.data.bank_merge check` |
 | run 1's dev split kept, and its problems kept out of training | the re-grading drops the dev problems the SFT model solves, so a newly drawn split would differ from run 1's and leak its problems into training | `dpt.data.bank_merge pin-dev` |
 | a second dev split: 10 held-out problems from each hard and long family, with pause rules (accuracy 10 points below its best, wrong values 10 above their lowest, unfinished answers that already hold the right value 12 above, and length halved within 30 steps together with a 5-point loss, or under 2,500 tokens; halving alone only warns, since hard answers are meant to get shorter) | run 1's dev split held mostly easy problems; on D-Num-hard at 32K, run 1 turned 11.7 points of unfinished answers into 9.0 points of wrong values and 2.0 of right ones | `dpt.data.bank_merge carve-hard-dev`, `dpt.monitoring.bridge` |
@@ -1047,7 +1047,16 @@ that the curriculum's family weights read (`bank_merge carve-hard-dev`). The job
 when it starts, so they
 can still be fixed during the days it waits in the queue (`scripts/slurm/rl_v2_queue.slurm`,
 `scripts/slurm/rl_v2_job.sh`). The bank build embeds problems for decontamination on the CPU, because the GPUs
-hold the servers. A first build ran out of GPU memory there.
+hold the servers; a first build ran out of GPU memory there.
+
+Seed 1 started on November 16 and built the bank itself, and its first 8 hours went to one thread. A job submitted
+from a login node inherits that node's thread limit, so decontamination embedded 11,000 reference questions on one
+core of 128 while the teacher nodes waited. Raising the two running processes to 56 threads with a debugger
+finished it in 15 minutes, without failing the step ([PITFALLS](PITFALLS.md) C6). The next estimate was worse.
+Grading all 10,800 new problems at 24K, with answers near the cap, would take about 32 hours on the 24 replicas,
+more than the job had left before RL. So the re-grade takes 200 problems per family, 3,600 in all, a fixed sample by
+uid hash (`difficulty.max_per_family`). RL v2 draws about 10,600 numeric prompts over its run, so each new problem
+still comes up only a few times, and seed 1 keeps about 17 hours for RL.
 
 Two more 8-node jobs run the same steps with seeds 2 and 3 (`configs/rl/rl_9b_v2_seed2.yaml`,
 `configs/rl/rl_9b_v2_seed3.yaml`). The job for seed 2 was queued for SFT v2, which was dropped (§8.4), and its script

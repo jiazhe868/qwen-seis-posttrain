@@ -114,6 +114,9 @@ data_pipeline:
     # pilot, a run at 16K that counts cut-off answers as wrong had mixed groups on 40% of the hard and long problems,
     # and one at 20K on 50%, as many as at 24K (2026-11-15, 50 problems).
     extra_budgets: [20480]
+    # At most 200 problems of one family graded and kept (2026-11-16, the user's choice): bank v2's 18 new families
+    # have 600 each, and all 10,800 at 24K take ~32 h on RL v2's 24 replicas, more than seed 1's job has before RL.
+    max_per_family: 200
     correct_threshold: {t1_num: 1.0, t2_code: 1.0, t3_report: 0.9, t4_general: 1.0}
     drop_all_correct: true             # 8/8 = zero advantage in GRPO
     hard_pool_if_none_correct: true    # 0/8 → hard pool, joins RL after step 150

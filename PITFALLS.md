@@ -8,8 +8,8 @@ Every entry is a mistake actually made here, on the Qwen3.5-9B SFT and multi-tas
 Slurm cluster (8 nodes × 3 A100-40GB) in October and November 2026: caught by a measurement, corrected, and
 given a test or a guard. Nothing below is a generic best-practice list.
 
-**The organising observation: most of the expensive failures here were silent.** In nineteen of the
-twenty-five entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
+**The organising observation: most of the expensive failures here were silent.** In twenty of the
+twenty-six entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
 check that checked the other forward pass, a patch that patched nothing, a sandbox that failed closed
 without an alert, framework defaults that overrode the config, a hang that no timeout noticed, a judge that
 graded its own students, verifiers that all agreed with the wrong formula they were given. The loud failures (a crash, an out-of-memory error) cost minutes; the silent ones
@@ -37,6 +37,7 @@ Companion document: [README.md](README.md) explains how the pipeline works and w
 | C3 | Framework defaults that override the config | environment | Adam β2 0.999 instead of 0.95; a crash at step 50 | silent |
 | C4 | A file lock on NFS: a hang costs more than a crash | environment | 9.6 hours of 8 idle nodes | silent |
 | C5 | A GPU embedder beside the servers | environment | a failed data job and its 4.5-day queue place | loud |
+| C6 | A login node's thread limit that followed the job | environment | 8 of an RL job's 47 hours; with no fix, no RL | silent |
 | D1 | "T4 taught brevity": a story the per-step metrics did not support | analysis | a wrong fix for RL v2 | silent |
 | D2 | One model as reward judge, data filter and evaluator | measurement | "reports improved by 36 points" | silent |
 | D3 | A difficulty filter run with the wrong model | measurement | RL with no gradient on most groups | silent |
@@ -423,6 +424,32 @@ lost its place in the queue, which had taken 4.5 days.
 
 **Generalisable lesson.** On a node shared with servers, state the devices of every process. A library that
 can use a GPU will.
+
+
+## C6 — A login node's thread limit that followed the job
+
+**Symptom.** RL v2 seed 1 built its bank on its own 8 nodes. For 8 hours the verification of the new families
+wrote nothing after loading its embedder, and the two teacher nodes waited idle. Each verification client ran at
+100% of one core on a 128-core node.
+
+**The false story.** "Decontamination embeds 11,000 reference questions on the CPU. It is just slow."
+
+**Root cause.** `scripts/slurm/env.sh` sets `OMP_NUM_THREADS=1` on login nodes, where HTTP clients with many threads
+run under an 8 GB virtual-memory cap. `sbatch` exports the submitting shell's environment, so the job, queued from
+a login node, carried the limit to the compute node, and the CPU embedder (Qwen3-Embedding-0.6B through PyTorch and
+MKL) ran on one thread. At that speed the step would have taken more than a day, and the job had 47 hours for the
+bank, RL and the final evaluation.
+
+**Fix.** Live: a debugger attached to the two processes and called PyTorch's `at::set_num_threads(56)`; both
+finished decontamination 12–16 minutes later. Killing them would have failed the phase and ended the job.
+Permanent: the window script gives the two embedding clients `OMP_NUM_THREADS=48` and `MKL_NUM_THREADS=48`.
+
+**Permanent regression test.** `tests/slurm/test_job_scripts.py::test_data_window_on_eight_nodes_with_two_teacher_nodes_and_no_t3`.
+
+**Invalidated artifacts.** None; 8 hours of the job.
+
+**Generalisable lesson.** A setting meant for the login node travels with every job submitted from it. Set what a
+job needs inside the job.
 
 ---
 

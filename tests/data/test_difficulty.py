@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 from dpt.common.config import load_config, to_container
 from dpt.data.backends import FakeGenerator, fake_grade
 from dpt.data.difficulty import DifficultyConfig, calibrate
@@ -234,3 +236,20 @@ def test_extra_budgets_record_rates_and_leave_the_decisions_alone():
                      length)
     assert not only.kept and len(only.dropped) == 2                         # no short budget: 4 of 4, dropped
     assert {p.meta["pass_at_4_medium_20k"] for p in probs} == {0.75}
+
+
+def test_cap_per_family_keeps_a_fixed_sample_of_each_family():
+    """2026-11-16: at most N problems of a family are graded; the same ones on a rerun, any order of the input;
+    problems without a family are all kept."""
+    from dpt.data.difficulty import cap_per_family
+
+    def prob(fam, i):
+        return Problem.from_dict({"task": "t1_num", "question": f"{fam} {i}: 2 km at 5 km/s?",
+                                  "answer": {"value": 0.4, "unit": "s"}, "source": {"family": fam} if fam else {}})
+    probs = [prob("a", i) for i in range(10)] + [prob("b", i) for i in range(3)] + [prob(None, i) for i in range(5)]
+    kept, dropped = cap_per_family(probs, 4)
+    fams = Counter(p.source.get("family") for p in kept)
+    assert fams == {"a": 4, "b": 3, None: 5} and len(dropped) == 6 and {d["reason"] for d in dropped} == {"family_cap"}
+    again, _ = cap_per_family(list(reversed(probs)), 4)
+    assert {p.uid for p in again} == {p.uid for p in kept}
+    assert cap_per_family(probs, 0) == (probs, [])

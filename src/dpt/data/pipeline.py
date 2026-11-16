@@ -58,7 +58,7 @@ from dpt.data.decontam import (
 )
 from dpt.data.dedup import cross_dedup, instance_dedup, near_duplicate_dedup
 from dpt.data.difficulty import (DifficultyAuditConfig, DifficultyConfig, calibrate, calibrate_audit,
-                                 calibrate_two_stage, chars_as_tokens)
+                                 calibrate_two_stage, cap_per_family, chars_as_tokens)
 from dpt.data.ingest import ingest_files
 from dpt.data.quality import QualityConfig, filter_by_quality
 from dpt.data.rl_build import dev_candidates, export_rl_bank
@@ -381,8 +381,8 @@ def stage_verify(ctx: Context) -> None:
 
 
 def stage_difficulty(ctx: Context) -> None:
-    probs = ctx.load_stage("verify")
     dcfg = DifficultyConfig.from_dict(ctx.dp["difficulty"])
+    probs, capped = cap_per_family(ctx.load_stage("verify"), dcfg.max_per_family)
     extra: dict[str, Any] = {}
     mode = ctx.dp["difficulty"].get("mode", "all")
     if mode in ("audit", "audit_all"):   # per group (difficulty.DifficultyAuditConfig); audit_all then every problem
@@ -394,8 +394,8 @@ def stage_difficulty(ctx: Context) -> None:
     else:
         res = calibrate(probs, ctx.base_generator(), ctx.grade_fn(), dcfg, ctx.length_fn())
     st = res.stats()
-    reasons = Counter(d["reason"] for d in res.dropped)
-    ctx.save_stage("difficulty", res.kept, res.dropped, reasons, len(probs),
+    reasons = Counter(d["reason"] for d in res.dropped + capped)
+    ctx.save_stage("difficulty", res.kept, res.dropped + capped, reasons, len(probs) + len(capped),
                    {"hard_pool": st["hard_pool"], "histogram": st["histogram"], **extra})
 
 
