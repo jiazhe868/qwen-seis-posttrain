@@ -105,6 +105,15 @@ data_pipeline:
     # passes, and at 16K a problem the SFT model solves only past 16K was graded 0/8 and sent to the hard pool.
     # On D-Num-hard at 32K, 28% of the SFT model's answers run out of tokens (docs/talk/data/numhard_64k.json).
     max_tokens: 24576
+    # Also grade each reply against 16K (dpt.data.difficulty.DifficultyConfig.short_budget): a problem is dropped
+    # only if all 8 replies are right within 16K, so RL v2 seed 3, which trains at 16K and counts a cut-off answer
+    # as wrong, keeps the problems the SFT model solves slowly (the first pilot family: 8/8 at 24K, 3,800-19,400
+    # tokens). Each problem carries pass_at_8_medium (24K) and pass_at_8_medium_16k.
+    short_budget: 16384
+    # Recorded only (pass_at_8_medium_20k): the pass rate within 20K, for RL v2 seed 3 if it trains at 20K. In the
+    # pilot, a run at 16K that counts cut-off answers as wrong had mixed groups on 40% of the hard and long problems,
+    # and one at 20K on 50%, as many as at 24K (2026-11-15, 50 problems).
+    extra_budgets: [20480]
     correct_threshold: {t1_num: 1.0, t2_code: 1.0, t3_report: 0.9, t4_general: 1.0}
     drop_all_correct: true             # 8/8 = zero advantage in GRPO
     hard_pool_if_none_correct: true    # 0/8 → hard pool, joins RL after step 150

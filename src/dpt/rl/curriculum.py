@@ -148,6 +148,9 @@ class CurriculumConfig:
     hard_pool_min_size: int = 0
     family_weights: FamilyWeights = field(default_factory=FamilyWeights)
     family_map: str = ""                # JSON {uid: family}; read by dpt.verl_ext.sampler, needed by family_weights
+    # The pass rate the difficulty weights read (extra_info key). A run that trains at 16K reads the rate within 16K
+    # (pass_at_8_medium_16k), so a problem solved 8/8 only slowly counts as learnable for it (2026-11-15).
+    rate_key: str = "pass_at_8_medium"
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> "CurriculumConfig":
@@ -165,6 +168,7 @@ class CurriculumConfig:
             hard_pool_min_size=int(d.get("hard_pool_min_size", 0)),
             family_weights=FamilyWeights.from_dict(d.get("family_weights")),
             family_map=str(d.get("family_map") or ""),
+            rate_key=str(d.get("rate_key") or "pass_at_8_medium"),
         )
 
     def validate(self) -> None:
@@ -436,6 +440,8 @@ class Curriculum:
         fw = self.cfg.family_weights
         if fw.on:                                          # 2026-11-15
             out["family_weights"] = {"copies": fw.copies, "families": sorted(fw.families), "max_share": fw.max_share}
+        if self.cfg.rate_key != "pass_at_8_medium":
+            out["rate_key"] = self.cfg.rate_key
         return out
 
     def load_state_dict(self, state: Mapping[str, Any]) -> None:

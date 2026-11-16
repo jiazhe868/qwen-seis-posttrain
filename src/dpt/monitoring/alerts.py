@@ -20,6 +20,7 @@ Rule kinds
 ``threshold``           value above/below levels → highest severity reached
 ``boolean``             value is falsy (< 0.5) → action
 ``relative_change``     drop > ``drop_frac`` or rise > ``rise_frac`` vs window extremes
+``harmful_drop``        a ``relative_change`` drop while a ``harm`` metric is worse than its best (2026-11-15)
 ``persistent``          above a level for ``consecutive`` steps in a row
 ``spike``               value > ``factor`` × mean of the previous ``window`` values
 ``length_divergence``   incorrect-answer length grows faster than correct-answer length
@@ -451,12 +452,62 @@ class RateGrowthRule(Rule):
         return None
 
 
+class HarmfulDropRule(RelativeChangeRule):
+    """``relative_change`` that fires only while one of the ``harm`` metrics is worse than its best so far by more
+    than its ``min_delta`` (2026-11-15). ``harm``: a list of ``{metric, min_delta, better: high|low}``.
+
+    RL v2 counts a cut-off T1 answer as wrong, so hard answers are meant to get shorter: on the hard and long
+    families the SFT model writes the value within its first 500-2,000 tokens and then checks for 6-14K more
+    (scripts/talk/difficulty_pilot.py). Halving their length is then the intended effect while accuracy and wrong
+    values hold, and a warning sign only together with a loss: in run 1, T1 answers fell from 3,071 to 548 tokens
+    while dev D-Num fell from 97.3 to 78.9. A plain ``relative_change`` would pause the run that works.
+    """
+
+    kind = "harmful_drop"
+
+    def __init__(self, name: str, **kw: Any):
+        super().__init__(name, **kw)
+        self.harm_best: dict[str, float] = {}
+
+    def evaluate(self, step: int, metrics: Mapping[str, Any], tasks: Sequence[str]) -> list[Alert]:
+        for h in self.params.get("harm") or []:
+            v = _num(metrics, h["metric"])
+            if v is not None:
+                best = self.harm_best.get(h["metric"])
+                low = h.get("better", "high") == "low"
+                self.harm_best[h["metric"]] = v if best is None else (min(best, v) if low else max(best, v))
+        return super().evaluate(step, metrics, tasks)
+
+    def check(self, step, key, value, metrics):
+        drop = super().check(step, key, value, metrics)
+        if drop is None:
+            return None
+        for h in self.params.get("harm") or []:
+            v, best = _num(metrics, h["metric"]), self.harm_best.get(h["metric"])
+            if v is None or best is None:
+                continue
+            worse = (v - best) if h.get("better", "high") == "low" else (best - v)
+            if worse > float(h["min_delta"]):
+                return self._alert(step, key, value, drop.threshold,
+                                   f"{drop.message}, and {h['metric']}={v:.4g} is {worse:.2f} worse than its best "
+                                   f"{best:.4g} (limit {h['min_delta']:g})")
+        return None
+
+    def state_dict(self):
+        return {**super().state_dict(), "harm_best": dict(self.harm_best)}
+
+    def load_state_dict(self, state):
+        super().load_state_dict(state)
+        self.harm_best = {k: float(v) for k, v in state.get("harm_best", {}).items()}
+
+
 RULE_KINDS: dict[str, type[Rule]] = {
     cls.kind: cls
     for cls in (
         ThresholdRule,
         BooleanRule,
         RelativeChangeRule,
+        HarmfulDropRule,
         PersistentRule,
         SpikeRule,
         LengthDivergenceRule,

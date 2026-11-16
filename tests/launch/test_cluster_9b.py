@@ -172,12 +172,24 @@ def test_rl_9b_v2_renders_bank_v2_weights_and_the_stop_rule(cluster_environment)
     assert str(cfg.curriculum.family_map).endswith("/v2/uid_family.json") and cfg.rl_run.hard_dev_per_family == 10
     assert [r.name for r in cfg.monitoring.extra_rules] == [
         "dev_d_num_best_drop", "dev_t1_wrong_value_rise", "t1_length_drop", "dev_t1_hard_best_drop",
-        "dev_t1_hard_wrong_value_rise", "dev_t1_hard_unfinished_seen_rise", "dev_t1_hard_length_drop"]
-    assert list(cfg.rl.sampling.truncated_as_wrong_tasks) == []
-    assert list(compose_stage("rl/rl_9b_v2_seed2.yaml").rl.sampling.truncated_as_wrong_tasks) == []
+        "dev_t1_hard_wrong_value_rise", "dev_t1_hard_unfinished_seen_rise", "dev_t1_hard_length_halved",
+        "dev_t1_hard_length_drop", "dev_t1_hard_length_floor"]
+    # hard answers are meant to get shorter: halving alone only warns (fourth review, 2026-11-15)
+    kinds = {r.name: (r.kind, r.action) for r in cfg.monitoring.extra_rules}
+    assert kinds["dev_t1_hard_length_halved"] == ("relative_change", "warn")
+    assert kinds["dev_t1_hard_length_drop"] == ("harmful_drop", "pause")
+    # every seed counts a cut-off T1 answer as wrong and has no soft length penalty (the user's decision, 2026-11-15)
+    seed2 = compose_stage("rl/rl_9b_v2_seed2.yaml")
+    assert list(cfg.rl.sampling.truncated_as_wrong_tasks) == ["t1_num"] == list(seed2.rl.sampling.truncated_as_wrong_tasks)
+    assert seed2.verl["+reward.reward_kwargs.overlong_buffer_cfg"]["penalty_factor"] == 0.0 and seed2.project.seed == 2
     seed3 = compose_stage("rl/rl_9b_v2_seed3.yaml")
     assert list(seed3.rl.sampling.truncated_as_wrong_tasks) == ["t1_num"] and seed3.project.seed == 3
     assert seed3.rl.sampling.max_response == cfg.rl.sampling.max_response   # the rest of rl.sampling is merged
+    # seed 3 trains at 16K with no soft length penalty and reads the pass rate within 16K (2026-11-15)
+    assert seed3.rl_run.cap == "16k" and seed3.curriculum.rate_key == "pass_at_8_medium_16k"
+    assert seed3.verl["+reward.reward_kwargs.overlong_buffer_cfg"]["penalty_factor"] == 0.0
+    assert cfg.verl["+reward.reward_kwargs.overlong_buffer_cfg"]["penalty_factor"] == 0.0 and not cfg.rl_run.get("cap")
+    assert list(cfg.curriculum.difficulty_weights.bands[-1]) == [1.0, 0]    # 8/8 at 24K: no copies at 24K
     from dpt.monitoring.alerts import AlertManager
     from dpt.rl.curriculum import CurriculumConfig
     from omegaconf import OmegaConf

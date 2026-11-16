@@ -58,7 +58,7 @@ from dpt.data.decontam import (
 )
 from dpt.data.dedup import cross_dedup, instance_dedup, near_duplicate_dedup
 from dpt.data.difficulty import (DifficultyAuditConfig, DifficultyConfig, calibrate, calibrate_audit,
-                                 calibrate_two_stage)
+                                 calibrate_two_stage, chars_as_tokens)
 from dpt.data.ingest import ingest_files
 from dpt.data.quality import QualityConfig, filter_by_quality
 from dpt.data.rl_build import dev_candidates, export_rl_bank
@@ -152,6 +152,21 @@ class Context:
         bk = self.dp["backends"]
         tok = B.load_hf_tokenizer(bk["tokenizer"]) if bk.get("tokenizer") else None
         return self.cached(B.VLLMGenerator(self.client(bk["base"]), tokenizer=tok), "difficulty", bk["base"])
+
+    def length_fn(self) -> Callable[[str], int]:
+        """A reply's length in tokens, for the difficulty pass's short budget: the configured tokenizer, else an
+        estimate from characters. One lock, because the difficulty pass grades from many threads."""
+        bk = self.dp["backends"]
+        if self.offline or not bk.get("tokenizer"):
+            return chars_as_tokens
+        import threading
+
+        tok, lock = B.load_hf_tokenizer(bk["tokenizer"]), threading.Lock()
+
+        def n_tokens(text: str) -> int:
+            with lock:
+                return len(tok(text, add_special_tokens=False).input_ids)
+        return n_tokens
 
     def grade_fn(self) -> Callable[[Problem, str], float]:
         if self.offline:
@@ -373,11 +388,11 @@ def stage_difficulty(ctx: Context) -> None:
     if mode in ("audit", "audit_all"):   # per group (difficulty.DifficultyAuditConfig); audit_all then every problem
         acfg = DifficultyAuditConfig.from_dict(ctx.dp["difficulty"].get("audit"))
         fn = calibrate_audit if mode == "audit" else calibrate_two_stage
-        res, groups = fn(probs, ctx.base_generator(), ctx.grade_fn(), dcfg, acfg)
+        res, groups = fn(probs, ctx.base_generator(), ctx.grade_fn(), dcfg, acfg, ctx.length_fn())
         write_json(ctx.report_dir / "difficulty_groups.json", groups)
         extra["groups"] = dict(Counter(g["decision"] for g in groups.values()))
     else:
-        res = calibrate(probs, ctx.base_generator(), ctx.grade_fn(), dcfg)
+        res = calibrate(probs, ctx.base_generator(), ctx.grade_fn(), dcfg, ctx.length_fn())
     st = res.stats()
     reasons = Counter(d["reason"] for d in res.dropped)
     ctx.save_stage("difficulty", res.kept, res.dropped, reasons, len(probs),

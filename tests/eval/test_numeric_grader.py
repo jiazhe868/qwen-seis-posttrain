@@ -171,3 +171,18 @@ def test_value_seen_finds_the_gold_value_in_an_unfinished_trace():
     assert value_seen("first 2.1 × 10^19, then 3.05 × 10¹⁹", gold) is not None
     assert value_seen("M0 = 1.2 × 10^18 N m", gold) is None
     assert value_seen("t = 20.1 s", {"value": 20.0, "rel_tol": 0.01, "abs_tol": None}) is not None
+
+
+def test_value_seen_returns_quickly_on_degenerate_replies():
+    """2026-11-16: an exponent of 12 digits froze the pilot for 8 hours (10 ** e built an astronomically large
+    integer while holding the interpreter lock). The same function runs in the RL reward for unfinished answers."""
+    import time
+
+    from dpt.eval.graders.numeric import value_seen
+
+    gold = {"value": 2.5, "rel_tol": 0.01}
+    start = time.monotonic()
+    assert value_seen("so 7 × 10^999999999999, or 7 × 10^{-99999999}; no", gold) is None
+    assert value_seen("1" * 200_000 + " and then 2.5", gold) is not None          # a long run of digits
+    assert value_seen("2.5 × 10^0 " + "9" * 5000 + " × 10^3", gold) == 0.0
+    assert time.monotonic() - start < 2.0

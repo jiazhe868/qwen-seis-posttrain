@@ -154,7 +154,9 @@ def describe(config: str, overrides: list[str], *, ablation: str | None = None) 
             "total_steps": total, "done": step >= total, "paused": (run_dir / "PAUSED.json").exists(),
             "walltime": (run_dir / "WALLTIME.json").exists(), "held": (run_dir / "HOLD.json").exists(),
             "hard_dev_families": ",".join(str(f) for f in families),
-            "hard_dev_per_family": int(cfg.rl_run.get("hard_dev_per_family") or 0)}
+            "hard_dev_per_family": int(cfg.rl_run.get("hard_dev_per_family") or 0),
+            # a cap the recipe fixes (RL v2 seed 3: 16k); empty: rl_v2_job.sh decides with its 24K memory test
+            "cap": str(cfg.rl_run.get("cap") or "")}
 
 
 def build(config: str, overrides: list[str], *, ablation: str | None = None, require_manifest: bool = True,

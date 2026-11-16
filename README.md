@@ -74,8 +74,9 @@ by 4.6 on D-Fresh [−0.8, +10.4], both inside the noise. Before the next RL run
 comparison at 32K as its test of success. What I want from RL now is a large gain where the model is weak, and on
 D-Num-hard the weakness is finishing: at 32K the SFT model runs out of tokens on 28% of its answers and finishes
 with a wrong value on 4%. RL v2 re-grades the bank with the SFT model, keeps the problems it solves only sometimes,
-and adds 18 longer families with a dev split of their own. Seed 3 also counts an answer that runs out of tokens as
-wrong. I expect that rule to matter more than any of the weights, but only at a budget where answers do run out
+and adds 18 longer families with a dev split of their own. Every seed counts an answer that runs out of tokens as
+wrong and has no soft length penalty: a replay of the first step showed that penalty pushing long right answers
+shorter. Seed 3 trains at 16K, seeds 1–2 at 24K. I expect the cut-off rule to matter more than any of the weights
 (§8.3). For the reports, I had the teacher write answers from 3,000 openly licensed papers
 (§8.4).
 
@@ -607,9 +608,20 @@ selection on the dev set picked step 20 (`dpt.eval.select_checkpoint`: 97.27, fa
 What is established, what is ruled out, and what is still open:
 - **Established:** every task shortened from the first steps (mean T1 answer 3,047 → 1,649 → 595 tokens
   at steps 2, 20 and 40). With T1 and T2 nearly solved, T4 supplied most of the gradient.
-- **Ruled out:** that the length penalty drove it (the penalty starts at 12K), and that one task taught
-  brevity by rewarding short answers. Within a step, right and wrong answers were about equally long
-  (steps 1–20: T4 3,749 tokens for right answers and 3,341 for wrong ones; T1 2,058 and 1,796).
+- **Ruled out:** that one task taught brevity by rewarding short answers. Within a step, right and wrong answers
+  were about equally long (steps 1–20: T4 3,749 tokens for right answers and 3,341 for wrong ones; T1 2,058 and
+  1,796). For T1, the comparison inside groups, where the gradient comes from, agrees (next point); T4 was not
+  replayed.
+- **Part of the first push: the length penalty.** I had ruled it out too, because it starts at 12K and some
+  training answer passed 12K at only 14 of the 56 steps, nearly all before step 15 (`docs/talk/data/rl.json`,
+  `response_length/max`). A replay of run 1's first step changed that for the early steps. I took 256 of its
+  numeric training problems with pass rates between 0.1 and 0.9, let the SFT model it started from write 8 answers
+  to each at 16K, and scored them under run 1's rule (`docs/talk/data/run1_step0_replay_1116.json`). 82 groups
+  carried gradient, and 49 of them only because the penalty docked one long answer in a group where every answer
+  was right. Those groups hold 28% of the advantage, and all of it points to shorter answers. In the 33 groups with
+  both right and wrong answers, the right answers were shorter in 18, by a median of 250 tokens, about what the
+  batch averages show. The penalty can explain part of the first push. It cannot explain steps 14 to 40, when
+  almost no answer came near 12K.
 - **Open:** the cause. T3 joined at step 27 and took 26–72% of the gradient in steps 27–40. The T1
   answers had started shrinking before T3 joined (2,205 tokens at step 14, 1,117 at step 26).
 
@@ -635,6 +647,19 @@ most independent reference available. T1 agrees with the evaluation grader on 99
 the trained models'. T3 is lenient. At a pass mark of 70, Gemma passes 108 reports, and Luna passes 8 of
 them. Gemma never fails a report that Luna passes. So the reward paid for reports that an independent
 judge fails.
+
+**With gold labels (November 16).** There are still no human labels, but there are model-made gold labels that
+were checked. GPT-6.1 Sol marked each rubric criterion of the 300 D-Report answers of the base, SFT and RL models
+as met, partly met or not met, and scored each answer; a model review, as in §8.5, checked the references it
+worked from and corrected eight of them (v3). The labels only measure and never enter training or a reward
+prompt. On 31 held-out questions, the judge gets most single criteria right: it passes 23% of the criteria the
+gold marks not met and fails 2% of those it marks met. The trouble is the criteria in between: the gold marks 41%
+of all criteria partly met, and the judge calls 84% of those met. Per answer, at its best pass mark the reward passes 71%
+of the answers the gold scores below 60 and fails 6% of the rest, and it is most lenient with the SFT model's
+answers. Asked as yes/no checks with a quoted span, the same criteria pass 45% and fail 24% of the answers: a
+stricter threshold on much the same judgment. On pairs of answers to the same question, the comparison GRPO makes,
+both versions order 65–68% of the pairs the way the gold does (`dpt.eval.rubric_calibration`). Next the judge gets
+a third level, full, partial or none, which leaves it a place for the partly met.
 
 <p align="center"><img src="assets/two_judges_en.png" width="92%"></p>
 
@@ -862,17 +887,19 @@ Run 1 passes at 16K and fails at 32K. It made the model faster and did not make 
 
 | change | evidence from run 1 | where |
 |---|---|---|
-| the bank re-graded with the SFT model (8 answers, 24K tokens): problems solved 8/8 dropped, problems solved 0/8 in a hard pool that joins at step 20 with a 20% share; harder problems drawn 4, 3, 2 or 1 times per epoch (pass rate ≤ 2/8, ≤ 4/8, ≤ 6/8, 7/8) | in steps 1–20, 87% of the numeric and code groups had all 8 answers right and gave no gradient (§6.3) | `dpt.data.difficulty`, `configs/rl/rl_9b_v2.yaml` |
+| the bank re-graded with the SFT model (8 answers, 24K tokens, each answer also checked against 16K): a problem is dropped only when all 8 answers are right within 16K, problems solved 0/8 go to a hard pool that joins at step 20 with a 20% share; harder problems drawn 4, 3, 2 or 1 times per epoch (pass rate ≤ 2/8, ≤ 4/8, ≤ 6/8, 7/8) | in steps 1–20, 87% of the numeric and code groups had all 8 answers right and gave no gradient (§6.3) | `dpt.data.difficulty`, `configs/rl/rl_9b_v2.yaml` |
 | 12 hard and 6 long numeric families added (3–8 steps, 10,780 problems), drawn twice as often, and no family above 6% of its pool | the headroom is in long, hard problems: on D-Num-hard at 32K the SFT model runs out of tokens on 28.2% of its answers | `dpt.rl.curriculum.FamilyWeights`, `configs/rl/rl_9b_v2.yaml` |
 | bank gates: at least 40% of numeric groups expected to have mixed results at step 1, and at least 1,000 numeric problems graded 1–6 of 8; each family's grades listed | run 1 had 13% | `dpt.data.bank_merge check` |
 | run 1's dev split kept, and its problems kept out of training | the re-grading drops the dev problems the SFT model solves, so a newly drawn split would differ from run 1's and leak its problems into training | `dpt.data.bank_merge pin-dev` |
-| a second dev split: 10 held-out problems from each hard and long family, with four pause rules (accuracy 10 points below its best, wrong values 10 above their lowest, unfinished answers that already hold the right value 12 above, length halved within 30 steps) | run 1's dev split held mostly easy problems; on D-Num-hard at 32K, run 1 turned 11.7 points of unfinished answers into 9.0 points of wrong values and 2.0 of right ones | `dpt.data.bank_merge carve-hard-dev`, `dpt.monitoring.bridge` |
+| a second dev split: 10 held-out problems from each hard and long family, with pause rules (accuracy 10 points below its best, wrong values 10 above their lowest, unfinished answers that already hold the right value 12 above, and length halved within 30 steps together with a 5-point loss, or under 2,500 tokens; halving alone only warns, since hard answers are meant to get shorter) | run 1's dev split held mostly easy problems; on D-Num-hard at 32K, run 1 turned 11.7 points of unfinished answers into 9.0 points of wrong values and 2.0 of right ones | `dpt.data.bank_merge carve-hard-dev`, `dpt.monitoring.bridge` |
 | the local-magnitude problems left out (836 in the verified bank) | their printed formula is wrong for amplitudes in mm, so every label is 2.681 too low (§8.5) | `dpt.data.bank_merge.FAULTY_FAMILIES` |
 | no report task in training; numeric 70%, code 15%, general 15% of the prompts | the test is numeric; the report reward is lenient (§6.5); code is not re-graded and 90% of its groups were 8/8; the general tasks were 21% of the prompts and gave a median 57% of the gradient | `configs/rl/rl_9b_v2.yaml` |
 | half the learning rate: 1e-6, then 5e-7 | run 1 (2e-6, then 1e-6) peaked on dev at step 20 and drifted after it (§6.4) | `configs/rl/rl_9b_v2.yaml` |
 | 24K-token responses with the MTP head frozen, if one training step at full length fits in memory; else 16K | run 1 trained at 16K and was tested at 32K; with the MTP head trained, 24K does not fit the last pipeline stage (§6.1) | `scripts/slurm/rl_v2_job.sh` |
 | a dev pass and a checkpoint every 10 steps; a pause when dev D-Num falls 3 points below its best, or when the share of numeric dev answers with a wrong value rises 3 points above its lowest | from step 20 to step 40, dev D-Num went from 97.3 to 78.9, wrong values from 1.8% to 17.8%, and unfinished answers from 0.8% to 0% | `dpt.monitoring.alerts`, `docs/talk/data/run1_dev_outcomes.json` |
-| seed 3 only: a numeric answer that runs out of tokens counts as wrong (score 0, without the length penalty) instead of leaving the loss | on D-Num-hard at 32K, in 44–87% of the SFT model's unfinished answers the right value is already in the reasoning: it keeps checking instead of answering | `dpt.rl.filtering`, `configs/rl/rl_9b_v2_seed3.yaml` |
+| every seed: a numeric answer that runs out of tokens counts as wrong (score 0) instead of leaving the loss, and no soft length penalty | on D-Num-hard at 32K, in 44–87% of the SFT model's unfinished answers the right value is already in the reasoning; on the pilot, the old rule gave 29% of the groups a gradient from the penalty alone and paid a right answer at 23.5K less than one that never finished | `dpt.rl.filtering`, `configs/rl/rl_9b_v2.yaml` |
+| seed 3 only: a 16K cap, and difficulty weights from the pass rate within 16K | on the pilot, every right answer that finished past 16K had written its value by token 16,384 | `configs/rl/rl_9b_v2_seed3.yaml` |
+| the length gap inside the groups that carry gradient, logged each step, over all answers and over finished ones | run 1 logged only batch averages of right and wrong lengths (§6.4) | `dpt.rl.pipeline.within_group_length_gap` |
 
 The bank gate uses each problem's pass rate $`r`$ under the SFT model. A group of 8 samples of that problem has
 mixed results with probability
@@ -908,10 +935,102 @@ problem gives no gradient, because every answer finishes and every answer is rig
 
 What can make them useful is the budget. At 16K, 12% of those answers would be cut off. If a cut-off answer counts
 as wrong, a third of these groups carry gradient, and that gradient asks for what D-Num-hard needs: finish in time
-and stay right. If cut-off answers are left out of the loss, as seeds 1–2 do and as the usual advice says, the same
-groups carry nothing. At 24K, seed 3's rule hardly fires on this family, whose longest answer was 19,400 tokens. I
-think the cap and this rule now matter more for the goal than every weight in the table above. The rest of the
-pilot, 6 problems from each of the 18 families, will show whether that holds beyond one family.
+and stay right. If cut-off answers are left out of the loss, as the usual advice says, the same groups carry
+nothing. That evening I moved seed 3 to 16K with that rule. The full pilot then changed the other two seeds.
+
+My first version of the re-grade would have thrown these problems away before any of this mattered: it dropped
+every problem solved 8 of 8 at 24K, which is exactly what this family is. A review of the plan caught it. The
+re-grade now checks each answer against 16K as well, keeps a problem unless all 8 answers are right within 16K,
+and records both pass rates. Seeds 1–2 read the 24K rate and give the slow 8-of-8 problems no copies; seed 3 reads
+the 16K rate (`dpt.data.difficulty`, `short_budget`).
+
+**The full pilot.** I graded 10 problems from each of the 18 families, 8 answers each at 24K
+(`docs/talk/data/difficulty_pilot_1115.json`). The SFT model got 44% of the answers right, and half of them ran out
+of tokens. Four families it solves 8 of 8 on at least half of the problems, four it almost never finishes within
+24K, and on the other ten its results are mixed. 47% of the problems were graded 1–6 of 8, the range RL learns from; in run 1's first steps,
+13% of the groups were mixed.
+
+| family | kind | right | ran out at 24K | graded 1–6 of 8 | groups with gradient at 24K / 16K |
+|---|---|---|---|---|---|
+| `array_apparent_velocity` | hard | 99% | 1% | 0% | 10% / 50% |
+| `poisson_ratio_from_wadati_fit` | hard | 94% | 6% | 10% | 40% / 100% |
+| `q_from_spectral_ratio` | hard | 89% | 1% | 20% | 50% / 80% |
+| `array_backazimuth` | hard | 70% | 26% | 50% | 90% / 80% |
+| `gr_count_from_magnitude_sample` | hard | 60% | 5% | 50% | 50% / 90% |
+| `second_interface_reflected_energy` | hard | 57% | 39% | 90% | 90% / 70% |
+| `three_layer_head_wave_time` | hard | 38% | 60% | 100% | 100% / 30% |
+| `second_layer_thickness_from_intercepts` | hard | 22% | 69% | 90% | 90% / 60% |
+| `epicentre_from_three_sp` | hard | 14% | 85% | 80% | 80% / 10% |
+| `depth_from_pp_delay` | hard | 0% | 92% | 0% | 0% / 0% |
+| `dipping_refractor_dip` | hard | 0% | 92% | 0% | 0% / 0% |
+| `dipping_refractor_velocity` | hard | 0% | 98% | 0% | 0% / 0% |
+| `fault_slip_stress_energy` | long | 94% | 1% | 10% | 40% / 60% |
+| `wadati_origin_then_depth` | long | 70% | 25% | 80% | 90% / 80% |
+| `refraction_then_reflection_time` | long | 38% | 59% | 90% | 90% / 60% |
+| `attenuation_then_amplitude` | long | 29% | 61% | 100% | 100% / 50% |
+| `locate_then_local_magnitude` | long | 11% | 86% | 60% | 60% / 30% |
+| `great_circle_origin_time` | long | 2% | 98% | 20% | 20% / 10% |
+| all 180 problems | | 44% | 50% | 47% | 56% / 48% |
+
+The last column counts a cut-off answer as wrong. A family that the model solves fast and surely gains gradient at
+16K, because its slow answers become wrong ones; a family whose right answers are all slow loses it.
+
+**A replay of the first step changed seeds 1–2.** I fed these answers through the trainer's own functions for
+truncation and group advantages, under each rule. Seeds 1–2 were to leave cut-off answers out of the loss and
+dock answers that end in the last 4K before the cap by up to 0.5. On these families that penalty would have
+steered the first step. At 24K, half of the groups carry gradient, but 29% of all groups get theirs only because a
+long right answer was docked in a group where every answer is right. That gradient says "shorter" and nothing about
+being right, and it holds a quarter of the advantage. It also turns the incentive around. In a group with five quick right
+answers, one right answer at 23,500 tokens and two cut off at 24K, the late right answer scores 0.63 against a
+group mean of 0.94, an advantage of −0.31, while the two answers that never finished are out of the loss with
+advantage 0. Without the penalty, cut-off answers left out leave 21% of the groups with gradient, and inside them
+right and wrong answers are about equally long. Counted as wrong, cut-off answers give 56% of the groups a
+gradient at 24K and 48% at 16K, and no penalty is needed, since an answer that runs out already scores 0. So every
+seed now counts a cut-off numeric answer as wrong and has no soft penalty, and the seeds differ only in their
+budget: 24K for seeds 1–2 if it fits in memory, 16K for seed 3.
+
+**On these families the soft length penalty would have paid an answer that never finished more than a right one
+that finished late.**
+
+**Where the value appears.** Training at 16K marks every right answer longer than 16K as wrong, 42% of the right
+answers here. That is safe only if the value is already written by then. In all 175 right answers that finished
+between 16K and 24K, a number matching the gold appeared before token 16,384, at token 3,130 in the median, and the
+answers ran on to 20,562. Of the 794 answers that wrote the value before 16K, 389 ended right, 46 ended wrong, and
+359 were still checking at 24K. The checking rarely talks the model out of a right value. It just does not stop,
+and that is the habit a 16K cut trains away. Any number that matches counts, so these shares are upper bounds; in
+the answers I read, the early match was the real computation.
+
+16K costs signal at the start. From 24K to 16K, 36 mixed groups become 0 of 8, because all their right answers
+were slow, and 22 groups solved 8 of 8 become mixed. A review proposed 20K, where 55% of the groups have gradient,
+as many as at 24K. I kept 16K. The groups it loses at the start are the problems where the model has the value and
+keeps checking, so they should come back as the habit spreads, and a seed at 20K would be close to a third copy of
+the 24K seeds. The re-grade also records the pass rate within 20K and the job accepts a 20K cap, in case the 16K
+seed stalls (`dpt.data.difficulty`, `extra_budgets`).
+
+**What to watch.** Every seed logs the length gap inside the groups that carry gradient, over all answers and over
+finished answers only (`task/t1_num/len_gap_within`, `task/t1_num/len_gap_within_finished`). With cut-off answers
+counted as wrong, the first is negative by design. The second should start near zero (on the pilot at 24K, a
+median of +114 tokens over 38 groups) and stay there as the checking goes. If it turns strongly negative once hard
+answers are short, right answers themselves are getting shorter, which is the drift run 1 showed (§6.4). Hard
+answers are meant to get shorter, so their length halving within 30 steps only warns. The run pauses when the
+halving comes with 5 points less accuracy or 5 points more wrong values on the hard dev split, or when hard answers
+average under 2,500 tokens. A dev pass is 180 problems × 4 answers, so a score moves about 1.3 points between
+passes from sampling alone.
+
+**Alternatives I did not take.** The reviews proposed more changes:
+- *Masking all but the last 4K tokens of a cut-off answer, to spare its correct start.* The loss already sums
+  tokens over a fixed constant, which is the plain policy gradient, and the start of a cut-off answer is shared
+  with the right answers in its group, so most of that gradient cancels. The mask would bend the gradient, and it
+  would be a second change.
+- *A reward ladder that pays a cut-off answer more than a finished wrong one* (0.25 when its reasoning already holds
+  the right value, 0.10 otherwise). It would pay the model for not finishing, and for writing many numbers into
+  its reasoning. The hard dev split already stops a run that trades unfinished answers for wrong ones.
+- *A tighter upper clip, 0.22 instead of 0.28.* Nothing measured here points to it, and the seeds keep run 1's
+  losses.
+- *Seed 3 at 20K* (above).
+- *One seed kept on the old rule as a control.* Run 1 already ran a version of it, and on the pilot it gives
+  gradient to fewer right-and-wrong groups (21% against 56%) and spends a quarter of its advantage on length alone.
+  A control there would spend a third of the RL budget to confirm a rule I would not use again.
 
 **For this model, hard mostly means long: on D-Num-hard at 32K it runs out of tokens eight times as often as it
 finishes wrong.**
@@ -946,11 +1065,14 @@ python -m dpt.eval.budget table budgets_rl_v2.json --rows rl_seed1,rl_v2_seed1,r
 **A job that waits days in the queue should read its steps when it starts.**
 
 Caveats, plainly:
-- three seeds of RL v2, and one of every other run; seed 3 differs in one setting, so its comparison with seeds 1–2
-  rests on one seed;
+- three seeds of RL v2, and one of every other run; seed 3 differs only in its budget, so its comparison with
+  seeds 1–2 rests on one seed, and if the 24K memory test fails, seeds 1–2 also train at 16K and the seeds differ
+  only in which pass rate weights the problems;
 - D-Fresh has 60 problems, so its interval is about ±5 points;
-- the pilot so far covers one family in full; bank v2's real grades are known only after its build, and a bank with
+- the pilot has 10 problems per family; bank v2's real grades are known only after its build, and a bank with
   fewer than 1,000 learnable numeric problems stops the job before RL;
+- the value-position check counts any number that matches the gold, so it overstates how often the value was
+  found;
 - with the report task left out, RL v2 cannot improve D-Report.
 
 ### 8.4 Knowledge-dense report data and SFT v2

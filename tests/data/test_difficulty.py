@@ -173,3 +173,64 @@ def test_pipeline_grades_correctness_not_the_length_penalised_score(monkeypatch)
                            "answer": {"rubric": [{"criterion": "c", "weight": 1}], "reference_length": 500}})
     assert grade(p, "answer") == 1.0
     assert seen["question"] == "Explain coda waves." and seen["response_length"] == 0
+
+
+def test_a_short_budget_keeps_problems_solved_only_slowly():
+    """2026-11-15: with short_budget, a problem is dropped only if all replies are right within it, and a template
+    counts as mastered on the same test. The first pilot family was solved 8/8 at 24K with replies of 3,800–19,400
+    tokens: a run at 16K learns from it, so the bank must keep it."""
+    from dpt.data.difficulty import DifficultyAuditConfig, calibrate_two_stage
+
+    def prob(template, d):
+        return Problem.from_dict({
+            "task": "t1_num", "question": f"T{template}: {d} km at 5 km/s. Time in s?",
+            "answer": {"value": d / 5, "unit": "s"},
+            "meta": {"family": "travel_time", "template": template,
+                     "generator": {"name": "travel_time", "params": {"distance_km": d, "velocity_km_s": 5.0}}}})
+
+    # template 0: right and short; template 1: right, 2 of 4 replies long; template 2: right, all long
+    probs = [prob(t, d) for t in (0, 1, 2) for d in range(10, 30)]
+
+    def gen(messages, n, **kw):
+        t = int(messages[-1]["content"][1])
+        long_ = {0: 0, 1: 2, 2: n}[t]
+        return ["ok long"] * long_ + ["ok"] * (n - long_)
+
+    def length(text):
+        return 20000 if "long" in text else 5000
+
+    grade = lambda p, o: 1.0 if o.startswith("ok") else 0.0  # noqa: E731
+    plain, _ = calibrate_two_stage(probs, gen, grade, DifficultyConfig(n_samples=4, max_concurrency=1),
+                                   DifficultyAuditConfig(per_group=5), length)
+    assert plain.kept == []                                                # without it: everything 4/4, dropped
+    cfg = DifficultyConfig(n_samples=4, max_concurrency=1, short_budget=16384)
+    res, groups = calibrate_two_stage(probs, gen, grade, cfg, DifficultyAuditConfig(per_group=5), length)
+    assert groups["t1_num:travel_time:t0"]["decision"] == "drop"            # fast and right: mastered
+    assert groups["t1_num:travel_time:t1"]["decision"] == "keep" and groups["t1_num:travel_time:t2"]["decision"] == "keep"
+    by_t = {t: [p for p in res.kept if p.meta["template"] == t] for t in (0, 1, 2)}
+    assert not by_t[0] and len(by_t[1]) == 20 and len(by_t[2]) == 20
+    assert {p.meta["pass_at_4_medium"] for p in res.kept} == {1.0}
+    assert {p.meta["pass_at_4_medium_16k"] for p in by_t[1]} == {0.5} and {p.meta["pass_at_4_medium_16k"] for p in by_t[2]} == {0.0}
+    assert all(p.pool == "main" for p in res.kept)                         # right at 24K: not the hard pool
+
+
+def test_extra_budgets_record_rates_and_leave_the_decisions_alone():
+    """2026-11-15: the pass rate within 20K is recorded for a run that may train there (RL v2 seed 3); the drop and
+    the pools still follow short_budget."""
+    from dpt.data.difficulty import calibrate
+
+    probs = [Problem.from_dict({"task": "t1_num", "question": f"{d} km at 5 km/s. Time in s?",
+                                "answer": {"value": d / 5, "unit": "s"}}) for d in (10, 20)]
+    # replies of 5K, 18K, 18K and 23K tokens, all right
+    gen = lambda messages, n, **kw: ["ok a", "ok b", "ok b", "ok c"][:n]  # noqa: E731
+    length = {"ok a": 5000, "ok b": 18000, "ok c": 23000}.get
+    grade = lambda p, o: 1.0 if o.startswith("ok") else 0.0  # noqa: E731
+    cfg = DifficultyConfig(n_samples=4, max_concurrency=1, short_budget=16384, extra_budgets=[20480])
+    res = calibrate(probs, gen, grade, cfg, length)
+    assert len(res.kept) == 2 and not res.dropped                           # 1 of 4 within 16K: kept
+    m = res.kept[0].meta
+    assert (m["pass_at_4_medium"], m["pass_at_4_medium_16k"], m["pass_at_4_medium_20k"]) == (1.0, 0.25, 0.75)
+    only = calibrate(probs, gen, grade, DifficultyConfig(n_samples=4, max_concurrency=1, extra_budgets=[20480]),
+                     length)
+    assert not only.kept and len(only.dropped) == 2                         # no short budget: 4 of 4, dropped
+    assert {p.meta["pass_at_4_medium_20k"] for p in probs} == {0.75}

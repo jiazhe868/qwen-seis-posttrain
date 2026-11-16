@@ -41,6 +41,41 @@ def test_truncated_t1_answers_count_as_wrong_when_asked():
     assert code.valid.tolist() == [True, False] and code.seq_adv[1] == 0.0
 
 
+def test_length_gap_inside_groups_can_oppose_the_global_gap():
+    """Third review of RL v2 (2026-11-15): a step pushes length by the gap inside its mixed groups. Over this batch
+    right answers average 8,000 tokens and wrong ones 4,000, yet inside each mixed group right answers are 1,000
+    tokens shorter, so the step favours short answers. An all-right group carries no gradient and does not count."""
+    out = compute_step_advantages(
+        [1, 1, 1, 0] + [1, 0, 0, 0] + [1, 1, 1, 1],
+        ["long"] * 4 + ["short"] * 4 + ["solved"] * 4, ["t1_num"] * 12,
+        [9000, 9000, 9000, 10000] + [1000, 2000, 2000, 2000] + [9000] * 4,
+        max_response=24576, scaler=TaskAdvantageScaler(), normalizer=None, nominal_mix=MIX)
+    assert out.metrics["task/t1_num/len_gap_within"] == pytest.approx(-1000.0)
+    assert out.metrics["task/t1_num/len_gap_within_below_zero"] == 1.0
+
+
+def test_length_gap_sees_the_loss_rewards():
+    """The overlong penalty and seed 3's cut-offs change which answers a step pushes down, and the gap follows them."""
+    kw = dict(max_response=24576, scaler=TaskAdvantageScaler(), normalizer=None, nominal_mix=MIX)
+    # a right answer docked by the overlong penalty sits below its group's mean and is pushed down with the wrong one
+    pen = compute_step_advantages([1, 1, 0.5, 0], ["g"] * 4, ["t1_num"] * 4, [4000, 6000, 22000, 8000], **kw)
+    a = np.array([1, 1, 0.5, 0]) - 0.625
+    lens = np.array([4000, 6000, 22000, 8000])
+    assert pen.metrics["task/t1_num/len_gap_within"] == pytest.approx((a * lens).sum() / a.clip(0).sum())
+    # a cut-off answer left out leaves no mixed group; counted as wrong, it enters at its full length
+    masked = compute_step_advantages([1, 0], ["g"] * 2, ["t1_num"] * 2, [5000, 24576], **kw)
+    assert "task/t1_num/len_gap_within" not in masked.metrics
+    cut = compute_step_advantages([1, 0], ["g"] * 2, ["t1_num"] * 2, [5000, 24576], truncated_as_wrong_tasks=["t1_num"],
+                                  **kw)
+    assert cut.metrics["task/t1_num/len_gap_within"] == pytest.approx(5000 - 24576)
+    # over finished answers only, the cut-off answer leaves the comparison: here the right answer is the longer one
+    mixed = compute_step_advantages([1, 0, 0], ["g"] * 3, ["t1_num"] * 3, [5000, 24576, 3000],
+                                    truncated_as_wrong_tasks=["t1_num"], **kw)
+    assert mixed.metrics["task/t1_num/len_gap_within"] == pytest.approx(5000 - (24576 + 3000) / 2)
+    assert mixed.metrics["task/t1_num/len_gap_within_finished"] == pytest.approx(5000 - 3000)
+    assert mixed.metrics["task/t1_num/len_gap_within_finished_below_zero"] == 0.0
+
+
 def test_padding_rows_ignored_and_never_raise():
     out = compute_step_advantages(
         [1, 0, 0], ["g", "g", "pad1"], ["t1_num", "t1_num", ""], [10, 10, 128],

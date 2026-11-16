@@ -210,3 +210,29 @@ def test_best_drop_with_better_low_pauses_when_wrong_values_rise_above_their_low
     fired = mgr.evaluate(40, {"dev/t1_wrong_value": 17.8})
     assert [a.severity for a in fired] == ["pause"] and "above its best 1.8" in fired[0].message
     assert mgr.rules[0].best["dev/t1_wrong_value"] == 1.8
+
+
+def test_harmful_drop_pauses_a_halving_only_together_with_a_loss():
+    """Fourth review of RL v2 (2026-11-15): with cut-off answers counted as wrong, hard answers are meant to get
+    shorter (the SFT model writes the value early and checks for 6-14K tokens more). Halving with accuracy rising is
+    the run that works; halving with wrong values 6 points above their lowest pauses."""
+    from dpt.monitoring.alerts import AlertManager
+
+    spec = {"name": "len", "kind": "harmful_drop", "metric": "dev/t1_hard_len", "window": 30, "min_history": 3,
+            "drop_frac": 0.5, "action": "pause",
+            "harm": [{"metric": "dev/t1_hard", "min_delta": 5.0},
+                     {"metric": "dev/t1_hard_wrong_value", "better": "low", "min_delta": 5.0}]}
+
+    def passes(mgr, rows):
+        return [mgr.evaluate(s, {"dev/t1_hard_len": n, "dev/t1_hard": acc, "dev/t1_hard_wrong_value": w})
+                for s, n, acc, w in rows]
+
+    healthy = AlertManager.from_config({"rules": [], "extra_rules": [spec]})
+    assert passes(healthy, [(0, 18000, 50, 10), (10, 16000, 52, 10), (20, 12000, 55, 9), (30, 8000, 58, 9)]) == [[]] * 4
+    sick = AlertManager.from_config({"rules": [], "extra_rules": [spec]})
+    out = passes(sick, [(0, 18000, 50, 10), (10, 16000, 52, 10), (20, 12000, 51, 13), (30, 8000, 50, 16)])
+    assert out[:3] == [[]] * 3 and [a.severity for a in out[3]] == ["pause"]
+    assert "dev/t1_hard_wrong_value=16 is 6.00 worse than its best 10" in out[3][0].message
+    resumed = AlertManager.from_config({"rules": [], "extra_rules": [spec]})
+    resumed.rules[0].load_state_dict(sick.rules[0].state_dict())
+    assert resumed.rules[0].harm_best == {"dev/t1_hard": 52.0, "dev/t1_hard_wrong_value": 10.0}

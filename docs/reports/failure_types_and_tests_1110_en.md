@@ -382,7 +382,8 @@ What this means for the sections above:
 §3 and §8 changed my view of what RL should train. On D-Num-hard at 32K the SFT model is unfinished on 28.2% of its
 answers and wrong on 3.6%, and most unfinished answers loop on checking a value they already have. Run 1 shortened
 its answers and turned most of those into wrong values. RL v2 now gives the hard and long families more weight and a
-dev split of their own, and seed 3 counts a run-out answer as wrong (README §8.3).
+dev split of their own, and every seed counts a run-out answer as wrong, seed 3 at 16K and seeds 1–2 at 24K
+(README §8.3).
 
 The first pilot family says the weights alone will not do it. At 24K the SFT model solved all six problems 8 of 8,
 with answers of 3,800–19,400 tokens. A problem the model always finishes and always gets right teaches nothing,

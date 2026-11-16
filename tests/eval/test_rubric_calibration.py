@@ -7,8 +7,8 @@ import json
 import pytest
 
 from dpt.common.io import write_jsonl
-from dpt.eval.rubric_calibration import (answer_pairs, confusion, criterion_pairs, derived_scores, gate_index, main,
-                                         spearman, split_of, summarize)
+from dpt.eval.rubric_calibration import (answer_pairs, confusion, criterion_pairs, derived_scores, gate_index,
+                                         level_table, main, spearman, split_of, summarize)
 
 
 def test_confusion_counts_false_passes_and_false_fails():
@@ -99,3 +99,19 @@ def test_the_gate_is_the_main_result_criterion_and_caps_a_report_that_misses_it(
     assert clean[("sft", "q")]["score"] == pytest.approx(33 / 60) and clean[("sft", "q")]["kept_ids"] == [1, 2]
     labels = {("sft", "q"): {"criteria": [{"id": 1, "met": "yes"}, {"id": 2, "met": "no"}, {"id": 3, "met": "yes"}]}}
     assert criterion_pairs(labels, clean, 7, [("sft", "q")])[0] == [(True, True), (False, False)]
+
+
+def test_three_level_verdicts_are_met_only_when_full_and_tabled_against_the_gold():
+    """2026-11-16: a three-level judge (full 1, partial 0.5, none 0) counts a criterion as met only when full; the
+    reward's partial credit is rescored from the same verdicts, and the levels are tabled against the gold marks."""
+    item = {"id": "q", "answer": {"rubric": [{"criterion": "a", "weight": 2}, {"criterion": "b", "weight": 1},
+                                             {"criterion": "c", "weight": 1}]}}
+    labels = {("sft", "q"): {"criteria": [{"id": 1, "met": "yes"}, {"id": 2, "met": "partly"}, {"id": 3, "met": "no"}]}}
+    scores = {("sft", "q"): {"kind": "levels", "score": 0.0, "per_criterion": [1.0, 0.5, 0.5]}}
+    assert criterion_pairs(labels, scores, 7, [("sft", "q")], partly_as_no=True)[0] == [
+        (True, True), (False, False), (False, False)]
+    assert derived_scores(scores, {"q": item})[("sft", "q")]["score"] == pytest.approx(3.0 / 4)
+    assert derived_scores(scores, {"q": item}, partial_credit=0.25)[("sft", "q")]["score"] == pytest.approx(2.5 / 4)
+    assert derived_scores(scores, {"q": item}, partial_credit=0.0)[("sft", "q")]["score"] == pytest.approx(2.0 / 4)
+    table = level_table(labels, scores, [("sft", "q")])
+    assert table["yes"]["full"] == 1 and table["partly"]["partial"] == 1 and table["no"]["partial"] == 1

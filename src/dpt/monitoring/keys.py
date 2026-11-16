@@ -28,6 +28,15 @@ SANDBOX_INFRA_ERROR = "sandbox/t2_infra_error"  # dev T2 samples the sandbox cou
 
 # --- per-task learning dynamics (format with task=...) -----------------------------------------
 TASK_REWARD = "task/{task}/reward_mean"
+# Inside the groups that carry gradient: the mean length of the answers a step pushes up minus that of the answers it
+# pushes down (right minus wrong for a right/wrong reward), and the share of those groups where it is below zero.
+# The full-batch TASK_LEN_CORRECT / TASK_LEN_INCORRECT can hide it (dpt.rl.pipeline.within_group_length_gap).
+TASK_LEN_GAP_WITHIN = "task/{task}/len_gap_within"
+TASK_LEN_GAP_WITHIN_NEG = "task/{task}/len_gap_within_below_zero"
+# The same over finished answers only. When a cut-off answer counts as wrong (rl.sampling.truncated_as_wrong_tasks),
+# the gap above is negative by construction; this one shows whether right answers themselves are getting shorter.
+TASK_LEN_GAP_FINISHED = "task/{task}/len_gap_within_finished"
+TASK_LEN_GAP_FINISHED_NEG = "task/{task}/len_gap_within_finished_below_zero"
 TASK_ACC = "task/{task}/acc"
 TASK_ENTROPY = "task/{task}/entropy"
 TASK_LEN = "task/{task}/len_mean"

@@ -8,8 +8,8 @@ Every entry is a mistake actually made here, on the Qwen3.5-9B SFT and multi-tas
 Slurm cluster (8 nodes × 3 A100-40GB) in October and November 2026: caught by a measurement, corrected, and
 given a test or a guard. Nothing below is a generic best-practice list.
 
-**The organising observation: most of the expensive failures here were silent.** In seventeen of the
-twenty-three entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
+**The organising observation: most of the expensive failures here were silent.** In nineteen of the
+twenty-five entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
 check that checked the other forward pass, a patch that patched nothing, a sandbox that failed closed
 without an alert, framework defaults that overrode the config, a hang that no timeout noticed, a judge that
 graded its own students, verifiers that all agreed with the wrong formula they were given. The loud failures (a crash, an out-of-memory error) cost minutes; the silent ones
@@ -43,6 +43,8 @@ Companion document: [README.md](README.md) explains how the pipeline works and w
 | D4 | Gates on a saturated test | measurement | an 8-node job ended by noise | silent |
 | D5 | A refusal detector too narrow for the model it measures | measurement | a quarter of a safety regression misread | silent |
 | D6 | A reviewer that favours the first answer | measurement | verdicts that follow the order of the answers | silent |
+| D7 | A number scan that froze a pilot for eight hours | measurement | a stalled RL reward; 8 hours of two idle GPUs | silent |
+| D8 | Parse failures that were not random | measurement | a rubric version chosen on flattering numbers | silent |
 | E1 | The queue sets the pace | operations | days per failed launch | loud |
 | E2 | Unwatched waits: an idle job and a cleanup that cancelled another | operations | 2 idle hours of 8 nodes; a judge job's 4-day queue place | silent |
 | E3 | A synced file that needed code the cluster did not have | operations | a bank build dying at its first import | loud |
@@ -564,6 +566,59 @@ and the 6 pairs that split count as ties (`blind_review page --swap`, `blind_rev
 **Invalidated artifacts.** The single-order verdicts.
 
 **Generalisable lesson.** Every LLM reader, judge or reviewer, reads both orders.
+
+
+## D7 — A number scan that froze a pilot for eight hours
+
+**Symptom.** The local difficulty pilot stopped writing results at 00:29 with 113 of 180 problems done. Both
+vLLM servers finished their last requests at 01:36 and sat idle, while the client ran at 100% CPU for eight
+hours and printed nothing.
+
+**The false story.** "The GPUs are shared, and another user's job has slowed the servers; wait."
+
+**Root cause.** `dpt.eval.graders.numeric.value_seen` looks for the gold value in an answer's reasoning. For a
+number written as a × 10^e it computed `10 ** int(e)` as an exact integer. An exponent of a few digits is
+harmless; one of 12 digits starts an integer with a trillion digits. That computation raises no error, never
+ends, and holds the interpreter lock, so every other thread of the client stopped with it and no request
+timeout fired. Reading the code found it and a test reproduces it. The answer that set it off was never saved,
+but after the fix the pilot reran the problems that had been in flight and finished. The same function runs in
+the RL reward for unfinished numeric answers (`dpt.verl_ext.reward_fn`), where it could have stalled RL v2.
+
+**Fix.** The digit runs in its patterns are bounded, a match cannot start inside a longer number (an unbounded
+`\d+` was also quadratic on a long run of digits), and an exponent beyond any float is skipped. The fix reached
+the cluster by an atomic rename while a bank build there was importing the module.
+
+**Permanent regression test.** `tests/eval/test_numeric_grader.py::test_value_seen_returns_quickly_on_degenerate_replies`.
+
+**Invalidated artifacts.** None; the pilot resumed from its finished problems.
+
+**Generalisable lesson.** Code that reads model output must bound its work. A model at its token cap can write
+anything, and a computation that holds the interpreter lock is a hang no timeout in the same process can see.
+
+
+## D8 — Parse failures that were not random
+
+**Symptom.** Against the gold labels, the yes/no version of the report rubric first looked clearly better than
+the 0–10 version: false fails 14% and balanced accuracy 0.72, against 0.62. After the failed scorings were
+repaired and run again, its false fails were 24% and its balanced accuracy 0.66.
+
+**The false story.** "48 of 600 scorings failed to parse. That is 8%; leave them out."
+
+**Root cause.** The judge quotes the answer as evidence, and LaTeX in a quote (`\alpha`) is not a valid JSON
+escape. 44 of the 48 failures were yes/no checks, and 26 of those were base-model answers, the answers most
+likely to fall short of the criteria. Leaving them out removed hard cases from one side of the comparison.
+
+**Fix.** The parser doubles a backslash that starts no JSON escape and tries again, accepts raw newlines in
+strings, and takes the first complete JSON object that holds every verdict (`dpt.rewards.judge`). The failed
+rows were set aside, kept in a backup, and scored again.
+
+**Permanent regression test.** `tests/rewards/test_judge.py::test_latex_in_quoted_evidence_is_parsed` and
+`::test_the_first_json_object_is_read_and_raw_newlines_are_allowed`.
+
+**Invalidated artifacts.** The provisional numbers for the yes/no rubric, reported once and then corrected.
+
+**Generalisable lesson.** Before comparing two versions, count what failed in each and look at where the
+failures fall. They cluster on the hard cases.
 
 ---
 

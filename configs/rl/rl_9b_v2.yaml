@@ -35,12 +35,25 @@
 #   - a second dev split, 10 held-out problems of each hard and long family (rl_dev_hard), with its own pause
 #     rules: its accuracy, its wrong values, its unfinished answers that already hold the right value, its length.
 #     Run 1's pinned dev split held almost only easy problems and saw the trade of unfinished for wrong answers late.
-#   - seed 3 differs in one setting: T1 answers that run out of tokens count as wrong (rl_9b_v2_seed3.yaml).
+#   - changed again that night, after a replay of the first step on the pilot's answers (the user's decision): a T1
+#     answer that runs out of tokens counts as wrong (score 0, kept in its group), and there is no soft length
+#     penalty. Under the old rule (cut-off answers left out, answers ending between 20K and 24K docked by up to
+#     0.5), 11 of the 24 groups with gradient had it only because a long right answer was docked, and a right
+#     answer at 23.5K got an advantage of -0.31 while a cut-off answer got 0. In the pilot, all 25 right answers
+#     that finished past 16K had written the value by token 16,384, and 38 of the 105 answers with an early value
+#     were still checking at 24K: the model has the value and does not stop.
+#   - seed 3 differs only in its budget, 16K (rl_9b_v2_seed3.yaml).
 # =============================================================================
 defaults_from: rl_9b.yaml
 requires_model_line: qwen35_9b
 
+project:
+  thinking:
+    rl_overlong_max_penalty: 0.0          # no soft length penalty (2026-11-15, see the header)
+
 rl:
+  sampling:
+    truncated_as_wrong_tasks: [t1_num]    # a cut-off T1 answer scores 0 and stays in its group (dpt.rl.filtering)
   # Run 1 used 2e-6 → 1e-6. Its dev D-Num peaked at step 20 (97.3) and fell to 78.9 by step 40. The 27B's rule
   # (A8: 2e-6 made it oscillate) gave 1e-6 → 5e-7, the values used here.
   lr_schedule: {base_lr: 1.0e-6, final_lr: 5.0e-7, final_phase_steps: 34}
@@ -57,7 +70,10 @@ curriculum:
   hard_pool_join_step: 20
   hard_share: 0.20
   hard_pool_min_size: 300
-  difficulty_weights: {enabled: true, bands: [[0.25, 4], [0.5, 3], [0.75, 2], [1.0, 1]], unknown: 1}
+  # Copies per epoch by pass rate: 4 / 3 / 2 / 1 up to 2/8, 4/8, 6/8 and 7/8. Since the 16K re-grade (2026-11-15)
+  # the bank also keeps problems solved 8/8 at 24K but slowly, for seed 3; at 24K they would teach nothing, so they
+  # get 0 copies here. A rate of exactly 0 (none right within 16K, some within 24K) gets 1 copy.
+  difficulty_weights: {enabled: true, bands: [[0.0, 1], [0.25, 4], [0.5, 3], [0.75, 2], [0.875, 1], [1.0, 0]], unknown: 1}
   # bank v2's hard (3–5 steps) and long (6–8 steps) T1 families, drawn twice as often; no family above 6% of its
   # pool (bank v1 had 39 T1 families at ~3% each). The map comes from bank_merge carve-hard-dev (rl_v2_job.sh).
   family_weights:
@@ -133,7 +149,9 @@ monitoring:
       action: warn
       risk: "T1 answers shrinking fast, as before run 1's collapse; a warning only, since shorter answers are also
         the efficiency RL is for"
-    # The hard dev split (2026-11-15): 180 answers per pass, so about ±7 points at 95%. The thresholds sit above that.
+    # The hard dev split (2026-11-15): 180 problems × 4 answers per pass (val_kwargs.n 4; run 1's dev dump held 190
+    # prompts × 4). On the same problems a score moves ~1.3 points between passes by sampling alone, and a best so
+    # far sits ~2 points above its mean. The thresholds sit well above that.
     - name: dev_t1_hard_best_drop
       kind: best_drop
       metric: dev/t1_hard
@@ -155,12 +173,34 @@ monitoring:
       max_drop: 12.0
       action: pause
       risk: "more hard answers hold the right value and never answer: the model checks instead of committing"
-    - name: dev_t1_hard_length_drop
+    # Hard answers are meant to get shorter (2026-11-15, fourth review): the SFT model writes the value within its
+    # first 500-2,000 tokens and checks for 6-14K more (median answer 23K tokens at 24K; difficulty pilot), and a
+    # cut-off answer now counts as wrong. Halving alone is therefore a warning; it pauses only with a loss of 5 points
+    # (dev passes give 180 problems × 4 answers: ~1.4 points of noise per pass, ~2 more for a best-so-far), or when
+    # answers fall below 2,500 tokens, the kind of fall run 1 made (T1 answers 3,071 → 548 → 17 tokens).
+    - name: dev_t1_hard_length_halved
       kind: relative_change
       metric: dev/t1_hard_len
       window: 30
       min_history: 3                         # dev passes come every 10 steps
       drop_frac: 0.5
+      action: warn
+      risk: "hard answers halved in length within 30 steps: the intended effect if accuracy holds"
+    - name: dev_t1_hard_length_drop
+      kind: harmful_drop
+      metric: dev/t1_hard_len
+      window: 30
+      min_history: 3
+      drop_frac: 0.5
+      harm:
+        - {metric: dev/t1_hard, min_delta: 5.0}
+        - {metric: dev/t1_hard_wrong_value, better: low, min_delta: 5.0}
       action: pause
-      risk: "hard answers halved in length within 30 steps; run 1's T1 answers fell from 3,071 to 548 tokens
-        before its accuracy collapsed"
+      risk: "hard answers halved in length while accuracy fell or wrong values rose; run 1's T1 answers fell from
+        3,071 to 548 tokens while dev D-Num fell from 97.3 to 78.9"
+    - name: dev_t1_hard_length_floor
+      kind: threshold
+      metric: dev/t1_hard_len
+      below: {pause: 2500}
+      action: pause
+      risk: "hard answers average under 2,500 tokens; the SFT model needs 6-24K on these families"

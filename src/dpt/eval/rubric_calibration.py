@@ -27,6 +27,10 @@ Rubric v2 is computed from the judge's own per-criterion scores, so trying it ne
           labels found partial credit for coverage lifting reports whose main result is wrong; this gate stops a
           reward from doing the same. The cap is chosen on the tune split.
   +clean  criteria flagged as wrong or ambiguous (--drop-criteria) are left out and the weights renormalised.
+
+Three-level judging (kind "levels", 2026-11-16): each criterion full / partial / none, stored as 1 / 0.5 / 0. A
+criterion counts as met only when full, and the judge's levels are tabled against the gold's yes / partly / no. The
+reward's partial credit is a choice, so +partial0.25 and +partial0 rescore the same verdicts.
 """
 
 from __future__ import annotations
@@ -109,7 +113,7 @@ def criterion_pairs(labels: dict[tuple[str, str], dict[str, Any]], scores: dict[
             continue
         flagged = {int(c.get("id", 0)) for c in lab.get("criterion_issues") or []}
         marks = {int(c.get("id", 0)): str(c.get("met", "")).lower() for c in lab.get("criteria") or []}
-        checks = sc.get("kind") == "checks"                   # yes/no checks (1 = yes) rather than 0-10 scores
+        unit = sc.get("kind") in ("checks", "levels")        # 1 = yes / full, rather than a 0-10 score
         ids = sc.get("kept_ids") or range(1, len(sc["per_criterion"]) + 1)
         for i, judge_value in zip(ids, sc["per_criterion"]):
             mark = marks.get(i)
@@ -120,7 +124,7 @@ def criterion_pairs(labels: dict[tuple[str, str], dict[str, Any]], scores: dict[
             elif mark == "partly" and not partly_as_no:
                 apart["partly"] += 1
             else:
-                judge_met = judge_value >= 1 if checks else judge_value >= threshold
+                judge_met = judge_value >= 1 if unit else judge_value >= threshold
                 pairs.append((judge_met, mark == "yes"))
     return pairs, apart
 
@@ -158,10 +162,11 @@ def gate_index(item: dict[str, Any]) -> int:
 
 
 def derived_scores(scores: dict[tuple[str, str], dict[str, Any]], items: dict[str, dict[str, Any]], *,
-                   gate_cap: float | None = None, drop: dict[str, set[int]] | None = None
-                   ) -> dict[tuple[str, str], dict[str, Any]]:
+                   gate_cap: float | None = None, drop: dict[str, set[int]] | None = None,
+                   partial_credit: float | None = None) -> dict[tuple[str, str], dict[str, Any]]:
     """Rubric v2 from the judge's per-criterion scores: drop the listed criteria (1-based ids) and renormalise the
-    weights, then cap the score at ``gate_cap`` when the main-result criterion is unmet."""
+    weights, then cap the score at ``gate_cap`` when the main-result criterion is unmet. ``partial_credit``
+    rescores a three-level judge's "partial" verdicts (stored as 0.5)."""
     out = {}
     for key, sc in scores.items():
         item = items[key[1]]
@@ -171,18 +176,39 @@ def derived_scores(scores: dict[tuple[str, str], dict[str, Any]], items: dict[st
         weights = [float(c["weight"]) for c in item["answer"]["rubric"]]
         dropped = (drop or {}).get(key[1], set())
         keep = [i for i in range(len(weights)) if i + 1 not in dropped and i < len(sc["per_criterion"])]
-        checks = sc.get("kind") == "checks"
-        scale = 1.0 if checks else 10.0
+        unit = sc.get("kind") in ("checks", "levels")
+        scale = 1.0 if unit else 10.0
+
+        def credit(v: float) -> float:
+            return partial_credit if partial_credit is not None and sc.get("kind") == "levels" and v == 0.5 else v
         total = sum(weights[i] for i in keep)
-        score = sum(float(sc["per_criterion"][i]) * weights[i] for i in keep) / (scale * total) if total else 0.0
+        credited = sum(credit(float(sc["per_criterion"][i])) * weights[i] for i in keep)
+        score = credited / (scale * total) if total else 0.0
         g = gate_index(item)
         if gate_cap is not None and g in keep:
-            met = sc["per_criterion"][g] >= (1 if checks else GATE_MET)
+            met = sc["per_criterion"][g] >= (1 if unit else GATE_MET)
             score = score if met else min(score, gate_cap)
         out[key] = {**sc, "score": score,
                     "per_criterion": [sc["per_criterion"][i] for i in keep],
                     "kept_ids": [i + 1 for i in keep]}
     return out
+
+
+def level_table(labels: dict, scores: dict, keys: Iterable[tuple[str, str]]) -> dict[str, dict[str, int]]:
+    """For a three-level judge: how often each gold mark (yes / partly / no) got each level (full / partial /
+    none). Criteria the gold labeller flags as faulty are left out."""
+    table = {g: {"full": 0, "partial": 0, "none": 0} for g in ("yes", "partly", "no")}
+    for key in keys:
+        lab, sc = labels.get(key), scores.get(key)
+        if not lab or not sc or sc.get("kind") != "levels" or "per_criterion" not in sc:
+            continue
+        flagged = {int(c.get("id", 0)) for c in lab.get("criterion_issues") or []}
+        marks = {int(c.get("id", 0)): str(c.get("met", "")).lower() for c in lab.get("criteria") or []}
+        ids = sc.get("kept_ids") or range(1, len(sc["per_criterion"]) + 1)
+        for i, v in zip(ids, sc["per_criterion"]):
+            if i not in flagged and marks.get(i) in table:
+                table[marks[i]]["full" if v >= 1 else "partial" if v > 0 else "none"] += 1
+    return table
 
 
 def calibrate_variant(labels: dict, scores: dict, keys_by_split: dict[str, list]) -> dict[str, Any]:
@@ -207,6 +233,8 @@ def calibrate_variant(labels: dict, scores: dict, keys_by_split: dict[str, list]
                       "answer_vs_accept": confusion(answer_pairs(labels, scores, pass_accept, keys)[0]),
                       "answer_at_70_vs_gold60": confusion(answer_pairs(labels, scores, 70, keys, GOLD_CUT)[0]),
                       "spearman": spearman(js, gs)}
+        if any(sc.get("kind") == "levels" for sc in scores.values()):
+            out[split]["levels"] = level_table(labels, scores, keys)
     return out
 
 
@@ -248,6 +276,10 @@ def summarize(label_rows: Sequence[dict[str, Any]], score_rows: Sequence[dict[st
 
     chosen_caps = {}
     for base in list(by_variant):
+        if any(sc.get("kind") == "levels" for sc in by_variant[base].values()):
+            for credit in (0.25, 0.0):
+                by_variant[f"{base}+partial{credit:g}"] = derived_scores(by_variant[base], item_by_id,
+                                                                         partial_credit=credit)
         variants = {"+gate": None, "+clean": drop or {}, "+clean+gate": drop or {}}
         for suffix, drop_set in variants.items():
             if "clean" in suffix and not drop:

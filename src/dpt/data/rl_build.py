@@ -8,7 +8,7 @@ Each :class:`Problem` becomes one row in verl's RL dataset format::
       "ability": "t1_num",
       "reward_model": {"style": "rule", "ground_truth": "<json of Problem.answer>"},
       "extra_info": {"uid", "task", "pool", "split", "effort", "reference_length", "pass_at_8_medium",
-                     "prompt_version", "index", "question"}
+                     "pass_at_8_medium_16k", "prompt_version", "index", "question"}
     }
 
 Notes:
@@ -47,7 +47,7 @@ from dpt.data.schema import Problem
 log = get_logger(__name__)
 
 EXTRA_INFO_KEYS = ("uid", "task", "pool", "split", "effort", "reference_length", "pass_at_8_medium",
-                   "prompt_version", "index", "question")
+                   "pass_at_8_medium_16k", "pass_at_8_medium_20k", "prompt_version", "index", "question")
 
 
 def problem_to_verl_row(p: Problem, *, index: int, effort: str = "medium", split: str = "train") -> dict[str, Any]:
@@ -59,6 +59,8 @@ def problem_to_verl_row(p: Problem, *, index: int, effort: str = "medium", split
         "effort": effort,
         "reference_length": p.answer.get("reference_length"),
         "pass_at_8_medium": p.meta.get("pass_at_8_medium"),
+        "pass_at_8_medium_16k": p.meta.get("pass_at_8_medium_16k"),   # right within 16K (difficulty short_budget)
+        "pass_at_8_medium_20k": p.meta.get("pass_at_8_medium_20k"),   # right within 20K (difficulty extra_budgets)
         "prompt_version": PROMPT_VERSION,
         "index": index,
         "question": p.question,
@@ -74,8 +76,21 @@ def problem_to_verl_row(p: Problem, *, index: int, effort: str = "medium", split
     }
 
 
+def uniform_extra_info(row: dict[str, Any]) -> dict[str, Any]:
+    """The row with every ``EXTRA_INFO_KEYS`` field in its ``extra_info`` (None when missing), in order. verl joins
+    the dev files with ``datasets.concatenate_datasets``, and run 1's pinned dev rows predate
+    ``pass_at_8_medium_16k`` (2026-11-15); one schema for every split keeps that join independent of how the
+    installed ``datasets`` aligns structs."""
+    info = row.get("extra_info")
+    if not isinstance(info, dict):
+        return row
+    return {**row, "extra_info": {**{k: info.get(k) for k in EXTRA_INFO_KEYS},
+                                  **{k: v for k, v in info.items() if k not in EXTRA_INFO_KEYS}}}
+
+
 def write_rows(rows: Sequence[dict[str, Any]], path_stem: Path) -> list[Path]:
     """Write ``<stem>.jsonl`` always, and ``<stem>.parquet`` if pandas + pyarrow are installed."""
+    rows = [uniform_extra_info(r) for r in rows]
     out = [path_stem.with_suffix(".jsonl")]
     write_jsonl(out[0], rows)
     try:

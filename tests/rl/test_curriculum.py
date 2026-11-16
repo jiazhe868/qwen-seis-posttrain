@@ -226,3 +226,23 @@ def test_no_family_weights_keep_the_old_fingerprint_and_draws():
     a, b = Curriculum(_cfg(), _pools()), Curriculum(_cfg(family_weights={}), _pools(), {}, {"x": "y"})
     assert a.state_dict()["config_fingerprint"] == b.state_dict()["config_fingerprint"]
     assert [d.uid for d in a.sample(0)] == [d.uid for d in b.sample(0)]
+
+
+def test_v2_bands_leave_out_problems_solved_at_24k_and_a_16k_run_reads_its_own_rate():
+    """2026-11-15: the bank keeps problems solved 8/8 at 24K but slowly, for the 16K seed. A 24K run gives them no
+    copies; the 16K run reads pass_at_8_medium_16k (rate_key), and the key enters the fingerprint."""
+    from dpt.rl.curriculum import DifficultyWeights
+
+    dw = DifficultyWeights.from_dict({"enabled": True, "bands": [[0.0, 1], [0.25, 4], [0.5, 3], [0.75, 2],
+                                                                 [0.875, 1], [1.0, 0]]})
+    assert [dw.copies(r) for r in (0.0, 0.125, 0.375, 0.625, 0.875, 1.0)] == [1, 4, 3, 2, 1, 0]
+    uids = [f"t1_num-m{i}" for i in range(4)]
+    pools = {"t1_num": {"main": uids, "hard": []}, "t2_code": {"main": ["c"], "hard": []},
+             "t3_report": {"main": ["r"], "hard": []}, "t4_general": {"main": ["g"], "hard": []}}
+    bands = {"enabled": True, "bands": [[0.0, 1], [0.25, 4], [0.5, 3], [0.75, 2], [0.875, 1], [1.0, 0]]}
+    at_24k = Curriculum(_cfg(difficulty_weights=bands), pools, {u: r for u, r in zip(uids, (1.0, 1.0, 0.5, 0.875))})
+    assert sorted(at_24k.samplers["t1_num"]["main"].items) == ["t1_num-m2"] * 3 + ["t1_num-m3"]
+    a, b = Curriculum(_cfg(), _pools()), Curriculum(_cfg(rate_key="pass_at_8_medium_16k"), _pools())
+    assert a.state_dict()["config_fingerprint"] != b.state_dict()["config_fingerprint"]
+    assert Curriculum(_cfg(rate_key="pass_at_8_medium"), _pools()).state_dict()["config_fingerprint"] == \
+        a.state_dict()["config_fingerprint"]

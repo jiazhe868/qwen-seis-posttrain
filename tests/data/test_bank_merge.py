@@ -179,3 +179,20 @@ def test_check_needs_enough_learnable_t1_problems_and_lists_families(tmp_path):
     assert any("graded 1–6 of 8" in p for p in problems)
     assert summary["t1_families"] == {"fam_a": {"3_4_of_8": 5}, "fam_b": {"3_4_of_8": 5, "7_of_8": 1, "hard_pool": 1}}
     assert not any("graded 1–6 of 8" in p for p in check(tmp_path, t3_not_trained=True, min_learnable=10)[1])
+
+
+def test_check_keeps_the_24k_view_for_24k_runs_and_reports_the_16k_view(tmp_path):
+    """2026-11-15: problems solved 8/8 at 24K stay in the bank for the 16K seed; the 24K gates leave them out."""
+    rows = [_row(f"a{i}", "t1_num", 0.5) for i in range(20)] + [_row(f"b{i}", "t1_num", 1.0) for i in range(80)]
+    for i, r in enumerate(rows):
+        r["extra_info"]["pass_at_8_medium_16k"] = 0.25 if i < 60 else 1.0
+    write_jsonl(tmp_path / "rl_main.jsonl", rows)
+    summary, problems = check(tmp_path, t3_not_trained=True, min_learnable=0)
+    assert summary["learnable_t1"] == 20 and summary["expected_mixed_t1_at_step_1"] > 0.9    # the 80 left out
+    assert summary["learnable_t1_16k"] == 60 and not any("mixed results" in p for p in problems)
+    assert "learnable_t1_20k" not in summary                                     # no 20K rates: no 20K view
+    for i, r in enumerate(rows):
+        r["extra_info"]["pass_at_8_medium_20k"] = 0.5 if i < 70 else 1.0
+    write_jsonl(tmp_path / "rl_main.jsonl", rows)
+    summary, _ = check(tmp_path, t3_not_trained=True, min_learnable=0)
+    assert summary["learnable_t1_20k"] == 70 and summary["expected_mixed_t1_at_step_1_20k"] > 0.6

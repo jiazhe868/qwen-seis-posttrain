@@ -1,21 +1,32 @@
 # =============================================================================
-# RL v2, seed 3 (2026-11-15, the user's decisions): the recipe of rl_9b_v2.yaml with a third seed and ONE change,
-# so seeds 1–2 are its control. Queued as its own 8-node job:
+# RL v2, seed 3 (2026-11-15, the user's decisions): the recipe of rl_9b_v2.yaml with a third seed and a 16K budget,
+# so seeds 1–2 (24K) are its control. Queued as its own 8-node job:
 #
 #   scripts/slurm/submit_window.sh rl-seed-queue 3     # rl_v2_queue.slurm → rl_v2_job.sh with this config
 #
-# The change: a T1 answer that runs out of tokens counts as wrong instead of leaving the loss. On D-Num-hard at 32K,
-# 28% of the SFT model's answers never finish, and in 44–87% of those the right value is already in the reasoning
-# (docs/talk/data/failure_types.json): the model keeps checking instead of answering. Masked, such an answer gets no
-# gradient. Counted as wrong (score 0, no overlong penalty) it is pushed down whenever another answer in its group
-# finishes right. Read against seeds 1–2: D-Num-hard at 32K, its unfinished and wrong-value shares, and dev/t1_hard.
+# All three seeds count a T1 answer that runs out of tokens as wrong and have no soft length penalty (rl_9b_v2.yaml,
+# decided the night of 11-15); the two settings are repeated below so this file reads on its own. The change is the
+# budget: 16K whatever the 24K memory test says (rl_run.cap), with the difficulty weights read from the pass rate
+# within 16K (pass_at_8_medium_16k from the re-grade). A 16K cut pushes harder toward stopping once the value is
+# found: in the pilot, all 25 right answers that finished between 16K and 24K had written the value by token 16,384
+# (median 3,340). It also gives fewer groups a gradient at step 1, 41% of the pilot problems against 49% at 24K,
+# because 15 groups whose right answers were all slow become 0/8.
+# Read against seeds 1–2: D-Num-hard at 32K, its unfinished and wrong-value shares, and dev/t1_hard.
 # =============================================================================
 defaults_from: rl_9b_v2.yaml
 requires_model_line: qwen35_9b
 
 project:
   seed: 3
+  thinking:
+    rl_overlong_max_penalty: 0.0
 
 rl:
   sampling:
     truncated_as_wrong_tasks: [t1_num]
+
+curriculum:
+  rate_key: pass_at_8_medium_16k
+
+rl_run:
+  cap: 16k

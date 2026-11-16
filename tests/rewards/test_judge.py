@@ -154,3 +154,59 @@ def test_atomic_checks_are_scored_yes_no_with_evidence():
         RubricJudge.parse(json.dumps({"checks": [{"id": 1, "verdict": "maybe", "evidence": "x"}]}), 1)
     with pytest.raises(JudgeParseError):
         RubricJudge.parse(json.dumps({"checks": [{"id": 1, "verdict": "yes", "evidence": "x"}]}), 2)
+
+
+def test_latex_in_quoted_evidence_is_parsed():
+    """2026-11-16: 48 of 600 rubric scorings failed with "Invalid \\escape" on LaTeX quoted as evidence. A stray
+    backslash is doubled and the reply parsed again; valid escapes, an escaped backslash among them, stay."""
+    from dpt.rewards.judge import RubricJudge, _escape_stray_backslashes
+
+    # the judge's text: "\alpha" and "\usepackage" are not JSON escapes, "\\" and "\u00e9" are
+    reply = (r'{"checks": [{"id": 1, "verdict": "yes", "evidence": "the \alpha term, \usepackage"}, '
+             r'{"id": 2, "verdict": "no", "evidence": "a \\ b \u00e9"}]}')
+    assert RubricJudge.parse(reply, 2) == [1.0, 0.0]
+    fixed = json.loads(_escape_stray_backslashes(reply))["checks"]
+    assert fixed[0]["evidence"] == r"the \alpha term, \usepackage" and fixed[1]["evidence"] == "a \\ b \u00e9"
+    with pytest.raises(JudgeParseError):
+        RubricJudge.parse('{"checks": [{"id": 1, "verdict": "yes", "evidence": "x"}', 1)   # no closing brace
+
+
+def test_the_first_json_object_is_read_and_raw_newlines_are_allowed():
+    """2026-11-16: three replies wrote a second JSON object after the first ("Extra data"), and a raw newline inside a
+    quoted span is not strict JSON. The first object is read and the text after it ignored."""
+    from dpt.rewards.judge import RubricJudge
+
+    first = json.dumps({"checks": [{"id": 1, "verdict": "yes", "evidence": "x"}]})
+    assert RubricJudge.parse(first + "\n" + first.replace("yes", "no"), 1) == [1.0]
+    assert RubricJudge.parse("My verdict: " + first + " Hope this helps {:)}", 1) == [1.0]
+    assert RubricJudge.parse('{"checks": [{"id": 1, "verdict": "yes", "evidence": "line one\nline two"}]}', 1) == [1.0]
+    # a draft closed before its second check, then the whole object: the first object with every check is used
+    draft = json.dumps({"checks": [{"id": 1, "verdict": "no", "evidence": ""}]})
+    full = json.dumps({"checks": [{"id": 1, "verdict": "yes", "evidence": "x"}, {"id": 2, "verdict": "no", "evidence": ""}]})
+    assert RubricJudge.parse(draft + "\nSorry, again:\n" + full, 2) == [1.0, 0.0]
+    with pytest.raises(JudgeParseError):
+        RubricJudge.parse("[1, 2]", 1)
+
+
+def test_three_level_criteria_are_parsed_with_partial_credit():
+    """2026-11-16: about 70% of the criteria the gold labels mark "partly met" were passed as met by the 0-10 and
+    the yes/no judges. A third level gives the judge a place for them; full 1, partial 0.5, none 0, and a credit
+    without a quoted span is none, as for the yes/no checks."""
+    from dpt.rewards.judge import RubricJudge, rubric_kind, rubric_messages, weighted_score
+
+    rubric = [{"three_level": "The answer gives Vp/Vs as 1.73.", "weight": 2.0},
+              {"three_level": "The answer derives Poisson's ratio 0.25.", "weight": 1.0},
+              {"three_level": "The answer names the Wadati diagram.", "weight": 1.0}]
+    assert rubric_kind(rubric) == "levels" and rubric_kind([{"check": "c", "weight": 1}]) == "checks"
+    assert rubric_kind([{"criterion": "c", "weight": 1}]) == "criteria"
+    assert '"full"' in rubric_messages("q", "a", rubric)[0]["content"]
+    reply = json.dumps({"criteria": [{"id": 1, "level": "full", "evidence": "Vp/Vs is 1.73", "missing": ""},
+                                     {"id": 2, "level": "partial", "evidence": "sigma about 0.3", "missing": "0.25"},
+                                     {"id": 3, "level": "full", "evidence": "", "missing": ""}]})
+    per = RubricJudge.parse(reply, 3, "levels")
+    assert per == [1.0, 0.5, 0.0] and weighted_score(per, rubric) == (2.0 + 0.5) / 4.0
+    assert RubricJudge.parse(reply, 3) == per                                  # the reply's shape tells the kind
+    with pytest.raises(JudgeParseError):                                       # 0-10 scores for a three-level rubric
+        RubricJudge.parse(json.dumps({"criteria": [{"id": i, "score": 7} for i in (1, 2, 3)]}), 3, "levels")
+    with pytest.raises(JudgeParseError):
+        RubricJudge.parse(json.dumps({"criteria": [{"id": 1, "level": "mostly", "evidence": "x"}]}), 1, "levels")

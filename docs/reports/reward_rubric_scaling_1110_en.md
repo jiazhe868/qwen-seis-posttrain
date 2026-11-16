@@ -360,9 +360,11 @@ Counts only: `docs/talk/data/screening_1114.json`.
 
 ## 10. Update (2026-11-15, evening): the reward side of RL v2
 
-I changed one reward rule, on seed 3 only: a numeric answer that runs out of tokens scores 0 and stays in its group.
-I dropped the overlong penalty for it, because a cut-off answer scored below a finished wrong one would teach the
-model to finish wrong rather than late. Everything else in the rewards stays. T1 agrees with the grader on 99.3–100%
+I changed one reward rule, first on seed 3 and, since the night of November 15, on every seed: a numeric answer
+that runs out of tokens scores 0 and stays in its group. The soft length penalty is gone with it. A cut-off answer
+scored below a finished wrong one would teach the model to finish wrong rather than late, and on the hard families
+the penalty gave a right answer at 23.5K a negative advantage while a cut-off answer got 0. Everything else in the
+rewards stays. T1 agrees with the grader on 99.3–100%
 of answers, and run 1's trouble was its bank, which the SFT model had already solved (README §8.3).
 
 I am keeping the report task out of training. On 100 report questions, after a review of all 300 answers, the gold
@@ -370,6 +372,13 @@ labels agree with Luna's pairwise verdicts on 0.78–0.79 of the decisive pairs 
 is the T3 reward model, and it calls about 70% of the pairs that the gold labels give to the base a win for the
 trained model. Training on that would teach the model what Gemma likes. A rubric version has to reach about 0.75
 on held-out questions before reports go back in.
+
+Criterion by criterion (2026-11-16, 31 held-out questions; `dpt.eval.rubric_calibration`), the reward judge passes
+23% of the criteria the gold marks not met and fails 2% of those it marks met, but it calls 84% of the partly met
+ones met, and the gold marks 41% of all criteria partly met. Per answer, at its best pass mark, it passes 71% of the
+answers the gold scores below 60. The same criteria as yes/no checks with a quoted span pass 45% and fail 24%, and on
+pairs of answers to the same question both versions order 65–68% of the pairs the way the gold does. The next
+version gives the judge three levels per criterion, full, partial or none (README §6.5).
 
 ## Data and code
 

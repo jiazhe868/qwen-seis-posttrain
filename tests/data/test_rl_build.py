@@ -74,3 +74,16 @@ def test_dev_split_comes_from_candidates_fixed_before_the_difficulty_pass():
         dev = select_dev(kept, fraction=0.05, seed=1, among=cand)
         assert dev == select_dev(kept, fraction=0.05, seed=1) and len(dev) == 14
     assert select_dev(probs, fraction=0.05, seed=1, among=set()) == set()          # never outside them
+
+
+def test_every_split_gets_the_same_extra_info_fields(tmp_path):
+    """2026-11-15: a pinned v1 dev row without pass_at_8_medium_16k is written with it (None), so verl can join it
+    with the new rows whatever datasets version aligns the structs."""
+    from dpt.common.io import read_jsonl
+    from dpt.data.rl_build import write_rows
+
+    old = {"data_source": "t1_num", "extra_info": {"uid": "a", "pass_at_8_medium": 0.5, "note": "kept"}}
+    write_rows([old], tmp_path / "split")
+    row = next(iter(read_jsonl(tmp_path / "split.jsonl")))
+    assert set(EXTRA_INFO_KEYS) <= set(row["extra_info"])
+    assert row["extra_info"]["pass_at_8_medium_16k"] is None and row["extra_info"]["note"] == "kept"

@@ -55,6 +55,20 @@ class DifficultyConfig:
     skip_tasks: list[str] = field(default_factory=list)   # tasks kept without calibration
     max_concurrency: int = 32
     seed: int = 1
+    # A second, shorter budget (tokens; 0 = off), 2026-11-15. A reply counts as right within it only if it is right
+    # and at most this long. A problem is dropped only when all n replies are right within it, and a template counts
+    # as mastered on the same test, so a problem solved n/n at max_tokens but slowly stays in the bank: a run that
+    # trains at the shorter budget, where slow answers are cut off, learns from it (RL v2 seed 3 at 16K).
+    short_budget: int = 0
+    # More budgets (tokens) whose pass rates are only recorded, pass_at_8_medium_<n>k, for runs that train there; the
+    # drop and the mastered test stay on short_budget (2026-11-15: 20K, a candidate budget for RL v2 seed 3).
+    extra_budgets: list[int] = field(default_factory=list)
+
+    def budget_key(self, budget: int) -> str:
+        return f"pass_at_{self.n_samples}_{self.effort}_{budget // 1024}k"
+
+    def short_key(self) -> str:
+        return self.budget_key(self.short_budget)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any] | None) -> "DifficultyConfig":
@@ -75,40 +89,73 @@ class DifficultyResult:
                 "histogram": {t: dict(sorted(h.items())) for t, h in self.histogram.items()}}
 
 
+LengthFn = Callable[[str], int]
+
+
+def chars_as_tokens(text: str) -> int:
+    """A reply's length in tokens estimated from its characters (rewards.length.est_chars_per_token)."""
+    return round(len(text) / 3.2)
+
+
+def _grade(p: Problem, generate_fn: Callable[..., list[str]], grade_fn: GradeFn, cfg: DifficultyConfig,
+           length_fn: LengthFn) -> tuple[int, int]:
+    """(replies right, replies right within ``cfg.short_budget`` tokens); the two are equal when it is off. The pass
+    rate within each of ``cfg.extra_budgets`` is written on the problem here."""
+    seed = derive_seed(cfg.seed, "difficulty", p.uid)
+    outs = generate_fn(messages_for_problem(p), n=cfg.n_samples, effort=cfg.effort, max_tokens=cfg.max_tokens,
+                       seed=seed)
+    thr = cfg.correct_threshold.get(p.task, 1.0)
+    right = [grade_fn(p, o) >= thr for o in outs]
+    if not (cfg.short_budget or cfg.extra_budgets):
+        return sum(right), sum(right)
+    lengths = [length_fn(o) if r else 0 for r, o in zip(right, outs)]      # only right replies need a length
+    for budget in cfg.extra_budgets:
+        p.meta[cfg.budget_key(budget)] = sum(r and n <= budget for r, n in zip(right, lengths)) / cfg.n_samples
+    if not cfg.short_budget:
+        return sum(right), sum(right)
+    return sum(right), sum(r and n <= cfg.short_budget for r, n in zip(right, lengths))
+
+
+def _rates(p: Problem, k: int, k_short: int, cfg: DifficultyConfig) -> int:
+    """Write the pass rate(s) on the problem; return the count that decides "solved n/n" (the short one if on)."""
+    n = cfg.n_samples
+    p.meta[f"pass_at_{n}_{cfg.effort}"] = k / n
+    if cfg.short_budget:
+        p.meta[cfg.short_key()] = k_short / n
+        return k_short
+    return k
+
+
 def calibrate(
     problems: list[Problem],
     generate_fn: Callable[..., list[str]],
     grade_fn: GradeFn,
     cfg: DifficultyConfig,
+    length_fn: LengthFn = chars_as_tokens,
 ) -> DifficultyResult:
     """Sample ``cfg.n_samples`` responses per problem, grade them, and assign pools.
 
     Writes ``meta.pass_at_8_medium`` (fraction correct) and ``meta.pool`` on kept problems.
     """
 
-    def _one(p: Problem) -> tuple[Problem, int]:
+    def _one(p: Problem) -> tuple[Problem, int, int]:
         if p.task in cfg.skip_tasks:
-            return p, -1
-        seed = derive_seed(cfg.seed, "difficulty", p.uid)
-        outs = generate_fn(messages_for_problem(p), n=cfg.n_samples, effort=cfg.effort,
-                           max_tokens=cfg.max_tokens, seed=seed)
-        thr = cfg.correct_threshold.get(p.task, 1.0)
-        k = sum(1 for o in outs if grade_fn(p, o) >= thr)
-        return p, k
+            return p, -1, -1
+        return (p, *_grade(p, generate_fn, grade_fn, cfg, length_fn))
 
     with ThreadPoolExecutor(max_workers=max(1, cfg.max_concurrency)) as ex:
         results = list(ex.map(_one, problems))
 
     res = DifficultyResult(kept=[])
     hist: dict[str, Counter] = {}
-    for p, k in results:
+    for p, k, k_short in results:
         if k < 0:  # skipped task: keep as main pool, no pass rate
             p.meta.setdefault("pool", "main")
             res.kept.append(p)
             continue
         hist.setdefault(p.task, Counter())[k] += 1
-        p.meta[f"pass_at_{cfg.n_samples}_{cfg.effort}"] = k / cfg.n_samples
-        if cfg.drop_all_correct and k == cfg.n_samples:
+        solved = _rates(p, k, k_short, cfg)
+        if cfg.drop_all_correct and solved == cfg.n_samples:
             res.dropped.append({"uid": p.uid, "reason": "all_correct", "k": k})
             continue
         p.meta["pool"] = "hard" if (cfg.hard_pool_if_none_correct and k == 0) else "main"
@@ -167,6 +214,7 @@ def calibrate_audit(
     grade_fn: GradeFn,
     cfg: DifficultyConfig,
     acfg: DifficultyAuditConfig,
+    length_fn: LengthFn = chars_as_tokens,
 ) -> tuple[DifficultyResult, dict[str, dict[str, Any]]]:
     """Like :func:`calibrate`, on a sample per :func:`difficulty_group`. Returns the result and a group report."""
     import hashlib
@@ -177,22 +225,15 @@ def calibrate_audit(
             groups.setdefault(difficulty_group(p), []).append(p)
     rank = lambda p: hashlib.sha256(f"{cfg.seed}:{p.uid}".encode()).hexdigest()  # noqa: E731
     audited = [p for g in groups.values() for p in sorted(g, key=rank)[:acfg.per_group]]
-
-    def _k(p: Problem) -> int:
-        seed = derive_seed(cfg.seed, "difficulty", p.uid)
-        outs = generate_fn(messages_for_problem(p), n=cfg.n_samples, effort=cfg.effort,
-                           max_tokens=cfg.max_tokens, seed=seed)
-        thr = cfg.correct_threshold.get(p.task, 1.0)
-        return sum(1 for o in outs if grade_fn(p, o) >= thr)
-
-    with ThreadPoolExecutor(max_workers=max(1, cfg.max_concurrency)) as ex:
-        ks = dict(zip((p.uid for p in audited), ex.map(_k, audited)))
+    both = _count_correct(audited, generate_fn, grade_fn, cfg, length_fn)
+    ks = {u: k for u, (k, _) in both.items()}
+    solved_n = {u: k_short for u, (_, k_short) in both.items()}     # "solved n/n" uses the short budget if on
 
     n = cfg.n_samples
     report: dict[str, dict[str, Any]] = {}
     for key, members in sorted(groups.items()):
         k = [ks[p.uid] for p in members if p.uid in ks]
-        share_all = sum(x == n for x in k) / len(k)
+        share_all = sum(solved_n[p.uid] == n for p in members if p.uid in ks) / len(k)
         share_none = sum(x == 0 for x in k) / len(k)
         decision = ("drop" if share_all >= acfg.drop_share else "hard" if share_none >= acfg.hard_share else "keep")
         report[key] = {"size": len(members), "audited": len(k), "mean_pass": round(sum(k) / (n * len(k)), 4),
@@ -209,13 +250,14 @@ def calibrate_audit(
         key = difficulty_group(p)
         g = report[key]
         k = ks.get(p.uid)
+        solved = None
         if k is not None:
             hist.setdefault(p.task, Counter())[k] += 1
-            p.meta[f"pass_at_{n}_{cfg.effort}"] = k / n
+            solved = _rates(p, k, solved_n[p.uid], cfg)
         else:
             p.meta[f"pass_at_{n}_{cfg.effort}"] = g["mean_pass"]          # the group's estimate
         p.meta["difficulty_audit"] = {"group": key, "decision": g["decision"], "audited": k is not None}
-        if g["decision"] == "drop" or (cfg.drop_all_correct and k == n):
+        if g["decision"] == "drop" or (cfg.drop_all_correct and solved == n):
             res.dropped.append({"uid": p.uid, "reason": "all_correct" if k == n else "group_all_correct",
                                 "group": key, "k": k})
             continue
@@ -232,18 +274,11 @@ def calibrate_audit(
 # Two-stage mode (audit_all): audit each group, then sample every problem of the groups that survive
 # =============================================================================================
 def _count_correct(problems: list[Problem], generate_fn: Callable[..., list[str]], grade_fn: GradeFn,
-                   cfg: DifficultyConfig) -> dict[str, int]:
-    """uid → number of the ``n_samples`` replies graded correct (same seeds and settings as the other modes)."""
-
-    def _k(p: Problem) -> int:
-        seed = derive_seed(cfg.seed, "difficulty", p.uid)
-        outs = generate_fn(messages_for_problem(p), n=cfg.n_samples, effort=cfg.effort,
-                           max_tokens=cfg.max_tokens, seed=seed)
-        thr = cfg.correct_threshold.get(p.task, 1.0)
-        return sum(1 for o in outs if grade_fn(p, o) >= thr)
-
+                   cfg: DifficultyConfig, length_fn: LengthFn = chars_as_tokens) -> dict[str, tuple[int, int]]:
+    """uid → (replies graded correct, of those within ``cfg.short_budget``), same seeds and settings everywhere."""
     with ThreadPoolExecutor(max_workers=max(1, cfg.max_concurrency)) as ex:
-        return dict(zip((p.uid for p in problems), ex.map(_k, problems)))
+        return dict(zip((p.uid for p in problems),
+                        ex.map(lambda p: _grade(p, generate_fn, grade_fn, cfg, length_fn), problems)))
 
 
 def calibrate_two_stage(
@@ -252,6 +287,7 @@ def calibrate_two_stage(
     grade_fn: GradeFn,
     cfg: DifficultyConfig,
     acfg: DifficultyAuditConfig,
+    length_fn: LengthFn = chars_as_tokens,
 ) -> tuple[DifficultyResult, dict[str, dict[str, Any]]]:
     """Per-problem pass rates without sampling templates the model has already mastered (mode ``audit_all``).
 
@@ -270,22 +306,23 @@ def calibrate_two_stage(
             groups.setdefault(difficulty_group(p), []).append(p)
     rank = lambda p: hashlib.sha256(f"{cfg.seed}:{p.uid}".encode()).hexdigest()  # noqa: E731
     audited = [p for g in groups.values() for p in sorted(g, key=rank)[:acfg.per_group]]
-    ks = _count_correct(audited, generate_fn, grade_fn, cfg)
+    both = _count_correct(audited, generate_fn, grade_fn, cfg, length_fn)
 
     n = cfg.n_samples
     report: dict[str, dict[str, Any]] = {}
     for key, members in sorted(groups.items()):
-        k = [ks[p.uid] for p in members if p.uid in ks]
-        share_all = sum(x == n for x in k) / len(k)
+        k = [both[p.uid][0] for p in members if p.uid in both]
+        share_all = sum(both[p.uid][1] == n for p in members if p.uid in both) / len(k)   # mastered within budget
         share_none = sum(x == 0 for x in k) / len(k)
         report[key] = {"size": len(members), "audited": len(k), "mean_pass_audit": round(sum(k) / (n * len(k)), 4),
                        "share_all_correct": round(share_all, 4), "share_none_correct": round(share_none, 4),
                        "decision": "drop" if share_all >= acfg.drop_share else "keep"}
     rest = [p for key, members in groups.items() if report[key]["decision"] == "keep"
-            for p in members if p.uid not in ks]
+            for p in members if p.uid not in both]
     log.info("difficulty (audit_all): %d groups, %d dropped whole; sampling %d more problems",
              len(report), sum(g["decision"] == "drop" for g in report.values()), len(rest))
-    ks.update(_count_correct(rest, generate_fn, grade_fn, cfg))
+    both.update(_count_correct(rest, generate_fn, grade_fn, cfg, length_fn))
+    ks = {u: k for u, (k, _) in both.items()}
 
     res = DifficultyResult(kept=[])
     hist: dict[str, Counter] = {}
@@ -302,8 +339,8 @@ def calibrate_two_stage(
                                 "group": key, "k": k})
             continue
         hist.setdefault(p.task, Counter())[k] += 1
-        p.meta[f"pass_at_{n}_{cfg.effort}"] = k / n
-        if cfg.drop_all_correct and k == n:
+        solved = _rates(p, k, both[p.uid][1], cfg)
+        if cfg.drop_all_correct and solved == n:
             res.dropped.append({"uid": p.uid, "reason": "all_correct", "group": key, "k": k})
             continue
         p.meta["pool"] = "hard" if (cfg.hard_pool_if_none_correct and k == 0) else "main"

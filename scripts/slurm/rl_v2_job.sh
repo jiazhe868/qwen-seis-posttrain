@@ -21,7 +21,8 @@
 #
 # Logs: this job's output, and $WORK/dpt/logs/rlv2_<job>/ (bank build, 24K test).
 # Dry run: DPT_SLURM_DRY_RUN=1 DPT_SLURM_NODES="<8 nodes>" bash scripts/slurm/rl_v2_job.sh
-# DPT_RL_CAP=16k skips the 24K test; DPT_RL_CAP=24k skips it and trains at 24K (DPT_RL_V2_CAP is the older name).
+# DPT_RL_CAP=16k skips the 24K test; DPT_RL_CAP=24k or 20k skips it and trains there (DPT_RL_V2_CAP is the older
+# name).
 # Job 2 runs RL v2's seed 2 with this script (2026-11-15; RL v3 of 11-12 was dropped with SFT v2):
 # DPT_RL_CONFIG=rl/rl_9b_v2_seed2.yaml DPT_FINAL_ROW=rl_v2_seed2. Seed 3 is a third job, queued with
 # `submit_window.sh rl-seed-queue 3`. The run's directory, cap file and 24K test follow the config's run name.
@@ -53,6 +54,9 @@ RUN_DIR="$(json_field "${DESCRIBE}" run_dir)"
 RUN_NAME="$(basename "${RUN_DIR}")"; CAP_FILE="${RUN_DIR}.cap.json"
 # 24K: the response cap, the length penalty from 20K (the same 4K ramp as at 16K), and the MTP head frozen
 CAP_24K=(project.thinking.rl_max_response=24576 project.thinking.rl_overlong_start=20480
+         verl.actor_rollout_ref.model.mtp.enable_train=false)
+# 20K, a candidate budget for seed 3 (2026-11-15): the same with a 16K → 20K ramp. It fits wherever 24K does.
+CAP_20K=(project.thinking.rl_max_response=20480 project.thinking.rl_overlong_start=16384
          verl.actor_rollout_ref.model.mtp.enable_train=false)
 
 time_left_s() { if dry; then echo 172800; else python -c 'from dpt.launch.walltime import slurm_time_left; print(slurm_time_left())'; fi; }
@@ -140,6 +144,11 @@ fi
 
 # ---- 3. the 24K test -------------------------------------------------------------------------------------------------
 CAP="${DPT_RL_CAP:-${DPT_RL_V2_CAP:-}}"
+# A recipe that fixes its cap (seed 3 trains at 16K: rl_run.cap) skips the test and the other seeds' choice.
+if [[ -z "${CAP}" ]]; then
+  CAP="$(json_field "${DESCRIBE}" cap)"
+  [[ -n "${CAP}" ]] && tlog "the recipe fixes the cap: ${CAP} (rl_run.cap in ${RL_CONFIG})"
+fi
 if [[ -z "${CAP}" && -f "${CAP_FILE}" ]]; then
   CAP="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["cap"])' "${CAP_FILE}")"
   tlog "the run already chose its cap: ${CAP} (${CAP_FILE})"
@@ -201,8 +210,9 @@ fi
 RL_ARGS=(--config "${RL_CONFIG}")
 case "${CAP}" in
   24k) RL_ARGS+=("${CAP_24K[@]}") ;;
+  20k) RL_ARGS+=("${CAP_20K[@]}") ;;
   16k) ;;
-  *) tdie "unknown cap '${CAP}' (DPT_RL_V2_CAP: 16k or 24k)" ;;
+  *) tdie "unknown cap '${CAP}' (DPT_RL_CAP: 16k, 20k or 24k)" ;;
 esac
 
 # ---- 4. RL v2 ---------------------------------------------------------------------------------------------------

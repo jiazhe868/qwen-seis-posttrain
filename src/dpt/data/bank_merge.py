@@ -159,9 +159,20 @@ def check(bank: Path, reference_dev: Path | None = None, t3_not_trained: bool = 
     summary["t3_rows"], summary["t3_not_atomic"] = len(t3), not_atomic
 
     summary["t3_trained"] = not t3_not_trained
-    t1_rates = [x for x in (rate_of(r) for r in main if task_of(r) == "t1_num") if isinstance(x, (int, float))]
+    # The 24K view, for the runs at 24K. Problems solved 8/8 at 24K stay in the bank since the 16K re-grade
+    # (2026-11-15) only for a run at 16K; a 24K run gives them no copies, so they are left out of these estimates.
+    t1_rates = [x for x in (rate_of(r) for r in main if task_of(r) == "t1_num")
+                if isinstance(x, (int, float)) and x < 1]
     summary["expected_mixed_t1_at_step_1"] = round(expected_mixed_share(t1_rates), 3)
     summary["learnable_t1"] = sum(0.1 < x < 0.8 for x in t1_rates)          # graded 1–6 of 8
+    # The 16K and 20K views, for a run there that counts a cut-off answer as wrong: mixed when 1–7 of 8 are right in
+    # time (the 20K rate since 2026-11-15, difficulty extra_budgets).
+    for budget in ("16k", "20k"):
+        rates = [x for x in ((r.get("extra_info") or {}).get(f"pass_at_8_medium_{budget}") for r in main
+                             if task_of(r) == "t1_num") if isinstance(x, (int, float))]
+        if rates or budget == "16k":
+            summary[f"learnable_t1_{budget}"] = sum(0 < x < 1 for x in rates)
+            summary[f"expected_mixed_t1_at_step_1_{budget}"] = round(expected_mixed_share(rates), 3)
     summary["t1_families"] = t1_family_bands(bank, main, hard)
 
     if not summary["main"].get("t1_num"):
@@ -181,7 +192,7 @@ def check(bank: Path, reference_dev: Path | None = None, t3_not_trained: bool = 
             problems.append(f"dev split differs from {reference_dev} ({len(mine)} vs {len(ref)} rows)")
     b = summary["pass_rate_bands"].get("t1_num", {})
     hardish = b.get("le_3_of_8", 0) + b.get("4_5_of_8", 0)
-    if b and hardish < 0.1 * max(1, sum(b.values())):
+    if b and hardish < 0.1 * max(1, sum(v for k, v in b.items() if k != "8_of_8")):
         problems.append(f"only {hardish} T1 main problems at 5/8 or below")
     summary["problems"] = problems
     return summary, problems

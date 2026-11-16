@@ -27,7 +27,8 @@ Everything returned is plain numpy. Two metric helpers:
   all-wrong groups (forgetting) and truncated responses are what the filter
   removes.
 * the ``metrics`` of :class:`StepAdvantages`: values about the *trained* batch
-  (advantage gains, gradient shares), named per :mod:`dpt.monitoring.keys`.
+  (advantage gains, gradient shares, the length gap inside groups), named per
+  :mod:`dpt.monitoring.keys`.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from typing import Mapping, Sequence
 import numpy as np
 
 from dpt.common.types import TASKS
+from dpt.monitoring import keys as K
 from dpt.rl.advantage import TaskAdvantageScaler, TaskLossNormalizer, group_mean_advantage, token_shares
 from dpt.rl.filtering import scores_and_validity, zero_advantage_mask
 
@@ -52,6 +54,35 @@ def _group_std(r: np.ndarray, gids: Sequence[str], valid: np.ndarray) -> np.ndar
         v = [i for i in idx if valid[i]]
         if len(v) > 1:
             out[idx] = float(np.std(r[v]))
+    return out
+
+
+def within_group_length_gap(adv: np.ndarray, lens: np.ndarray, gids: Sequence[str], tids: np.ndarray,
+                            mask: np.ndarray, keys: tuple[str, str] = (K.TASK_LEN_GAP_WITHIN,
+                                                                       K.TASK_LEN_GAP_WITHIN_NEG)) -> dict[str, float]:
+    """Which way a step pushes answer length, per task. Inside each group that carries gradient: the mean length of
+    the answers the step pushes up minus that of the answers it pushes down, each weighted by its advantage,
+    sum(A_i L_i) / sum(max(A_i, 0)) (the advantages of a group sum to zero). For a right/wrong reward this is the mean
+    length of the right answers minus that of the wrong ones. Averaged over groups, with the share below zero.
+
+    A gap of global means can point the other way (Simpson's paradox): run 1 logged only the full-batch means
+    (TASK_LEN_CORRECT / TASK_LEN_INCORRECT), which stayed about equal while its answers kept getting shorter (third
+    review of RL v2, 2026-11-15). The rewards are the ones the loss sees: with the overlong penalty, and with a cut-off
+    answer at 0 and its full length for the truncated_as_wrong_tasks."""
+    groups: dict[str, list[int]] = {}
+    for i, g in enumerate(gids):
+        if mask[i]:
+            groups.setdefault(g, []).append(i)
+    gaps: dict[str, list[float]] = {}
+    for idx in groups.values():
+        a = adv[idx]
+        up = float(np.clip(a, 0.0, None).sum())
+        if up > 0:
+            gaps.setdefault(str(tids[idx[0]]), []).append(float((a * lens[idx]).sum()) / up)
+    out: dict[str, float] = {}
+    for t, gs in gaps.items():
+        out[K.task_key(keys[0], t)] = float(np.mean(gs))
+        out[K.task_key(keys[1], t)] = float(np.mean(np.asarray(gs) < 0))
     return out
 
 
@@ -92,6 +123,13 @@ def compute_step_advantages(
 
     adv = group_mean_advantage(r, gids, valid=valid)
     degenerate = zero_advantage_mask(r, gids, valid=valid, eps=eps)
+    length_gap = within_group_length_gap(adv, lens, gids, tids, valid & ~degenerate)
+    # over finished answers only, with each group's mean taken over them (fourth review of RL v2, 2026-11-15)
+    finished = valid & ~truncated
+    length_gap.update(within_group_length_gap(
+        group_mean_advantage(r, gids, valid=finished), lens, gids, tids,
+        finished & ~zero_advantage_mask(r, gids, valid=finished, eps=eps),
+        keys=(K.TASK_LEN_GAP_FINISHED, K.TASK_LEN_GAP_FINISHED_NEG)))
     if normalize_by_group_std:
         # Ablation A2 only (original GRPO). Production keeps it off: dividing by the group std
         # inflates nearly-all-correct / nearly-all-wrong groups and biases learning by difficulty.
@@ -121,6 +159,7 @@ def compute_step_advantages(
             for t in present:
                 metrics[f"task/{t}/grad_share"] = gs[t]
     metrics["batch/trained_valid_frac"] = float(valid[real].mean()) if real.any() else 0.0
+    metrics.update(length_gap)
     return StepAdvantages(seq_adv=adv, valid=valid, truncated=truncated, metrics=metrics)
 
 

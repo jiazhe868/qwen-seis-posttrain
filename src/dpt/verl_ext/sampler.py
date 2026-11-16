@@ -48,10 +48,10 @@ def build_pools(dataset: Any) -> tuple[dict[str, dict[str, list[str]]], dict[str
     return pools, index
 
 
-def build_pools_and_rates(dataset: Any) -> tuple[dict[str, dict[str, list[str]]], dict[str, int],
-                                                 dict[str, float | None]]:
-    """:func:`build_pools` plus each uid's pass rate (``extra_info.pass_at_8_medium``; None when absent), for the
-    curriculum's difficulty weights (2026-11-07)."""
+def build_pools_and_rates(dataset: Any, rate_key: str = "pass_at_8_medium") -> tuple[
+        dict[str, dict[str, list[str]]], dict[str, int], dict[str, float | None]]:
+    """:func:`build_pools` plus each uid's pass rate (``extra_info[rate_key]``; None when absent), for the
+    curriculum's difficulty weights (2026-11-07). A 16K run reads ``pass_at_8_medium_16k`` (2026-11-15)."""
     tasks = _column(dataset, "data_source")
     infos = _column(dataset, "extra_info")
     pools: dict[str, dict[str, list[str]]] = defaultdict(lambda: {"main": [], "hard": []})
@@ -65,7 +65,7 @@ def build_pools_and_rates(dataset: Any) -> tuple[dict[str, dict[str, list[str]]]
             continue
         index[uid] = i
         pools[str(t)][str(info.get("pool", "main"))].append(uid)
-        r = info.get("pass_at_8_medium")
+        r = info.get(rate_key)
         rates[uid] = float(r) if isinstance(r, (int, float)) and r == r else None
     return {k: dict(v) for k, v in pools.items()}, index, rates
 
@@ -81,8 +81,8 @@ def read_family_map(path: str) -> dict[str, str]:
 
 class CurriculumSampler(Sampler[int]):
     def __init__(self, dataset: Any, curriculum_cfg: Mapping[str, Any], total_steps: int) -> None:
-        pools, self.index, rates = build_pools_and_rates(dataset)
         cfg = CurriculumConfig.from_dict(dict(curriculum_cfg))
+        pools, self.index, rates = build_pools_and_rates(dataset, cfg.rate_key)
         families = read_family_map(cfg.family_map) if cfg.family_map else None
         self.curriculum = Curriculum(cfg, pools, rates, families)
         self.prompts_per_step = int(curriculum_cfg["prompts_per_step"])

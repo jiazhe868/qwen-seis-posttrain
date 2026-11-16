@@ -815,9 +815,9 @@ def test_job_2_runs_rl_v2_with_seed_2_and_evaluates_it(tmp_path):
     assert "dpt.eval.budget continue --set d_num_hard --row rl_v2_seed2" in out
 
 
-def test_rl_v2_seed_3_is_queued_with_its_config_and_reuses_another_seeds_cap(tmp_path):
-    """A third seed of RL v2 (2026-11-15): the same batch script as RL v2, the seed's config through the environment,
-    and the cap seed 1 chose, so the third job skips the 75-minute memory test."""
+def test_rl_v2_seed_3_is_queued_with_its_config_and_keeps_its_own_16k_cap(tmp_path):
+    """A third seed of RL v2 (2026-11-15): the same batch script as RL v2 and the seed's config through the
+    environment. Its recipe fixes 16K (rl_run.cap), so it neither takes seed 1's cap nor runs the memory test."""
     r = _run("submit_window.sh", ["rl-seed-queue", "3"], tmp_path)
     assert r.returncode == 0, r.stderr
     line = next(x for x in r.stdout.splitlines() if x.startswith("DRY: sbatch")).replace("\\,", ",")  # %q quoting
@@ -835,10 +835,19 @@ def test_rl_v2_seed_3_is_queued_with_its_config_and_reuses_another_seeds_cap(tmp
              DPT_RL_CONFIG="rl/rl_9b_v2_seed3.yaml", DPT_FINAL_ROW="rl_v2_seed3")
     out = r.stdout
     assert "final eval: done" in r.stderr, r.stderr
-    assert "another seed of this recipe chose its cap: 24k" in r.stderr and "memtest" not in out
+    # 2026-11-15: seed 3's recipe fixes 16K (rl_run.cap), so seed 1's 24K choice and the memory test do not apply
+    assert "the recipe fixes the cap: 16k" in r.stderr and "another seed of this recipe" not in r.stderr
+    assert "memtest" not in out
     train = [x for x in out.splitlines() if x.startswith("DRY: python -m dpt.launch.rl --config rl/rl_9b_v2_seed3.yaml")]
-    assert len(train) == 1 and "project.thinking.rl_max_response=24576" in train[0]
+    assert len(train) == 1 and "rl_max_response" not in train[0]                     # the 9B line's 16K
     assert "rl9b_v2_seed3/global_step_120" in out and len(_model_servers(out, "rl_v2_seed3", 40960)) == 21
+    # a 20K cap (a candidate budget for seed 3, 2026-11-15): the response cap, the 16K → 20K ramp, the MTP head frozen
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, ""),
+             DPT_RL_CONFIG="rl/rl_9b_v2_seed3.yaml", DPT_FINAL_ROW="rl_v2_seed3", DPT_RL_CAP="20k")
+    train = [x for x in r.stdout.splitlines()
+             if x.startswith("DRY: python -m dpt.launch.rl --config rl/rl_9b_v2_seed3.yaml")]
+    assert len(train) == 1 and "project.thinking.rl_max_response=20480" in train[0], r.stderr
+    assert "project.thinking.rl_overlong_start=16384" in train[0] and "mtp.enable_train=false" in train[0]
 
 
 def test_a_second_job_waits_for_a_running_bank_build(tmp_path):

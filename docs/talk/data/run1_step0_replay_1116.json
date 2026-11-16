@@ -1,0 +1,2322 @@
+{
+ "about": "Run 1's first step replayed (2026-11-16): 256 of its T1 training problems with bank-v1 pass rates between 0.1 and 0.9 (shuffled with seed 20261115), 8 answers each from the SFT model run 1 started from, at 16K tokens and medium effort, temperature 1, graded with the training grader. by_budget['16384']['left out + penalty'] is run 1's rule: cut-off answers out of the loss, answers ending past 12,288 tokens docked up to 0.5. Counts only (scripts/talk/difficulty_pilot.py --max-tokens 16384).",
+ "settings": {
+  "problems": "problems.jsonl",
+  "model": "sft9b_seed1",
+  "answers": 8,
+  "max_tokens": 16384,
+  "effort": "medium"
+ },
+ "families": {
+  "aki_b_value": {
+   "problems": 11,
+   "answers": 88,
+   "pass_rate": 0.989,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 1,
+    "8": 10
+   },
+   "share_8_of_8": 0.909,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.06,
+   "tokens_p50": 1009,
+   "tokens_p90": 2177,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 88,
+     "right": 87,
+     "finished_wrong": 1,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": 485,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 1,
+      "mean": 356,
+      "median": 356,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.091,
+      "right_and_wrong": 0.091,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 356,
+      "below_zero": 0.0
+     },
+     "left out": {
+      "with_gradient": 0.091,
+      "right_and_wrong": 0.091,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 356,
+      "below_zero": 0.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.091,
+      "right_and_wrong": 0.091,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 356,
+      "below_zero": 0.0
+     }
+    }
+   }
+  },
+  "all": {
+   "problems": 256,
+   "answers": 2048,
+   "pass_rate": 0.918,
+   "k_histogram": {
+    "0": 0,
+    "1": 1,
+    "2": 1,
+    "3": 3,
+    "4": 9,
+    "5": 8,
+    "6": 21,
+    "7": 37,
+    "8": 176
+   },
+   "share_8_of_8": 0.688,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.168,
+   "expected_mixed": 0.252,
+   "tokens_p50": 2814,
+   "tokens_p90": 12899,
+   "unfinished": 0.06,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 1979,
+     "right": 1831,
+     "finished_wrong": 31,
+     "unfinished": 117
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.06,
+     "global_gap": -9421,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 33,
+      "mean": -730,
+      "median": -250,
+      "below_zero": 18
+     },
+     "left out + penalty": {
+      "with_gradient": 0.32,
+      "right_and_wrong": 0.129,
+      "length_only": 0.191,
+      "length_only_advantage_share": 0.281,
+      "length_gap_within": -4577,
+      "below_zero": 0.817
+     },
+     "left out": {
+      "with_gradient": 0.129,
+      "right_and_wrong": 0.129,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -730,
+      "below_zero": 0.545
+     },
+     "counts wrong": {
+      "with_gradient": 0.312,
+      "right_and_wrong": 0.312,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -4802,
+      "below_zero": 0.812
+     }
+    }
+   }
+  },
+  "all run1": {
+   "problems": 256,
+   "answers": 2048,
+   "pass_rate": 0.918,
+   "k_histogram": {
+    "0": 0,
+    "1": 1,
+    "2": 1,
+    "3": 3,
+    "4": 9,
+    "5": 8,
+    "6": 21,
+    "7": 37,
+    "8": 176
+   },
+   "share_8_of_8": 0.688,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.168,
+   "expected_mixed": 0.252,
+   "tokens_p50": 2814,
+   "tokens_p90": 12899,
+   "unfinished": 0.06,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 1979,
+     "right": 1831,
+     "finished_wrong": 31,
+     "unfinished": 117
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.06,
+     "global_gap": -9421,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 33,
+      "mean": -730,
+      "median": -250,
+      "below_zero": 18
+     },
+     "left out + penalty": {
+      "with_gradient": 0.32,
+      "right_and_wrong": 0.129,
+      "length_only": 0.191,
+      "length_only_advantage_share": 0.281,
+      "length_gap_within": -4577,
+      "below_zero": 0.817
+     },
+     "left out": {
+      "with_gradient": 0.129,
+      "right_and_wrong": 0.129,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -730,
+      "below_zero": 0.545
+     },
+     "counts wrong": {
+      "with_gradient": 0.312,
+      "right_and_wrong": 0.312,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -4802,
+      "below_zero": 0.812
+     }
+    }
+   }
+  },
+  "arc_length_from_degrees": {
+   "problems": 18,
+   "answers": 144,
+   "pass_rate": 1.0,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 18
+   },
+   "share_8_of_8": 1.0,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.0,
+   "tokens_p50": 2376,
+   "tokens_p90": 4534,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 144,
+     "right": 144,
+     "finished_wrong": 0,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": null,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     }
+    }
+   }
+  },
+  "crossover_distance": {
+   "problems": 8,
+   "answers": 64,
+   "pass_rate": 0.719,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 2,
+    "5": 1,
+    "6": 3,
+    "7": 1,
+    "8": 1
+   },
+   "share_8_of_8": 0.125,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.75,
+   "expected_mixed": 0.79,
+   "tokens_p50": 13060,
+   "tokens_p90": 16384,
+   "unfinished": 0.25,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 62,
+     "right": 46,
+     "finished_wrong": 0,
+     "unfinished": 16
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.25,
+     "global_gap": -4391,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 1,
+      "mean": 4670,
+      "median": 4670,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 1.0,
+      "right_and_wrong": 0.125,
+      "length_only": 0.875,
+      "length_only_advantage_share": 0.638,
+      "length_gap_within": -4537,
+      "below_zero": 0.875
+     },
+     "left out": {
+      "with_gradient": 0.125,
+      "right_and_wrong": 0.125,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 4670,
+      "below_zero": 0.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.875,
+      "right_and_wrong": 0.875,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -4826,
+      "below_zero": 0.857
+     }
+    }
+   }
+  },
+  "energy_ratio_between_magnitudes": {
+   "problems": 10,
+   "answers": 80,
+   "pass_rate": 0.988,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 1,
+    "8": 9
+   },
+   "share_8_of_8": 0.9,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.066,
+   "tokens_p50": 727,
+   "tokens_p90": 1431,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 80,
+     "right": 79,
+     "finished_wrong": 1,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": -1346,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 1,
+      "mean": -1702,
+      "median": -1702,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.1,
+      "right_and_wrong": 0.1,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -1702,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.1,
+      "right_and_wrong": 0.1,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -1702,
+      "below_zero": 1.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.1,
+      "right_and_wrong": 0.1,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -1702,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "epicentral_from_sp_and_depth": {
+   "problems": 9,
+   "answers": 72,
+   "pass_rate": 1.0,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 9
+   },
+   "share_8_of_8": 1.0,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.0,
+   "tokens_p50": 5434,
+   "tokens_p90": 10338,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 72,
+     "right": 72,
+     "finished_wrong": 0,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": null,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.333,
+      "right_and_wrong": 0.0,
+      "length_only": 0.333,
+      "length_only_advantage_share": 1.0,
+      "length_gap_within": -8723,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     }
+    }
+   }
+  },
+  "gr_annual_count": {
+   "problems": 3,
+   "answers": 24,
+   "pass_rate": 0.875,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 1,
+    "7": 1,
+    "8": 1
+   },
+   "share_8_of_8": 0.333,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.333,
+   "expected_mixed": 0.519,
+   "tokens_p50": 1615,
+   "tokens_p90": 2046,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 24,
+     "right": 21,
+     "finished_wrong": 3,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": -31,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 2,
+      "mean": -148,
+      "median": -148,
+      "below_zero": 2
+     },
+     "left out + penalty": {
+      "with_gradient": 0.667,
+      "right_and_wrong": 0.667,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -148,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.667,
+      "right_and_wrong": 0.667,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -148,
+      "below_zero": 1.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.667,
+      "right_and_wrong": 0.667,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -148,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "head_wave_time": {
+   "problems": 11,
+   "answers": 88,
+   "pass_rate": 0.58,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 1,
+    "3": 2,
+    "4": 2,
+    "5": 2,
+    "6": 3,
+    "7": 1,
+    "8": 0
+   },
+   "share_8_of_8": 0.0,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.909,
+   "expected_mixed": 0.922,
+   "tokens_p50": 14710,
+   "tokens_p90": 16384,
+   "unfinished": 0.409,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 88,
+     "right": 51,
+     "finished_wrong": 1,
+     "unfinished": 36
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.409,
+     "global_gap": -5306,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 1,
+      "mean": -4137,
+      "median": -4137,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.909,
+      "right_and_wrong": 0.091,
+      "length_only": 0.818,
+      "length_only_advantage_share": 0.722,
+      "length_gap_within": -5199,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.091,
+      "right_and_wrong": 0.091,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -4137,
+      "below_zero": 1.0
+     },
+     "counts wrong": {
+      "with_gradient": 1.0,
+      "right_and_wrong": 1.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -5253,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "impedance_amplification": {
+   "problems": 12,
+   "answers": 96,
+   "pass_rate": 0.854,
+   "k_histogram": {
+    "0": 0,
+    "1": 1,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 2,
+    "7": 3,
+    "8": 6
+   },
+   "share_8_of_8": 0.5,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.25,
+   "expected_mixed": 0.369,
+   "tokens_p50": 2211,
+   "tokens_p90": 16381,
+   "unfinished": 0.125,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 96,
+     "right": 82,
+     "finished_wrong": 2,
+     "unfinished": 12
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.125,
+     "global_gap": -12068,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 2,
+      "mean": -10010,
+      "median": -10010,
+      "below_zero": 2
+     },
+     "left out + penalty": {
+      "with_gradient": 0.583,
+      "right_and_wrong": 0.167,
+      "length_only": 0.417,
+      "length_only_advantage_share": 0.319,
+      "length_gap_within": -10615,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.167,
+      "right_and_wrong": 0.167,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -10010,
+      "below_zero": 1.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.5,
+      "right_and_wrong": 0.5,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -12311,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "intercept_time": {
+   "problems": 10,
+   "answers": 80,
+   "pass_rate": 0.713,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 3,
+    "5": 1,
+    "6": 3,
+    "7": 2,
+    "8": 1
+   },
+   "share_8_of_8": 0.1,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.7,
+   "expected_mixed": 0.797,
+   "tokens_p50": 11896,
+   "tokens_p90": 16384,
+   "unfinished": 0.287,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 64,
+     "right": 47,
+     "finished_wrong": 0,
+     "unfinished": 17
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.287,
+     "global_gap": -6824,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.7,
+      "right_and_wrong": 0.0,
+      "length_only": 0.7,
+      "length_only_advantage_share": 1.0,
+      "length_gap_within": -6065,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.9,
+      "right_and_wrong": 0.9,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -7071,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "local_magnitude": {
+   "problems": 14,
+   "answers": 112,
+   "pass_rate": 0.955,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 2,
+    "7": 1,
+    "8": 11
+   },
+   "share_8_of_8": 0.786,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.143,
+   "expected_mixed": 0.175,
+   "tokens_p50": 3772,
+   "tokens_p90": 11800,
+   "unfinished": 0.045,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 104,
+     "right": 99,
+     "finished_wrong": 0,
+     "unfinished": 5
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.045,
+     "global_gap": -11791,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.286,
+      "right_and_wrong": 0.0,
+      "length_only": 0.286,
+      "length_only_advantage_share": 1.0,
+      "length_gap_within": -8660,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.214,
+      "right_and_wrong": 0.214,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -10201,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "mw_from_fault": {
+   "problems": 6,
+   "answers": 48,
+   "pass_rate": 0.958,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 2,
+    "8": 4
+   },
+   "share_8_of_8": 0.667,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.219,
+   "tokens_p50": 2808,
+   "tokens_p90": 4889,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 46,
+     "right": 46,
+     "finished_wrong": 0,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": 242,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 2,
+      "mean": -148,
+      "median": -148,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.333,
+      "right_and_wrong": 0.333,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -148,
+      "below_zero": 0.5
+     },
+     "left out": {
+      "with_gradient": 0.333,
+      "right_and_wrong": 0.333,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -148,
+      "below_zero": 0.5
+     },
+     "counts wrong": {
+      "with_gradient": 0.333,
+      "right_and_wrong": 0.333,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -148,
+      "below_zero": 0.5
+     }
+    }
+   }
+  },
+  "mw_from_moment": {
+   "problems": 11,
+   "answers": 88,
+   "pass_rate": 1.0,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 11
+   },
+   "share_8_of_8": 1.0,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.0,
+   "tokens_p50": 860,
+   "tokens_p90": 1987,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 88,
+     "right": 88,
+     "finished_wrong": 0,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": null,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     }
+    }
+   }
+  },
+  "nmo_correction": {
+   "problems": 9,
+   "answers": 72,
+   "pass_rate": 0.889,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 1,
+    "6": 1,
+    "7": 3,
+    "8": 4
+   },
+   "share_8_of_8": 0.444,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.222,
+   "expected_mixed": 0.427,
+   "tokens_p50": 6044,
+   "tokens_p90": 9503,
+   "unfinished": 0.056,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 71,
+     "right": 64,
+     "finished_wrong": 3,
+     "unfinished": 4
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.056,
+     "global_gap": -5971,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 3,
+      "mean": -628,
+      "median": -288,
+      "below_zero": 2
+     },
+     "left out + penalty": {
+      "with_gradient": 0.333,
+      "right_and_wrong": 0.333,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -1207,
+      "below_zero": 0.667
+     },
+     "left out": {
+      "with_gradient": 0.333,
+      "right_and_wrong": 0.333,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -628,
+      "below_zero": 0.667
+     },
+     "counts wrong": {
+      "with_gradient": 0.556,
+      "right_and_wrong": 0.556,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -4650,
+      "below_zero": 0.8
+     }
+    }
+   }
+  },
+  "nmo_traveltime": {
+   "problems": 5,
+   "answers": 40,
+   "pass_rate": 0.975,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 1,
+    "8": 4
+   },
+   "share_8_of_8": 0.8,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.131,
+   "tokens_p50": 2282,
+   "tokens_p90": 3975,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 31,
+     "right": 31,
+     "finished_wrong": 0,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": -944,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 1,
+      "mean": -491,
+      "median": -491,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.2,
+      "right_and_wrong": 0.2,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -491,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.2,
+      "right_and_wrong": 0.2,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -491,
+      "below_zero": 1.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.2,
+      "right_and_wrong": 0.2,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -491,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "q_from_amplitude_decay": {
+   "problems": 7,
+   "answers": 56,
+   "pass_rate": 0.964,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 2,
+    "8": 5
+   },
+   "share_8_of_8": 0.714,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.188,
+   "tokens_p50": 5337,
+   "tokens_p90": 9166,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 55,
+     "right": 54,
+     "finished_wrong": 1,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": -3508,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 2,
+      "mean": -3925,
+      "median": -3925,
+      "below_zero": 2
+     },
+     "left out + penalty": {
+      "with_gradient": 0.429,
+      "right_and_wrong": 0.286,
+      "length_only": 0.143,
+      "length_only_advantage_share": 0.194,
+      "length_gap_within": -5883,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.286,
+      "right_and_wrong": 0.286,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -3925,
+      "below_zero": 1.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.286,
+      "right_and_wrong": 0.286,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -3925,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "ray_parameter": {
+   "problems": 5,
+   "answers": 40,
+   "pass_rate": 0.975,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 1,
+    "8": 4
+   },
+   "share_8_of_8": 0.8,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.131,
+   "tokens_p50": 790,
+   "tokens_p90": 1095,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 40,
+     "right": 39,
+     "finished_wrong": 1,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": -415,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 1,
+      "mean": -411,
+      "median": -411,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.2,
+      "right_and_wrong": 0.2,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -411,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.2,
+      "right_and_wrong": 0.2,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -411,
+      "below_zero": 1.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.2,
+      "right_and_wrong": 0.2,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -411,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "reflected_energy_fraction": {
+   "problems": 12,
+   "answers": 96,
+   "pass_rate": 0.969,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 3,
+    "8": 9
+   },
+   "share_8_of_8": 0.75,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.164,
+   "tokens_p50": 3904,
+   "tokens_p90": 6946,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 94,
+     "right": 93,
+     "finished_wrong": 1,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": 1488,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 3,
+      "mean": 2915,
+      "median": 2433,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.25,
+      "right_and_wrong": 0.25,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 2915,
+      "below_zero": 0.0
+     },
+     "left out": {
+      "with_gradient": 0.25,
+      "right_and_wrong": 0.25,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 2915,
+      "below_zero": 0.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.25,
+      "right_and_wrong": 0.25,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 2915,
+      "below_zero": 0.0
+     }
+    }
+   }
+  },
+  "seismic_wavelength": {
+   "problems": 7,
+   "answers": 56,
+   "pass_rate": 1.0,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 7
+   },
+   "share_8_of_8": 1.0,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.0,
+   "tokens_p50": 625,
+   "tokens_p90": 940,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 56,
+     "right": 56,
+     "finished_wrong": 0,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": null,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     }
+    }
+   }
+  },
+  "slip_from_mw": {
+   "problems": 8,
+   "answers": 64,
+   "pass_rate": 0.875,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 1,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 3,
+    "8": 4
+   },
+   "share_8_of_8": 0.5,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.125,
+   "expected_mixed": 0.368,
+   "tokens_p50": 3336,
+   "tokens_p90": 5113,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 63,
+     "right": 56,
+     "finished_wrong": 7,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": 304,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 4,
+      "mean": 300,
+      "median": 448,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.5,
+      "right_and_wrong": 0.5,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 300,
+      "below_zero": 0.25
+     },
+     "left out": {
+      "with_gradient": 0.5,
+      "right_and_wrong": 0.5,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 300,
+      "below_zero": 0.25
+     },
+     "counts wrong": {
+      "with_gradient": 0.5,
+      "right_and_wrong": 0.5,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 300,
+      "below_zero": 0.25
+     }
+    }
+   }
+  },
+  "soil_thickness_from_resonance": {
+   "problems": 6,
+   "answers": 48,
+   "pass_rate": 0.917,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 1,
+    "7": 2,
+    "8": 3
+   },
+   "share_8_of_8": 0.5,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.167,
+   "expected_mixed": 0.369,
+   "tokens_p50": 1100,
+   "tokens_p90": 3433,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 45,
+     "right": 44,
+     "finished_wrong": 1,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": 842,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 3,
+      "mean": 755,
+      "median": 1370,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.5,
+      "right_and_wrong": 0.5,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 755,
+      "below_zero": 0.333
+     },
+     "left out": {
+      "with_gradient": 0.5,
+      "right_and_wrong": 0.5,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 755,
+      "below_zero": 0.333
+     },
+     "counts wrong": {
+      "with_gradient": 0.5,
+      "right_and_wrong": 0.5,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 755,
+      "below_zero": 0.333
+     }
+    }
+   }
+  },
+  "sp_interval": {
+   "problems": 10,
+   "answers": 80,
+   "pass_rate": 0.988,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 1,
+    "8": 9
+   },
+   "share_8_of_8": 0.9,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.066,
+   "tokens_p50": 1184,
+   "tokens_p90": 3506,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 72,
+     "right": 71,
+     "finished_wrong": 1,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": -1906,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 1,
+      "mean": -484,
+      "median": -484,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.1,
+      "right_and_wrong": 0.1,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -484,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.1,
+      "right_and_wrong": 0.1,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -484,
+      "below_zero": 1.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.1,
+      "right_and_wrong": 0.1,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -484,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "stress_drop_circular": {
+   "problems": 14,
+   "answers": 112,
+   "pass_rate": 0.973,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 3,
+    "8": 11
+   },
+   "share_8_of_8": 0.786,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.141,
+   "tokens_p50": 3300,
+   "tokens_p90": 6073,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 96,
+     "right": 93,
+     "finished_wrong": 3,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": -86,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 3,
+      "mean": 815,
+      "median": 883,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.214,
+      "right_and_wrong": 0.214,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 815,
+      "below_zero": 0.333
+     },
+     "left out": {
+      "with_gradient": 0.214,
+      "right_and_wrong": 0.214,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 815,
+      "below_zero": 0.333
+     },
+     "counts wrong": {
+      "with_gradient": 0.214,
+      "right_and_wrong": 0.214,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 815,
+      "below_zero": 0.333
+     }
+    }
+   }
+  },
+  "surface_wave_group_delay": {
+   "problems": 14,
+   "answers": 112,
+   "pass_rate": 0.964,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 1,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 13
+   },
+   "share_8_of_8": 0.929,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.071,
+   "expected_mixed": 0.071,
+   "tokens_p50": 1551,
+   "tokens_p90": 3673,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 112,
+     "right": 108,
+     "finished_wrong": 4,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": -998,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 1,
+      "mean": 350,
+      "median": 350,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.071,
+      "right_and_wrong": 0.071,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 350,
+      "below_zero": 0.0
+     },
+     "left out": {
+      "with_gradient": 0.071,
+      "right_and_wrong": 0.071,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 350,
+      "below_zero": 0.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.071,
+      "right_and_wrong": 0.071,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": 350,
+      "below_zero": 0.0
+     }
+    }
+   }
+  },
+  "thickness_from_crossover": {
+   "problems": 13,
+   "answers": 104,
+   "pass_rate": 0.75,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 1,
+    "5": 3,
+    "6": 5,
+    "7": 3,
+    "8": 1
+   },
+   "share_8_of_8": 0.077,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.692,
+   "expected_mixed": 0.799,
+   "tokens_p50": 10950,
+   "tokens_p90": 16384,
+   "unfinished": 0.24,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 104,
+     "right": 78,
+     "finished_wrong": 1,
+     "unfinished": 25
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.24,
+     "global_gap": -6998,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 1,
+      "mean": -6545,
+      "median": -6545,
+      "below_zero": 1
+     },
+     "left out + penalty": {
+      "with_gradient": 0.923,
+      "right_and_wrong": 0.077,
+      "length_only": 0.846,
+      "length_only_advantage_share": 0.722,
+      "length_gap_within": -6814,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.077,
+      "right_and_wrong": 0.077,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -6545,
+      "below_zero": 1.0
+     },
+     "counts wrong": {
+      "with_gradient": 0.923,
+      "right_and_wrong": 0.923,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -7106,
+      "below_zero": 1.0
+     }
+    }
+   }
+  },
+  "two_way_time": {
+   "problems": 8,
+   "answers": 64,
+   "pass_rate": 1.0,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 8
+   },
+   "share_8_of_8": 1.0,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.0,
+   "tokens_p50": 662,
+   "tokens_p90": 1062,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 64,
+     "right": 64,
+     "finished_wrong": 0,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": null,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     }
+    }
+   }
+  },
+  "vp_from_moduli": {
+   "problems": 1,
+   "answers": 8,
+   "pass_rate": 1.0,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 1
+   },
+   "share_8_of_8": 1.0,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.0,
+   "tokens_p50": 950,
+   "tokens_p90": 1689,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 8,
+     "right": 8,
+     "finished_wrong": 0,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": null,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     }
+    }
+   }
+  },
+  "vs30": {
+   "problems": 1,
+   "answers": 8,
+   "pass_rate": 1.0,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 1
+   },
+   "share_8_of_8": 1.0,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.0,
+   "tokens_p50": 3052,
+   "tokens_p90": 3731,
+   "unfinished": 0.0,
+   "unfinished_with_value": 0.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 8,
+     "right": 8,
+     "finished_wrong": 0,
+     "unfinished": 0
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.0,
+     "global_gap": null,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     }
+    }
+   }
+  },
+  "wadati_vp_vs": {
+   "problems": 13,
+   "answers": 104,
+   "pass_rate": 0.981,
+   "k_histogram": {
+    "0": 0,
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 2,
+    "8": 11
+   },
+   "share_8_of_8": 0.846,
+   "share_0_of_8": 0.0,
+   "learnable_1_to_6": 0.0,
+   "expected_mixed": 0.101,
+   "tokens_p50": 3978,
+   "tokens_p90": 8989,
+   "unfinished": 0.019,
+   "unfinished_with_value": 1.0,
+   "right_after_16k": 0.0,
+   "late_right_check": {
+    "answers": 0,
+    "after_value_by_16k": {
+     "answers": 104,
+     "right": 102,
+     "finished_wrong": 0,
+     "unfinished": 2
+    },
+    "value_by_16k": null,
+    "value_at_p50": null,
+    "tokens_p50": null
+   },
+   "by_budget": {
+    "16384": {
+     "cut_off": 0.019,
+     "global_gap": -11685,
+     "moves": {
+      "mixed_to_none_right": 0,
+      "all_right_to_mixed": 0
+     },
+     "finished_gap": {
+      "groups": 0,
+      "mean": null,
+      "median": null,
+      "below_zero": 0
+     },
+     "left out + penalty": {
+      "with_gradient": 0.154,
+      "right_and_wrong": 0.0,
+      "length_only": 0.154,
+      "length_only_advantage_share": 1.0,
+      "length_gap_within": -9059,
+      "below_zero": 1.0
+     },
+     "left out": {
+      "with_gradient": 0.0,
+      "right_and_wrong": 0.0,
+      "length_only": 0.0,
+      "length_only_advantage_share": null,
+      "length_gap_within": null,
+      "below_zero": null
+     },
+     "counts wrong": {
+      "with_gradient": 0.154,
+      "right_and_wrong": 0.154,
+      "length_only": 0.0,
+      "length_only_advantage_share": 0.0,
+      "length_gap_within": -9889,
+      "below_zero": 1.0
+     }
+    }
+   }
+  }
+ }
+}

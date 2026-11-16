@@ -221,8 +221,12 @@ def grade_numeric(
 # The right value in an unfinished answer (the failure types of 2026-11-10; RL dev monitoring, 2026-11-15)
 # --------------------------------------------------------------------------------------------------------------------
 _SUPERSCRIPTS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺", "0123456789-+")
-_SEEN_SCI = re.compile(r"(\d+(?:\.\d+)?)\s*(?:×|x|\\times|\*|·)\s*10\s*\^?\s*\{?\s*([-+−]?\d+)\s*\}?")
-_SEEN_NUMBER = re.compile(r"\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+# Bounded digit runs, and no match starting inside a longer number (2026-11-16): a degenerate reply with an
+# exponent of 12 digits made 10 ** e an astronomically large integer and froze the pilot for 8 hours, and an
+# unbounded \d+ before the operator is quadratic on a long run of digits.
+_SEEN_SCI = re.compile(r"(?<![\d.])(\d{1,30}(?:\.\d{1,30})?)\s*(?:×|x|\\times|\*|·)\s*"
+                       r"10\s*\^?\s*\{?\s*([-+−]?\d{1,6})\s*\}?")
+_SEEN_NUMBER = re.compile(r"\d{1,30}(?:\.\d{1,30})?(?:[eE][-+]?\d{1,6})?")
 
 
 def value_seen(text: str, gold: dict[str, Any]) -> float | None:
@@ -237,7 +241,10 @@ def value_seen(text: str, gold: dict[str, Any]) -> float | None:
     hits = []
     for m in _SEEN_SCI.finditer(t):
         try:
-            x = float(m.group(1)) * 10 ** int(m.group(2).replace("−", "-"))
+            exponent = int(m.group(2).replace("−", "-"))
+            if abs(exponent) > 330:                 # beyond any float, so it cannot match a gold value
+                continue
+            x = float(m.group(1)) * 10.0 ** exponent
         except (ValueError, OverflowError):
             continue
         if abs(abs(x) - abs(v)) <= tol:
