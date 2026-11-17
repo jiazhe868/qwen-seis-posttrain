@@ -7,8 +7,9 @@ import json
 import pytest
 
 from dpt.common.io import write_jsonl
-from dpt.eval.rubric_calibration import (answer_pairs, confusion, criterion_pairs, derived_scores, gate_index,
-                                         level_table, main, spearman, split_of, summarize)
+from dpt.eval.rubric_calibration import (answer_pairs, confusion, criterion_pairs, derived_scores, format_comparison,
+                                         gate_index, level_table, main, same_question_order, spearman, split_of,
+                                         summarize)
 
 
 def test_confusion_counts_false_passes_and_false_fails():
@@ -115,3 +116,32 @@ def test_three_level_verdicts_are_met_only_when_full_and_tabled_against_the_gold
     assert derived_scores(scores, {"q": item}, partial_credit=0.0)[("sft", "q")]["score"] == pytest.approx(2.0 / 4)
     table = level_table(labels, scores, [("sft", "q")])
     assert table["yes"]["full"] == 1 and table["partly"]["partial"] == 1 and table["no"]["partial"] == 1
+
+
+def test_same_question_order_counts_pairs_the_judge_orders_as_the_gold():
+    """GRPO uses only the order of the answers to one question (2026-11-16): near ties in the gold are left out, and
+    a judge tie counts half."""
+    labels = {("base", "q"): {"score": 30}, ("sft", "q"): {"score": 70}, ("rl", "q"): {"score": 75},
+              ("base", "r"): {"score": 20}, ("sft", "r"): {"score": 60}}
+    scores = {("base", "q"): {"score": 0.5}, ("sft", "q"): {"score": 0.8}, ("rl", "q"): {"score": 0.6},
+              ("base", "r"): {"score": 0.7}, ("sft", "r"): {"score": 0.7}}
+    order = same_question_order(labels, scores, list(labels))
+    # q: base < sft (agrees), base < rl (agrees), sft ~ rl (5 apart, left out); r: a judge tie (half)
+    assert order == {"pairs": 3, "agreement": pytest.approx(2.5 / 3)}
+    assert same_question_order(labels, {}, list(labels)) == {"pairs": 0, "agreement": None}
+
+
+def test_the_format_comparison_counts_partly_met_criteria_judged_met():
+    """Judged met among the gold's partly-met criteria = the false passes added by counting "partly" as not met."""
+    criterion = {"tp": 194, "fn": 2, "fp": 10, "tn": 33, "set_apart": {"partly": 167}}
+    answers = {"n": 93, "tp": 17, "fp": 52, "tn": 23, "fn": 1, "fp_rate": 0.69, "fn_rate": 0.06,
+               "balanced_accuracy": 0.63}
+    result = {"answers": 300, "questions": {"tune": 69, "test": 31}, "variants": {"v1": {
+        "pass_mark_vs_gold60": 90, "same_question_order": {"pairs": 2, "agreement": 0.5},
+        "test": {"criterion": criterion, "criterion_partly_as_no": {"fp": 149}, "answer_vs_gold60": answers}}}}
+    out = format_comparison(result)
+    assert list(out["formats"]) == ["0-10 per criterion"]
+    v1 = out["formats"]["0-10 per criterion"]
+    assert v1["criteria"] == {"yes": 196, "partly": 167, "no": 43}
+    assert v1["judged_met"] == {"yes": 194, "partly": 139, "no": 10}
+    assert v1["answers"]["fp"] == 52 and v1["pass_mark"] == 90 and v1["levels"] is None

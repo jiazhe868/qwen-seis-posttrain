@@ -12,7 +12,8 @@ of those already hold the right value.
         --servers http://localhost:8411/v1,http://localhost:8412/v1 --out <dir>
     python scripts/talk/difficulty_pilot.py --summarize <dir>        # the summary of the answers so far
 
-Writes ``<dir>/answers.jsonl`` (one row per problem, resumable) and ``<dir>/summary.json`` (counts only).
+Writes ``<dir>/answers.jsonl`` (one row per problem, resumable), ``<dir>/summary.json`` and
+``<dir>/value_positions.json`` (counts only).
 """
 
 from __future__ import annotations
@@ -216,13 +217,30 @@ def late_right_check(rs: list[dict], max_tokens: int) -> dict:
     # never stopped checking (unfinished at the cap)
     early = [a for r in rs if not r.get("value_in_question") for a in r["answers"]
              if a.get("value_at") is not None and a["value_at"] < SHORT]
-    return {"answers": len(late),
+    # the check was added after the pilot's first 49 problems, which have no positions
+    checked = [r for r in rs if not r.get("value_in_question") and any("value_at" in a for a in r["answers"])]
+    return {"problems": len(checked), "answers": len(late),
             "after_value_by_16k": {"answers": len(early), "right": sum(a["right"] for a in early),
                                    "finished_wrong": sum(a["finished"] and not a["right"] for a in early),
                                    "unfinished": sum(not a["finished"] for a in early)},
             "value_by_16k": round(sum(a["value_by_16k"] for a in late) / len(late), 3) if late else None,
             "value_at_p50": round(st.median(at)) if at else None,
             "tokens_p50": round(st.median(a["tokens"] for a in late)) if late else None}
+
+
+def outcome_of(answer: dict) -> str:
+    return "unfinished" if not answer["finished"] else "right" if answer["right"] else "wrong"
+
+
+def value_positions(recs: list[dict]) -> dict:
+    """For the README figure: per answer, the token where a number matching the gold first appears, its length and
+    its outcome, for the problems that recorded positions and whose question does not already hold the gold value.
+    Answers in which no such number appears are only counted. Counts only."""
+    checked = [r for r in recs if not r.get("value_in_question") and any("value_at" in a for a in r["answers"])]
+    answers = [a for r in checked for a in r["answers"]]
+    return {"problems": len(checked), "short_budget": SHORT,
+            "answers": [[a["value_at"], a["tokens"], outcome_of(a)] for a in answers if a["value_at"] is not None],
+            "no_value": dict(Counter(outcome_of(a) for a in answers if a["value_at"] is None))}
 
 
 def summarize(out_dir: Path) -> dict:
@@ -259,6 +277,8 @@ def summarize(out_dir: Path) -> dict:
     meta = {"about": "The SFT model's answers, 8 per problem at temperature 1 and medium effort, graded with the "
                      "training grader (scripts/talk/difficulty_pilot.py). Counts only.", "settings": settings}
     (out_dir / "summary.json").write_text(json.dumps({**meta, "families": summary}, indent=1))
+    if any("value_at" in a for r in recs for a in r["answers"]):
+        (out_dir / "value_positions.json").write_text(json.dumps(value_positions(recs)))
     print(f"{'family':40s} {'n':>3s} {'pass':>5s} {'8/8':>5s} {'0/8':>5s} {'1-6':>5s} {'mixed':>5s} {'tok50':>6s} "
           f"{'unfin':>5s} {'w/val':>5s}")
     for name, s in summary.items():

@@ -58,7 +58,7 @@ from dpt.data.decontam import (
 )
 from dpt.data.dedup import cross_dedup, instance_dedup, near_duplicate_dedup
 from dpt.data.difficulty import (DifficultyAuditConfig, DifficultyConfig, calibrate, calibrate_audit,
-                                 calibrate_two_stage, cap_per_family, chars_as_tokens)
+                                 calibrate_two_stage, cap_per_family, chars_as_tokens, drop_unconfirmed)
 from dpt.data.ingest import ingest_files
 from dpt.data.quality import QualityConfig, filter_by_quality
 from dpt.data.rl_build import dev_candidates, export_rl_bank
@@ -393,9 +393,10 @@ def stage_difficulty(ctx: Context) -> None:
         extra["groups"] = dict(Counter(g["decision"] for g in groups.values()))
     else:
         res = calibrate(probs, ctx.base_generator(), ctx.grade_fn(), dcfg, ctx.length_fn())
+    res.kept, unconfirmed = drop_unconfirmed(res.kept, dcfg.n_samples, dcfg.effort)
     st = res.stats()
-    reasons = Counter(d["reason"] for d in res.dropped + capped)
-    ctx.save_stage("difficulty", res.kept, res.dropped + capped, reasons, len(probs) + len(capped),
+    reasons = Counter(d["reason"] for d in res.dropped + capped + unconfirmed)
+    ctx.save_stage("difficulty", res.kept, res.dropped + capped + unconfirmed, reasons, len(probs) + len(capped),
                    {"hard_pool": st["hard_pool"], "histogram": st["histogram"], **extra})
 
 

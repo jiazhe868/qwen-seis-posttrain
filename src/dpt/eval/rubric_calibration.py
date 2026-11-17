@@ -31,12 +31,17 @@ Rubric v2 is computed from the judge's own per-criterion scores, so trying it ne
 Three-level judging (kind "levels", 2026-11-16): each criterion full / partial / none, stored as 1 / 0.5 / 0. A
 criterion counts as met only when full, and the judge's levels are tabled against the gold's yes / partly / no. The
 reward's partial credit is a choice, so +partial0.25 and +partial0 rescore the same verdicts.
+
+GRPO compares the answers to one question with each other, so a lenient judge can still teach the right thing if it
+orders them as the gold does: same_question_order counts that over all questions (no threshold is tuned). With
+--formats-out, the counts behind the README's comparison of judge formats are written apart (counts and rates only).
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -211,6 +216,30 @@ def level_table(labels: dict, scores: dict, keys: Iterable[tuple[str, str]]) -> 
     return table
 
 
+PAIR_MIN_GAP = 10.0                                   # gold scores closer than this are a near tie, left out
+
+
+def same_question_order(labels: dict, scores: dict, keys: Iterable[tuple[str, str]],
+                        min_gap: float = PAIR_MIN_GAP) -> dict[str, Any]:
+    """How often the judge orders two answers to the same question as the gold does, the order GRPO's group advantage
+    uses. Pairs whose gold scores are less than ``min_gap`` apart are left out, and a judge tie counts half."""
+    by_question: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for key in keys:
+        lab, sc = labels.get(key), scores.get(key)
+        if not lab or not sc or "score" not in sc or sc.get("no_answer") or lab.get("score") is None:
+            continue
+        by_question[key[1]].append((100.0 * float(sc["score"]), float(lab["score"])))
+    agreed, pairs = 0.0, 0
+    for answers in by_question.values():
+        for (judge_a, gold_a), (judge_b, gold_b) in itertools.combinations(answers, 2):
+            if abs(gold_a - gold_b) < min_gap:
+                continue
+            judge_gap, gold_gap = judge_a - judge_b, gold_a - gold_b
+            agreed += 1.0 if judge_gap * gold_gap > 0 else 0.5 if judge_gap == 0 else 0.0
+            pairs += 1
+    return {"pairs": pairs, "agreement": agreed / pairs if pairs else None}
+
+
 def calibrate_variant(labels: dict, scores: dict, keys_by_split: dict[str, list]) -> dict[str, Any]:
     """Choose the criterion threshold and the pass marks on the tune split, report both splits at those values."""
     tune = keys_by_split["tune"]
@@ -235,6 +264,8 @@ def calibrate_variant(labels: dict, scores: dict, keys_by_split: dict[str, list]
                       "spearman": spearman(js, gs)}
         if any(sc.get("kind") == "levels" for sc in scores.values()):
             out[split]["levels"] = level_table(labels, scores, keys)
+    every_key = [key for keys in keys_by_split.values() for key in keys]
+    out["same_question_order"] = same_question_order(labels, scores, every_key)
     return out
 
 
@@ -298,6 +329,38 @@ def summarize(label_rows: Sequence[dict[str, Any]], score_rows: Sequence[dict[st
             "variants": {v: calibrate_variant(labels, sc, keys_by_split) for v, sc in sorted(by_variant.items())}}
 
 
+# the three formats the README compares (§6.5): the reward's 0-10 score, yes/no checks with a quote, three levels
+FORMATS = {"0-10 per criterion": "v1", "yes/no checks": "v1checks", "three levels": "v1levels"}
+
+
+def format_comparison(result: dict[str, Any], formats: dict[str, str] = FORMATS) -> dict[str, Any]:
+    """Per format, on the test split: how many criteria of each gold mark the judge called met (and, for three levels,
+    which level it gave), and the answers it passed against gold >= 60 at its tuned pass mark; the same-question order
+    over all questions. Counts and rates only, so the result can be published."""
+    out = {}
+    for name, variant in formats.items():
+        if variant not in result["variants"]:
+            continue
+        calibrated = result["variants"][variant]
+        test = calibrated["test"]
+        criterion, partly_as_no = test["criterion"], test["criterion_partly_as_no"]
+        answers = test["answer_vs_gold60"]
+        out[name] = {
+            "variant": variant,
+            "criteria": {"yes": criterion["tp"] + criterion["fn"], "partly": criterion["set_apart"]["partly"],
+                         "no": criterion["fp"] + criterion["tn"]},
+            # a "partly" counted as not met adds to the false passes exactly the partly-met criteria judged met
+            "judged_met": {"yes": criterion["tp"], "partly": partly_as_no["fp"] - criterion["fp"],
+                           "no": criterion["fp"]},
+            "levels": test.get("levels"),
+            "pass_mark": calibrated["pass_mark_vs_gold60"],
+            "answers": {key: answers[key]
+                        for key in ("n", "tp", "fp", "tn", "fn", "fp_rate", "fn_rate", "balanced_accuracy")},
+            "same_question_order": calibrated.get("same_question_order"),
+        }
+    return {"answers": result["answers"], "questions": result["questions"], "formats": out}
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Agreement of a rubric judge with gold labels (FP / FN)")
     ap.add_argument("--labels", required=True)
@@ -305,12 +368,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--d-report", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--drop-criteria", default=None, help="JSON {item id: [1-based criterion ids]} for +clean")
+    ap.add_argument("--formats-out", default=None, help="also write the judge-format comparison (counts only) here")
     a = ap.parse_args(argv)
 
     drop = ({k: set(v) for k, v in json.loads(Path(a.drop_criteria).read_text()).items()}
             if a.drop_criteria else None)
     res = summarize(list(read_jsonl(a.labels)), list(read_jsonl(a.scores)), list(read_jsonl(a.d_report)), drop)
     write_json(Path(a.out), res)
+    if a.formats_out:
+        write_json(Path(a.formats_out), format_comparison(res))
 
     def f(x):
         return "—" if x is None else f"{x:.2f}"

@@ -78,19 +78,55 @@ def family_of(row: dict[str, Any]) -> str | None:
             or source.get("kind") or meta.get("kind"))
 
 
+READMIT_REASONS = frozenset({"family_undecided", "agree"})
+
+
+def readmit_undecided(verify_path: Path) -> list[dict[str, Any]]:
+    """Problems of the templates that the verification audit rejected only because its verifiers could not agree on
+    an answer: every audited instance undecided or agreeing, none contested, no perturbation (2026-11-16, the user's
+    choice). The verifiers answer within 16K tokens. On bank v2's long families they were undecided on 10 of 12
+    templates, with nothing contested, while the SFT model reached the label on 29-70% of its answers at 24K in
+    several of them. Each readmitted problem carries ``meta.label_check = "sft"``: the difficulty pass keeps it only
+    if the SFT model reaches its label at least once (dpt.data.difficulty.drop_unconfirmed). Reads the stage's
+    ``../reports/verify_groups.json`` and ``03_decontam.jsonl`` next to ``verify_path``; none there, none readmitted."""
+    from dpt.data.answer_verify import audit_group
+    from dpt.data.schema import Problem
+
+    report = verify_path.parent.parent / "reports" / "verify_groups.json"
+    source = verify_path.parent / "03_decontam.jsonl"
+    if not (report.exists() and source.exists()):
+        return []
+    groups = json.loads(report.read_text())
+    readmit = {key for key, g in groups.items()
+               if not g.get("kept") and g.get("audited") and not g.get("contested") and not g.get("perturbation")
+               and set(g.get("reasons") or {}) <= READMIT_REASONS}
+    out = []
+    for r in read_jsonl(source):
+        key = audit_group(Problem.from_dict(r, assign_uid=False))
+        if key in readmit:
+            g = groups[key]
+            meta = {**(r.get("meta") or {}), "label_check": "sft",
+                    "verified": {"audit": key, "accepted": g["accepted"], "audited": g["audited"],
+                                 "readmitted": "verifiers undecided"}}
+            out.append({**r, "meta": meta})
+    return out
+
+
 def merge(inputs: Sequence[Path], out: Path, t3_map: Path | None = None, version: str = "v2",
           name: str = "rl_bank.verify") -> dict[str, Any]:
-    rows, seen, per_input = [], set(), {}
+    rows, seen, per_input, readmitted = [], set(), {}, {}
     parents = {str(p): load_manifest(p).content_hash for p in inputs if manifest_path_for(p).exists()}
     for p in inputs:
         n = 0
-        for r in read_jsonl(p):
+        extra = readmit_undecided(p) if name == "rl_bank.verify" else []
+        for r in list(read_jsonl(p)) + extra:
             if r["uid"] in seen:
                 continue
             seen.add(r["uid"])
             rows.append(r)
             n += 1
         per_input[str(p)] = n
+        readmitted[str(p)] = len(extra)
     faulty = Counter(family_of(r) for r in rows if family_of(r) in FAULTY_FAMILIES)
     rows = [r for r in rows if family_of(r) not in FAULTY_FAMILIES]
     dropped: dict[str, int] = {}
@@ -101,8 +137,10 @@ def merge(inputs: Sequence[Path], out: Path, t3_map: Path | None = None, version
     write_jsonl(out, rows)
     write_manifest(build_manifest(out, name=name, version=version, parents=parents,
                                   notes="bank v2: verified v1 + hard + long problems; T3 rubrics as atomic checks; "
-                                        f"faulty families left out: {dict(faulty)}"))
-    res = {"rows": len(rows), "per_input": per_input, "t3_dropped": dropped, "faulty_dropped": dict(faulty),
+                                        f"faulty families left out: {dict(faulty)}; readmitted (verifiers "
+                                        f"undecided, label to be confirmed by the SFT model): {readmitted}"))
+    res = {"rows": len(rows), "per_input": per_input, "readmitted": readmitted, "t3_dropped": dropped,
+           "faulty_dropped": dict(faulty),
            "tasks": dict(Counter(r["task"] for r in rows))}
     log.info("bank merge: %s", res)
     return res

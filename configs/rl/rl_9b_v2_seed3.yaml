@@ -8,8 +8,8 @@
 # decided the night of 11-15); the two settings are repeated below so this file reads on its own. The change is the
 # budget: 16K whatever the 24K memory test says (rl_run.cap), with the difficulty weights read from the pass rate
 # within 16K (pass_at_8_medium_16k from the re-grade). A 16K cut pushes harder toward stopping once the value is
-# found: in the pilot, all 25 right answers that finished between 16K and 24K had written the value by token 16,384
-# (median 3,340). It also gives fewer groups a gradient at step 1, 41% of the pilot problems against 49% at 24K,
+# found: in the pilot's first 50 problems, all 25 right answers that finished between 16K and 24K had written the
+# value by token 16,384 (median 3,340); in the full pilot, 175 of 175 (median 3,130). It also gives fewer groups a gradient at step 1, 41% of the pilot problems against 49% at 24K,
 # because 15 groups whose right answers were all slow become 0/8.
 # Read against seeds 1–2: D-Num-hard at 32K, its unfinished and wrong-value shares, and dev/t1_hard.
 # =============================================================================

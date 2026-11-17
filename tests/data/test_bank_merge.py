@@ -196,3 +196,33 @@ def test_check_keeps_the_24k_view_for_24k_runs_and_reports_the_16k_view(tmp_path
     write_jsonl(tmp_path / "rl_main.jsonl", rows)
     summary, _ = check(tmp_path, t3_not_trained=True, min_learnable=0)
     assert summary["learnable_t1_20k"] == 70 and summary["expected_mixed_t1_at_step_1_20k"] > 0.6
+
+
+def test_merge_readmits_templates_whose_verifiers_were_undecided(tmp_path):
+    """2026-11-16: a template rejected only because the verifiers agreed on no answer (all undecided, none contested)
+    comes back marked label_check=sft; a contested template does not; other merges readmit nothing."""
+    def row(uid, fam):
+        return {"uid": uid, "task": "t1_num", "question": f"{uid}?", "answer": {"value": 1.0, "unit": "s"},
+                "source": {"family": fam}, "meta": {"family": fam, "template": 0, "generator": {"name": fam}}}
+    bank = tmp_path / "v1_long"
+    (bank / "stages").mkdir(parents=True)
+    (bank / "reports").mkdir()
+    decontam = [row(f"k{i}", "kept_fam") for i in range(3)] + [row(f"u{i}", "slow_fam") for i in range(4)] \
+        + [row(f"c{i}", "bad_fam") for i in range(2)]
+    write_jsonl(bank / "stages" / "03_decontam.jsonl", decontam)
+    write_jsonl(bank / "stages" / "04_verify.jsonl", decontam[:3])
+    (bank / "reports" / "verify_groups.json").write_text(json.dumps({
+        "t1_num:kept_fam:t0": {"audited": 3, "accepted": 3, "contested": 0, "perturbation": 0, "kept": True,
+                               "reasons": {"agree": 3}},
+        "t1_num:slow_fam:t0": {"audited": 4, "accepted": 0, "contested": 0, "perturbation": 0, "kept": False,
+                               "reasons": {"family_undecided": 4}},
+        "t1_num:bad_fam:t0": {"audited": 2, "accepted": 0, "contested": 2, "perturbation": 0, "kept": False,
+                              "reasons": {"suspect_label": 2}}}))
+    out = tmp_path / "merged.jsonl"
+    res = merge([bank / "stages" / "04_verify.jsonl"], out)
+    rows = {r["uid"]: r for r in read_jsonl(out)}
+    assert set(rows) == {"k0", "k1", "k2", "u0", "u1", "u2", "u3"} and res["readmitted"] == {
+        str(bank / "stages" / "04_verify.jsonl"): 4}
+    assert rows["u0"]["meta"]["label_check"] == "sft" and "label_check" not in rows["k0"]["meta"]
+    other = merge([bank / "stages" / "04_verify.jsonl"], tmp_path / "other.jsonl", name="rl_bank.difficulty")
+    assert other["rows"] == 3

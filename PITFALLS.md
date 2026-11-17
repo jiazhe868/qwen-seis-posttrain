@@ -8,8 +8,8 @@ Every entry is a mistake actually made here, on the Qwen3.5-9B SFT and multi-tas
 Slurm cluster (8 nodes × 3 A100-40GB) in October and November 2026: caught by a measurement, corrected, and
 given a test or a guard. Nothing below is a generic best-practice list.
 
-**The organising observation: most of the expensive failures here were silent.** In twenty of the
-twenty-six entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
+**The organising observation: most of the expensive failures here were silent.** In twenty-one of the
+twenty-seven entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
 check that checked the other forward pass, a patch that patched nothing, a sandbox that failed closed
 without an alert, framework defaults that overrode the config, a hang that no timeout noticed, a judge that
 graded its own students, verifiers that all agreed with the wrong formula they were given. The loud failures (a crash, an out-of-memory error) cost minutes; the silent ones
@@ -28,6 +28,7 @@ Companion document: [README.md](README.md) explains how the pipeline works and w
 | A3 | A label that agrees with its own question | data pipeline | 825 training problems teaching a wrong magnitude formula | silent |
 | A4 | A source check that cannot see what the source lacks | data pipeline | an SFT run on data with errors in 98 of 100 rows | silent |
 | A5 | A semicolon that turned an error into a true statement | data pipeline | a rubric that penalises the answer it asks for | silent |
+| A6 | A verifier that cannot solve the problem it checks | data pipeline | 10 of the 12 long templates thrown away, the problems RL v2 was built for | silent |
 | B1 | Parity passed, training was wrong: the inverted attention mask | numerics | an RL run optimising noise; an SFT whose attention layers see nothing | silent |
 | B2 | The last pipeline stage: a budget, a probe and a patch that all missed | memory | SFT failing at its first step, and again at its first checkpoint | silent |
 | B3 | No attention kernel at the real sequence length | numerics | no 9B training step at all | loud |
@@ -176,6 +177,41 @@ The frozen set keeps its item, and the screened subset leaves it out (README §8
 **Invalidated artifacts.** None; the screened scores change no conclusion.
 
 **Generalisable lesson.** Do not split prose at punctuation that prose uses. Ask for a list as a list.
+
+---
+
+## A6 — A verifier that cannot solve the problem it checks
+
+**Symptom.** Verification of bank v2's six long families kept 2 of their 12 templates, 577 of 3,577 problems
+(November 16). In the other ten, 0 to 5 of the 20 audited problems were accepted.
+
+**The false story.** The long generators write wrong labels, so their templates should go. Throwing out a template
+whose labels the verifiers do not confirm is what the audit is for.
+
+**Root cause.** The audit accepts a problem when two verifier models from other families, solving it 4 times each,
+agree with its label, and a verifier votes only when 3 of its 4 answers agree with each other (§4.2 of the README).
+In the ten rejected templates nothing was contested: in every audited problem the verifiers either agreed with the
+label or did not vote. They answer within 16K tokens, and these problems take 6–8 steps. Over the 240 audited
+problems, the teacher finished 440 of its 960 answers, so it had three answers to compare on only 86 problems; Gemma
+gave a value in 695 of 960. The SFT model, given 24K, reached the label in 2–70% of its answers on the same five
+families in the pilot (README §8.3). The verifiers had not found the labels wrong. Mostly, they had run out of
+tokens.
+
+**Fix.** A template whose audited problems were all agreed or undecided, with none contested and no perturbation
+failure, now goes on to the difficulty pass (`dpt.data.bank_merge.readmit_undecided`): 2,997 long problems from
+five families. Each carries `label_check: sft`, and the re-grade keeps it only if the SFT model reaches the label in
+at least one of its 8 answers at 24K. A problem it never reaches is dropped, not sent to the hard pool, because
+there nothing would have checked its label (`dpt.data.difficulty.drop_unconfirmed`).
+
+**Permanent regression test.**
+`tests/data/test_bank_merge.py::test_merge_readmits_templates_whose_verifiers_were_undecided` and
+`tests/data/test_difficulty.py::test_a_readmitted_label_needs_one_right_answer`.
+
+**Invalidated artifacts.** None. The fix reached seed 1's bank build before the step that merges the verified
+families.
+
+**Generalisable lesson.** A check is only as strong as the checker's budget. Before rejecting data, ask whether the
+checker could have solved it: "could not decide" is not "wrong".
 
 ---
 

@@ -253,3 +253,17 @@ def test_cap_per_family_keeps_a_fixed_sample_of_each_family():
     again, _ = cap_per_family(list(reversed(probs)), 4)
     assert {p.uid for p in again} == {p.uid for p in kept}
     assert cap_per_family(probs, 0) == (probs, [])
+
+
+def test_a_readmitted_label_needs_one_right_answer():
+    """2026-11-16: a problem readmitted after undecided verifiers (label_check=sft) stays only if the SFT model reached
+    its label at least once; never reached, it is dropped instead of going to the hard pool."""
+    from dpt.data.difficulty import drop_unconfirmed
+
+    def prob(i, rate, check):
+        return Problem.from_dict({"task": "t1_num", "question": f"q{i}", "answer": {"value": 1.0, "unit": "s"},
+                                  "meta": {"pass_at_8_medium": rate, **({"label_check": "sft"} if check else {})}})
+    kept = [prob(0, 0.0, True), prob(1, 0.25, True), prob(2, 0.0, False)]
+    left, dropped = drop_unconfirmed(kept, 8, "medium")
+    assert [p.question for p in left] == ["q1", "q2"]
+    assert [d["reason"] for d in dropped] == ["label_unconfirmed"]

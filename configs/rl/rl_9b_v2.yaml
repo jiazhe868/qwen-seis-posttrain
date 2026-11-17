@@ -39,9 +39,11 @@
 #     answer that runs out of tokens counts as wrong (score 0, kept in its group), and there is no soft length
 #     penalty. Under the old rule (cut-off answers left out, answers ending between 20K and 24K docked by up to
 #     0.5), 11 of the 24 groups with gradient had it only because a long right answer was docked, and a right
-#     answer at 23.5K got an advantage of -0.31 while a cut-off answer got 0. In the pilot, all 25 right answers
-#     that finished past 16K had written the value by token 16,384, and 38 of the 105 answers with an early value
-#     were still checking at 24K: the model has the value and does not stop.
+#     answer at 23.5K got an advantage of -0.31 while a cut-off answer got 0. In the pilot's first 50 problems, all
+#     25 right answers that finished past 16K had written the value by token 16,384, and 38 of the 105 answers with
+#     an early value were still checking at 24K: the model has the value and does not stop. The full pilot (180
+#     problems, README §8.3): 29% of all groups with gradient from the penalty alone; 175 of 175 late right answers
+#     with the value before 16K; 359 of the 794 answers with an early value still checking at 24K.
 #   - seed 3 differs only in its budget, 16K (rl_9b_v2_seed3.yaml).
 # =============================================================================
 defaults_from: rl_9b.yaml
@@ -173,8 +175,8 @@ monitoring:
       max_drop: 12.0
       action: pause
       risk: "more hard answers hold the right value and never answer: the model checks instead of committing"
-    # Hard answers are meant to get shorter (2026-11-15, fourth review): the SFT model writes the value within its
-    # first 500-2,000 tokens and checks for 6-14K more (median answer 23K tokens at 24K; difficulty pilot), and a
+    # Hard answers are meant to get shorter (2026-11-15, fourth review): the SFT model writes the value early and then
+    # checks (full pilot: right answers past 16K have it by token 3,130 and end near 20,600; median answer 24K), and a
     # cut-off answer now counts as wrong. Halving alone is therefore a warning; it pauses only with a loss of 5 points
     # (dev passes give 180 problems × 4 answers: ~1.4 points of noise per pass, ~2 more for a best-so-far), or when
     # answers fall below 2,500 tokens, the kind of fall run 1 made (T1 answers 3,071 → 548 → 17 tokens).

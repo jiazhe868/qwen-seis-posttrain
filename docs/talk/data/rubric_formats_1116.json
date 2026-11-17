@@ -1,0 +1,113 @@
+{
+ "about": "Gemma, the T3 reward judge, in three formats against the gold labels of D-Report (GPT-6.1 Sol, reviewed: v3), 300 answers of base_medium, sft and rl_seed1, scored on one machine on 2026-11-16. Criteria and answers on the test split (31 questions, 93 answers); the pass mark tuned on the other 69 questions; the same-question order over all 100 questions, gold near ties (< 10 points) left out. Counts only (python -m dpt.eval.rubric_calibration --formats-out).",
+ "answers": 300,
+ "formats": {
+  "0-10 per criterion": {
+   "answers": {
+    "balanced_accuracy": 0.6255555555555555,
+    "fn": 1,
+    "fn_rate": 0.05555555555555555,
+    "fp": 52,
+    "fp_rate": 0.6933333333333334,
+    "n": 93,
+    "tn": 23,
+    "tp": 17
+   },
+   "criteria": {
+    "no": 43,
+    "partly": 167,
+    "yes": 196
+   },
+   "judged_met": {
+    "no": 10,
+    "partly": 139,
+    "yes": 194
+   },
+   "levels": null,
+   "pass_mark": 90,
+   "same_question_order": {
+    "agreement": 0.6589147286821705,
+    "pairs": 129
+   },
+   "variant": "v1"
+  },
+  "three levels": {
+   "answers": {
+    "balanced_accuracy": 0.7188888888888889,
+    "fn": 1,
+    "fn_rate": 0.05555555555555555,
+    "fp": 38,
+    "fp_rate": 0.5066666666666667,
+    "n": 93,
+    "tn": 37,
+    "tp": 17
+   },
+   "criteria": {
+    "no": 43,
+    "partly": 167,
+    "yes": 196
+   },
+   "judged_met": {
+    "no": 8,
+    "partly": 137,
+    "yes": 193
+   },
+   "levels": {
+    "no": {
+     "full": 8,
+     "none": 24,
+     "partial": 11
+    },
+    "partly": {
+     "full": 137,
+     "none": 5,
+     "partial": 25
+    },
+    "yes": {
+     "full": 193,
+     "none": 2,
+     "partial": 1
+    }
+   },
+   "pass_mark": 90,
+   "same_question_order": {
+    "agreement": 0.66015625,
+    "pairs": 128
+   },
+   "variant": "v1levels"
+  },
+  "yes/no checks": {
+   "answers": {
+    "balanced_accuracy": 0.6344444444444445,
+    "fn": 5,
+    "fn_rate": 0.2777777777777778,
+    "fp": 34,
+    "fp_rate": 0.4533333333333333,
+    "n": 93,
+    "tn": 41,
+    "tp": 13
+   },
+   "criteria": {
+    "no": 43,
+    "partly": 167,
+    "yes": 196
+   },
+   "judged_met": {
+    "no": 6,
+    "partly": 140,
+    "yes": 188
+   },
+   "levels": null,
+   "pass_mark": 85,
+   "same_question_order": {
+    "agreement": 0.6744186046511628,
+    "pairs": 129
+   },
+   "variant": "v1checks"
+  }
+ },
+ "questions": {
+  "test": 31,
+  "tune": 69
+ }
+}

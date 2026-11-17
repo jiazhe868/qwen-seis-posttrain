@@ -15,6 +15,10 @@ nanogpt-seis-posttrain PITFALLS F2, where figures drifted away from the logs the
 - docs/talk/data/numhard_64k.json   D-Num-hard with a 64K budget (scripts/talk/numhard_continue.py)
 - docs/talk/data/campaign_hours.json and last_stage_memory.json: values measured by hand during the
   run, each with the note it came from (the run log)
+- docs/talk/data/difficulty_pilot_1115.json, run1_step0_replay_1116.json, value_positions_1115.json: the SFT model's
+  answers on bank v2's new families and on run 1's first step (scripts/talk/difficulty_pilot.py)
+- docs/talk/data/rubric_formats_1116.json: the reward judge in three formats against gold labels
+  (python -m dpt.eval.rubric_calibration --formats-out)
 
 Colours follow the talk deck (scripts/talk/render.py), whose categorical slots were checked with the
 data-viz palette validator: models are base grey, SFT blue, RL orange; tasks T1 blue, T2 orange,
@@ -29,6 +33,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -62,6 +67,8 @@ cause_color = {"execution": "#1baf7a", "concept": "#6250d6", "other": "#c3c2b7"}
 shortfall_color = {"concept": "#6250d6", "coverage": "#eda100", "quantitative": "#86b6ef"}
 judge_color = {"primary": "#1baf7a", "second": "#6250d6"}
 planned_time_color, lost_time_color = "#2a78d6", "#e87ba4"
+length_only_color = "#c3c2b7"           # gradient from the length penalty alone, not from right against wrong
+partial_level_color = "#9fdcc3"         # a three-level judge's "partial", a tint of the judge's green
 
 # ---------------------------------------------------------------------------
 # the only words in the figures, in both languages
@@ -96,6 +103,16 @@ label_text = {
         "segment": {"baseline_eval": "baseline eval", "sft_blocked": "SFT blocked", "sft": "SFT",
                     "sft_eval_and_gate": "SFT eval", "rl": "RL", "final_eval": "final eval"},
         "hours_unit": "h",
+        "rule": {"left out + penalty": "left out + penalty", "left out": "left out", "counts wrong": "counts wrong"},
+        "groups_with_gradient": "groups with gradient (%)", "run1": "run 1",
+        "right_and_wrong": "right and wrong answers", "length_only": "length penalty only",
+        "value_first_written": "first number matching the gold (K tokens)", "answer_length": "answer length (K tokens)",
+        "ran_out": "ran out", "right": "right", "wrong": "wrong",
+        "right_at_24k": "right at 24K (%)", "at_24k": "24K", "at_16k": "16K",
+        "judge_format": {"0-10 per criterion": "0–10 per criterion", "yes/no checks": "yes/no checks with a quote",
+                         "three levels": "three levels"},
+        "gold_mark": {"yes": "met", "partly": "partly met", "no": "not met"},
+        "judged_met_share": "judged met (% of criteria)", "judged_met": "met", "judged_partial": "partial",
     },
     "zh": {
         "model": {"base_medium": "基座", "sft": "SFT", "rl_seed1": "RL"},
@@ -125,6 +142,16 @@ label_text = {
         "segment": {"baseline_eval": "基线评测", "sft_blocked": "SFT 受阻", "sft": "SFT",
                     "sft_eval_and_gate": "SFT 评测", "rl": "RL", "final_eval": "最终评测"},
         "hours_unit": "小时",
+        "rule": {"left out + penalty": "移出损失 + 惩罚", "left out": "移出损失", "counts wrong": "记为错误"},
+        "groups_with_gradient": "带有梯度的组（%）", "run1": "第 1 次\n运行",
+        "right_and_wrong": "有对有错的回答", "length_only": "只来自长度惩罚",
+        "value_first_written": "首个与标准答案相符的数（千 token）", "answer_length": "回答长度（千 token）",
+        "ran_out": "用光 token", "right": "正确", "wrong": "错误",
+        "right_at_24k": "24K 下正确（%）", "at_24k": "24K", "at_16k": "16K",
+        "judge_format": {"0-10 per criterion": "每条标准 0–10 分", "yes/no checks": "带引文的是/否检查项",
+                         "three levels": "三个等级"},
+        "gold_mark": {"yes": "满足", "partly": "部分满足", "no": "不满足"},
+        "judged_met_share": "判为满足（占标准的 %）", "judged_met": "满足", "judged_partial": "部分满足",
     },
 }
 
@@ -201,6 +228,10 @@ def load_all_result_files() -> dict:
         "research_1110": load_result_file("research_1110.json"),
         "campaign_hours": load_result_file("campaign_hours.json"),
         "last_stage_memory": load_result_file("last_stage_memory.json"),
+        "difficulty_pilot": load_result_file("difficulty_pilot_1115.json"),
+        "run1_step0_replay": load_result_file("run1_step0_replay_1116.json"),
+        "value_positions": load_result_file("value_positions_1115.json"),
+        "rubric_formats": load_result_file("rubric_formats_1116.json"),
     }
 
 
@@ -790,6 +821,174 @@ def draw_campaign_hours(results: dict, language: str) -> None:
 # ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 13. the judge in three formats against gold labels, per gold mark
+# ---------------------------------------------------------------------------
+judge_formats = ("0-10 per criterion", "yes/no checks", "three levels")
+gold_marks = ("yes", "partly", "no")
+
+
+def draw_judge_formats(results: dict, language: str) -> None:
+    """Per format, the share of the gold's met, partly met and not met criteria that the judge called met; for three
+    levels, also the share it called partial. Test split of the gold set (README §6.5)."""
+    text = label_text[language]
+    format_counts = results["rubric_formats"]["formats"]
+    figure, panel_axes = plt.subplots(1, 3, figsize=(12.4, 3.9), sharey=True, gridspec_kw={"wspace": 0.08})
+    for axes, format_name in zip(panel_axes, judge_formats):
+        counts = format_counts[format_name]
+        for position, mark in enumerate(gold_marks):
+            met_share = 100 * counts["judged_met"][mark] / counts["criteria"][mark]
+            axes.bar(position, met_share, width=0.62, color=judge_color["primary"], zorder=2)
+            if counts["levels"]:
+                partial_share = 100 * counts["levels"][mark]["partial"] / counts["criteria"][mark]
+                axes.bar(position, partial_share, bottom=met_share, width=0.62, color=partial_level_color,
+                         edgecolor=page_color, linewidth=1.2, zorder=2)
+            axes.text(position, met_share - 2.5, f"{met_share:.0f}", ha="center", va="top", fontsize=11.5,
+                      color=page_color, zorder=3)
+        axes.set_xticks(range(len(gold_marks)), [text["gold_mark"][mark] for mark in gold_marks])
+        axes.tick_params(axis="x", length=0)
+        axes.set_xlabel(text["judge_format"][format_name])
+        axes.set_ylim(0, 100)
+        add_horizontal_grid(axes)
+    panel_axes[0].set_ylabel(text["judged_met_share"])
+    legend_handles = [plt.Rectangle((0, 0), 1, 1, color=color)
+                      for color in (judge_color["primary"], partial_level_color)]
+    panel_axes[2].legend(legend_handles, [text["judged_met"], text["judged_partial"]], ncol=2, loc="lower right",
+                         bbox_to_anchor=(1.0, 1.0), handlelength=1.0, columnspacing=1.4)
+    save_figure(figure, "judge_formats", language)
+
+
+# ---------------------------------------------------------------------------
+# 14. RL v2's first step replayed: which groups carry gradient under each rule for a cut-off answer
+# ---------------------------------------------------------------------------
+truncation_rules = ("left out + penalty", "left out", "counts wrong")
+
+
+def draw_gradient_by_rule(results: dict, language: str) -> None:
+    """The first GRPO step computed with the trainer's own code (scripts/talk/difficulty_pilot.py): the share of groups
+    whose answers got different rewards, split into groups with right and wrong answers and groups whose answers
+    differ only by the soft length penalty. One panel per rule; in each, the pilot on bank v2's new families at three
+    budgets, and run 1's first step at its 16K on run 1's own problems (README §8.3)."""
+    text = label_text[language]
+    pilot_budgets = results["difficulty_pilot"]["families"]["all"]["by_budget"]
+    run1_budgets = results["run1_step0_replay"]["families"]["all"]["by_budget"]
+    bar_sources = [(pilot_budgets[str(budget)], f"{budget // 1024}K") for budget in (16384, 20480, 24576)]
+    bar_sources.append((run1_budgets["16384"], text["run1"]))
+    bar_positions = (0.0, 1.0, 2.0, 3.45)          # run 1 set apart: other problems
+    figure, panel_axes = plt.subplots(1, 3, figsize=(13.0, 4.1), sharey=True, gridspec_kw={"wspace": 0.08})
+    for axes, rule in zip(panel_axes, truncation_rules):
+        for position, (budget_result, _) in zip(bar_positions, bar_sources):
+            first_step = budget_result[rule]
+            right_and_wrong, length_only = 100 * first_step["right_and_wrong"], 100 * first_step["length_only"]
+            axes.bar(position, right_and_wrong, width=0.72, color=task_color["t1_num"], zorder=2)
+            axes.bar(position, length_only, bottom=right_and_wrong, width=0.72, color=length_only_color,
+                     edgecolor=page_color, linewidth=1.2, zorder=2)
+            axes.text(position, right_and_wrong + length_only + 1.2, f"{100 * first_step['with_gradient']:.0f}",
+                      ha="center", va="bottom", fontsize=11.5, color=secondary_ink_color)
+        axes.axvline(2.72, color=grid_color, linewidth=1.0, zorder=1)
+        axes.set_xticks(bar_positions, [label for _, label in bar_sources])
+        axes.tick_params(axis="x", length=0)
+        axes.set_xlabel(text["rule"][rule])
+        axes.set_ylim(0, 64)
+        add_horizontal_grid(axes)
+    panel_axes[0].set_ylabel(text["groups_with_gradient"])
+    legend_handles = [plt.Rectangle((0, 0), 1, 1, color=color) for color in (task_color["t1_num"], length_only_color)]
+    panel_axes[0].legend(legend_handles, [text["right_and_wrong"], text["length_only"]], ncol=2, loc="lower left",
+                         bbox_to_anchor=(0.0, 1.0), handlelength=1.0, columnspacing=1.4)
+    save_figure(figure, "gradient_by_rule", language)
+
+
+# ---------------------------------------------------------------------------
+# 15. where in an answer the value first appears, against the answer's length
+# ---------------------------------------------------------------------------
+def draw_value_positions(results: dict, language: str) -> None:
+    """Every pilot answer that contains a number matching the gold: the token where it first appears against the
+    answer's length. Answers that ran out of tokens have no length of their own, so they sit in a strip on top, spread
+    at random in height only. Any matching number counts, so a position can be early by chance (README §8.3)."""
+    text = label_text[language]
+    positions = results["value_positions"]
+    short_budget_thousands = positions["short_budget"] / 1000
+    answers = positions["answers"]
+    axis_end = 24.8
+    figure, (strip_axes, scatter_axes) = plt.subplots(
+        2, 1, figsize=(8.4, 6.6), sharex=True, gridspec_kw={"height_ratios": [1.0, 3.4], "hspace": 0.05})
+    strip_spread = random.Random(20261116)
+    unfinished_positions = [value_at / 1000 for value_at, _, outcome in answers if outcome == "unfinished"]
+    strip_axes.scatter(unfinished_positions, [strip_spread.uniform(0.0, 1.0) for _ in unfinished_positions], s=11,
+                       color=outcome_color["unfinished"], alpha=0.6, linewidths=0, zorder=2)
+    strip_axes.set_ylim(-0.3, 1.3)
+    strip_axes.set_yticks([0.5], [text["ran_out"]])
+    strip_axes.tick_params(axis="y", length=0)
+    strip_axes.tick_params(axis="x", length=0)
+    strip_axes.spines["left"].set_visible(False)
+    strip_axes.spines["bottom"].set_visible(False)
+    marker_style = {"right": {"facecolor": outcome_color["right"], "edgecolor": task_color["t1_num"]},
+                    "wrong": {"facecolor": outcome_color["wrong_value"], "edgecolor": outcome_color["wrong_value"]}}
+    for outcome in ("right", "wrong"):
+        finished = [(value_at / 1000, tokens / 1000) for value_at, tokens, answer_outcome in answers
+                    if answer_outcome == outcome]
+        scatter_axes.scatter([x for x, _ in finished], [y for _, y in finished], s=16, linewidths=0.6, alpha=0.8,
+                             zorder=3, label=text[outcome], **marker_style[outcome])
+    scatter_axes.plot([0, axis_end], [0, axis_end], color=axis_color, linewidth=1.0, zorder=1)  # value before end
+    for axes in (strip_axes, scatter_axes):
+        axes.axvline(short_budget_thousands, color=muted_ink_color, linewidth=1.0, linestyle="--", zorder=1)
+    scatter_axes.axhline(short_budget_thousands, color=muted_ink_color, linewidth=1.0, linestyle="--", zorder=1)
+    scatter_axes.set_xlim(0, axis_end)
+    scatter_axes.set_ylim(0, axis_end)
+    scatter_axes.set_xticks([0, 4, 8, 12, 16, 20, 24])
+    scatter_axes.set_yticks([0, 4, 8, 12, 16, 20, 24])
+    scatter_axes.set_xlabel(text["value_first_written"])
+    scatter_axes.set_ylabel(text["answer_length"])
+    add_horizontal_grid(scatter_axes)
+    scatter_axes.legend(loc="lower right", handletextpad=0.3, markerscale=1.4)
+    save_figure(figure, "value_positions", language)
+
+
+# ---------------------------------------------------------------------------
+# 16. the pilot's families: groups with gradient at 24K and at 16K
+# ---------------------------------------------------------------------------
+def draw_pilot_families(results: dict, language: str) -> None:
+    """Per family, with a cut-off answer counted as wrong: the share of problems whose 8 answers were not all the
+    same at 24K (open) and at 16K (filled), next to the share of answers right at 24K. Sorted by that share, so the
+    families the model solves quickly sit on top (README §8.3)."""
+    text = label_text[language]
+    families = {name: family for name, family in results["difficulty_pilot"]["families"].items()
+                if not name.startswith("all")}
+    family_order = sorted(families, key=lambda name: (-families[name]["pass_rate"], name))
+    figure, (rate_axes, gradient_axes) = plt.subplots(
+        1, 2, figsize=(12.4, 6.4), sharey=True, gridspec_kw={"width_ratios": [1.0, 2.6], "wspace": 0.06})
+    for row, name in enumerate(family_order):
+        family = families[name]
+        rate_axes.barh(row, 100 * family["pass_rate"], height=0.62, color=outcome_color["right"], zorder=2)
+        at_24k = 100 * family["by_budget"]["24576"]["counts wrong"]["with_gradient"]
+        at_16k = 100 * family["by_budget"]["16384"]["counts wrong"]["with_gradient"]
+        if abs(at_16k - at_24k) >= 1:
+            gradient_axes.annotate("", xy=(at_16k, row), xytext=(at_24k, row), zorder=2,
+                                   arrowprops={"arrowstyle": "-|>", "color": muted_ink_color, "linewidth": 1.2,
+                                               "shrinkA": 5, "shrinkB": 5, "mutation_scale": 11})
+        gradient_axes.scatter([at_24k], [row], s=46, facecolor=page_color, edgecolor=task_color["t1_num"],
+                              linewidths=1.6, zorder=3, label=text["at_24k"] if row == 0 else None)
+        gradient_axes.scatter([at_16k], [row], s=46, color=task_color["t1_num"], zorder=3,
+                              label=text["at_16k"] if row == 0 else None)
+    rate_axes.set_yticks(range(len(family_order)), family_order, fontsize=11)
+    rate_axes.invert_yaxis()
+    rate_axes.tick_params(axis="y", length=0)
+    rate_axes.spines["left"].set_visible(False)
+    rate_axes.set_xlim(0, 100)
+    rate_axes.set_xticks([0, 50, 100])
+    rate_axes.set_xlabel(text["right_at_24k"])
+    gradient_axes.set_xlim(-4, 104)
+    gradient_axes.set_xticks([0, 25, 50, 75, 100])
+    gradient_axes.set_xlabel(text["groups_with_gradient"])
+    gradient_axes.tick_params(axis="y", length=0)
+    gradient_axes.spines["left"].set_visible(False)
+    for axes in (rate_axes, gradient_axes):
+        axes.grid(True, axis="x")
+        axes.set_axisbelow(True)
+    gradient_axes.legend(ncol=2, loc="lower left", bbox_to_anchor=(0.0, 1.0), handletextpad=0.3, columnspacing=1.4)
+    save_figure(figure, "pilot_families", language)
+
+
 figure_drawers = {
     "workflow": draw_workflow_strip,
     "results_by_stage": draw_results_by_stage,
@@ -804,6 +1003,10 @@ figure_drawers = {
     "failure_causes": draw_failure_causes,
     "refusals": draw_refusals,
     "campaign_hours": draw_campaign_hours,
+    "judge_formats": draw_judge_formats,
+    "gradient_by_rule": draw_gradient_by_rule,
+    "value_positions": draw_value_positions,
+    "pilot_families": draw_pilot_families,
 }
 
 

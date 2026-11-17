@@ -1,5 +1,5 @@
 {
- "about": "Bank v2's 12 hard and 6 long T1 families, 10 problems each, 8 answers per problem from the SFT model at 24K tokens and medium effort, temperature 1, graded with the training grader (2026-11-15/16). by_budget replays the first GRPO step with the trainer's own functions under three rules: cut-off answers left out with the soft penalty of the last 4K (RL v2 seeds 1-2 before 2026-11-15 night), left out without it, and counted as wrong (every seed now). late_right_check: where the gold value first appears. Counts only (scripts/talk/difficulty_pilot.py).",
+ "about": "Bank v2's 12 hard and 6 long T1 families, 10 problems each, 8 answers per problem from the SFT model at 24K tokens and medium effort, temperature 1, graded with the training grader (2026-11-15/16). by_budget replays the first GRPO step with the trainer's own functions under three rules: cut-off answers left out with the soft penalty of the last 4K (RL v2 seeds 1-2 before 2026-11-15 night), left out without it, and counted as wrong (every seed now). late_right_check: where the gold value first appears, on the problems graded after the check was added (the first 49 have no positions) whose question does not already hold the gold value. Counts only (scripts/talk/difficulty_pilot.py).",
  "settings": {
   "problems": "problems.jsonl",
   "model": "sft9b_seed1",
@@ -33,6 +33,7 @@
    "unfinished_with_value": 0.826,
    "right_after_16k": 0.424,
    "late_right_check": {
+    "problems": 119,
     "answers": 175,
     "after_value_by_16k": {
      "answers": 794,
@@ -186,6 +187,7 @@
    "unfinished_with_value": 0.778,
    "right_after_16k": 0.417,
    "late_right_check": {
+    "problems": 81,
     "answers": 128,
     "after_value_by_16k": {
      "answers": 514,
@@ -339,6 +341,7 @@
    "unfinished_with_value": 0.909,
    "right_after_16k": 0.441,
    "late_right_check": {
+    "problems": 38,
     "answers": 47,
     "after_value_by_16k": {
      "answers": 280,
@@ -492,6 +495,7 @@
    "unfinished_with_value": 1.0,
    "right_after_16k": 0.152,
    "late_right_check": {
+    "problems": 2,
     "answers": 5,
     "after_value_by_16k": {
      "answers": 16,
@@ -645,6 +649,7 @@
    "unfinished_with_value": 1.0,
    "right_after_16k": 0.589,
    "late_right_check": {
+    "problems": 7,
     "answers": 24,
     "after_value_by_16k": {
      "answers": 55,
@@ -798,6 +803,7 @@
    "unfinished_with_value": 0.98,
    "right_after_16k": 0.696,
    "late_right_check": {
+    "problems": 7,
     "answers": 10,
     "after_value_by_16k": {
      "answers": 55,
@@ -951,6 +957,7 @@
    "unfinished_with_value": 0.811,
    "right_after_16k": 0.0,
    "late_right_check": {
+    "problems": 7,
     "answers": 0,
     "after_value_by_16k": {
      "answers": 27,
@@ -1104,6 +1111,7 @@
    "unfinished_with_value": 0.459,
    "right_after_16k": 0.0,
    "late_right_check": {
+    "problems": 7,
     "answers": 0,
     "after_value_by_16k": {
      "answers": 16,
@@ -1257,6 +1265,7 @@
    "unfinished_with_value": 0.5,
    "right_after_16k": 0.0,
    "late_right_check": {
+    "problems": 7,
     "answers": 0,
     "after_value_by_16k": {
      "answers": 14,
@@ -1410,6 +1419,7 @@
    "unfinished_with_value": 0.971,
    "right_after_16k": 0.909,
    "late_right_check": {
+    "problems": 6,
     "answers": 7,
     "after_value_by_16k": {
      "answers": 44,
@@ -1563,6 +1573,7 @@
    "unfinished_with_value": 1.0,
    "right_after_16k": 0.08,
    "late_right_check": {
+    "problems": 5,
     "answers": 3,
     "after_value_by_16k": {
      "answers": 39,
@@ -1716,6 +1727,7 @@
    "unfinished_with_value": 1.0,
    "right_after_16k": 0.292,
    "late_right_check": {
+    "problems": 6,
     "answers": 8,
     "after_value_by_16k": {
      "answers": 48,
@@ -1869,6 +1881,7 @@
    "unfinished_with_value": 0.795,
    "right_after_16k": 0.5,
    "late_right_check": {
+    "problems": 8,
     "answers": 0,
     "after_value_by_16k": {
      "answers": 49,
@@ -2022,6 +2035,7 @@
    "unfinished_with_value": 0.899,
    "right_after_16k": 0.556,
    "late_right_check": {
+    "problems": 6,
     "answers": 3,
     "after_value_by_16k": {
      "answers": 41,
@@ -2175,6 +2189,7 @@
    "unfinished_with_value": 1.0,
    "right_after_16k": 0.44,
    "late_right_check": {
+    "problems": 8,
     "answers": 24,
     "after_value_by_16k": {
      "answers": 64,
@@ -2328,6 +2343,7 @@
    "unfinished_with_value": 1.0,
    "right_after_16k": 0.113,
    "late_right_check": {
+    "problems": 8,
     "answers": 6,
     "after_value_by_16k": {
      "answers": 64,
@@ -2481,6 +2497,7 @@
    "unfinished_with_value": 1.0,
    "right_after_16k": 0.767,
    "late_right_check": {
+    "problems": 7,
     "answers": 16,
     "after_value_by_16k": {
      "answers": 56,
@@ -2634,6 +2651,7 @@
    "unfinished_with_value": 0.968,
    "right_after_16k": 0.761,
    "late_right_check": {
+    "problems": 8,
     "answers": 30,
     "after_value_by_16k": {
      "answers": 61,
@@ -2787,6 +2805,7 @@
    "unfinished_with_value": 0.927,
    "right_after_16k": 0.5,
    "late_right_check": {
+    "problems": 7,
     "answers": 6,
     "after_value_by_16k": {
      "answers": 46,
@@ -2940,6 +2959,7 @@
    "unfinished_with_value": 0.958,
    "right_after_16k": 0.9,
    "late_right_check": {
+    "problems": 8,
     "answers": 18,
     "after_value_by_16k": {
      "answers": 59,
@@ -3093,6 +3113,7 @@
    "unfinished_with_value": 1.0,
    "right_after_16k": 0.625,
    "late_right_check": {
+    "problems": 5,
     "answers": 15,
     "after_value_by_16k": {
      "answers": 40,

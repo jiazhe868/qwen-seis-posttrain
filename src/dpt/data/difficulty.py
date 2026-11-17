@@ -97,6 +97,16 @@ class DifficultyResult:
 LengthFn = Callable[[str], int]
 
 
+def drop_unconfirmed(kept: list[Problem], n_samples: int, effort: str) -> tuple[list[Problem], list[dict[str, Any]]]:
+    """Problems whose label nothing has confirmed yet (``meta.label_check == "sft"``: their template was readmitted
+    after the verifiers were undecided, dpt.data.bank_merge.readmit_undecided) stay only if the SFT model reached
+    the label in at least one of its answers. Those it never reached are dropped, not sent to the hard pool."""
+    key = f"pass_at_{n_samples}_{effort}"
+    unconfirmed = {p.uid for p in kept if p.meta.get("label_check") == "sft" and not p.meta.get(key)}
+    return ([p for p in kept if p.uid not in unconfirmed],
+            [{"uid": u, "reason": "label_unconfirmed", "k": 0} for u in sorted(unconfirmed)])
+
+
 def cap_per_family(problems: list[Problem], max_per_family: int) -> tuple[list[Problem], list[dict[str, Any]]]:
     """At most ``max_per_family`` problems of each family (``source.family``), the first in a fixed order hashed
     from the uid, so every template of the family is sampled and a rerun keeps the same ones. Problems without a
