@@ -80,6 +80,9 @@ elif [[ "$(json_field "${STATE}" paused)" == true ]]; then
   cancel_next; tdie "auto-paused by an alert: ${RUN_DIR}/PAUSED.json (docs/runbook.md)"
 elif [[ "$(json_field "${STATE}" walltime)" == true ]]; then
   tlog "stopped for the wall-clock limit at step $(json_field "${STATE}" latest_step); ${NEXT:-no successor (chain budget used up)} continues"
+elif [[ "$(json_field "${STATE}" held)" == true ]]; then
+  # DPT_STOP_AT_STEP (RL v2's later seeds stop at seed 1's step, rl_v2_job.sh) or a HOLD_REQUEST: a clean stop
+  tlog "held at step $(json_field "${STATE}" latest_step) (${RUN_DIR}/HOLD.json); ${NEXT:-no successor} continues"
 else
   cancel_next; tdie "training exited with code ${RC} without a clean stop: successor cancelled; see this log and ${RUN_DIR}"
 fi

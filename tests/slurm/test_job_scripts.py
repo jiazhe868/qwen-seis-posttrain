@@ -683,6 +683,30 @@ def test_rl_v2_job_with_a_ready_bank_and_a_chosen_cap_goes_straight_to_rl(tmp_pa
     assert "the run already chose its cap: 16k" in r.stderr
 
 
+def test_later_seeds_stop_at_the_step_where_seed_1_stopped_for_time(tmp_path):
+    """2026-11-17 (the user): every seed trains the same number of steps. Seed 1 built the bank in its own job, so
+    seeds 2 and 3 read seed 1's WALLTIME.json and hold there; seed 1 itself, and a seed 1 without a time stop, set no
+    limit."""
+    (tmp_path / "sbx.sif").write_text("")
+    _bank_check(tmp_path, [])
+    rl = tmp_path / "scratch" / "dpt" / "checkpoints" / "rl"
+    rl.mkdir(parents=True)
+    for seed in (1, 2):
+        (rl / f"rl9b_v2_seed{seed}.cap.json").write_text(json.dumps({"cap": "24k"}))
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, "3571166"),
+             DPT_RL_CONFIG="rl/rl_9b_v2_seed2.yaml", DPT_FINAL_ROW="rl_v2_seed2")
+    assert "seed 1 did not stop for time" in r.stderr and "final eval: done" in r.stderr, r.stderr
+    (rl / "rl9b_v2_seed1").mkdir()
+    (rl / "rl9b_v2_seed1" / "WALLTIME.json").write_text(json.dumps({"step": 73, "reason": "deadline"}))
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, "3571166"),
+             DPT_RL_CONFIG="rl/rl_9b_v2_seed2.yaml", DPT_FINAL_ROW="rl_v2_seed2")
+    assert "the same steps as seed 1: rl9b_v2_seed2 stops after step 73" in r.stderr, r.stderr
+    r = _run("rl_v2_job.sh", [], tmp_path, DPT_SLURM_NODES=EIGHT, PATH=_fake_squeue(tmp_path, "3571166"))
+    assert "the same steps as seed 1" not in r.stderr and "did not stop for time" not in r.stderr   # seed 1 itself
+    text = (REPO / "scripts" / "slurm" / "rl.slurm").read_text()
+    assert 'json_field "${STATE}" held' in text                  # a hold is a clean stop, not a crash
+
+
 def test_rl_v2_job_repairs_a_bank_window_1_published_before_building_one(tmp_path):
     """Window 1 runs its frozen copy of data_window.slurm (no pin-dev), so its bank fails the dev-split check. The RL
     job first puts back run 1's dev split on the CPU, and builds only if the check still fails."""

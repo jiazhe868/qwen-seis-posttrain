@@ -337,6 +337,11 @@ def carve_hard_dev(bank: Path, stages: Sequence[Path], families: Sequence[str], 
     get ``data_source`` ``t1_num_hard`` (``dpt.verl_ext.reward_fn`` grades it as T1). The published rows carry no
     family, so the family comes from the bank's stage files (``family_of``).
 
+    A family gives at most a third of its problems (2026-11-17, a review of RL v2): a readmitted family keeps only the
+    problems the SFT model solved at least once (dpt.data.difficulty.drop_unconfirmed), which on the hardest families
+    may be a dozen, and holding out 10 of them would leave training almost none. A family with fewer than three
+    problems gives none.
+
     Writes ``rl_dev_hard``, ``rl_main_train`` and ``rl_hard_train`` (.jsonl, .parquet: rl_main and rl_hard without
     the held-out problems) and ``uid_family.json``; ``hard_dev.json`` records the inputs, and a later call on the
     same bank with the same settings only reads it."""
@@ -350,7 +355,8 @@ def carve_hard_dev(bank: Path, stages: Sequence[Path], families: Sequence[str], 
     inputs = {name: (load_manifest(bank / f"{name}.jsonl").content_hash
                      if manifest_path_for(bank / f"{name}.jsonl").exists() else f"{len(rows)} rows")
               for name, rows in (("rl_main", main), ("rl_hard", hard))}
-    settings = {"inputs": inputs, "families": sorted(families), "per_family": per_family, "seed": seed}
+    settings = {"inputs": inputs, "families": sorted(families), "per_family": per_family, "seed": seed,
+                "max_dev_share": "1/3"}
     record = bank / "hard_dev.json"
     if record.exists() and {k: v for k, v in json.loads(record.read_text()).items() if k in settings} == settings:
         log.info("hard dev split already carved for these inputs (%s)", record)
@@ -363,10 +369,14 @@ def carve_hard_dev(bank: Path, stages: Sequence[Path], families: Sequence[str], 
         if f in wanted and task_of(r) == "t1_num":
             candidates[f].append(r)
     held: list[dict[str, Any]] = []
+    per_family_held = {f: min(per_family, len(rows) // 3) for f, rows in candidates.items()}
     for f, rows in candidates.items():   # the same problems for a given bank and seed
         rows.sort(key=lambda r: derive_seed(seed, "hard_dev", uid_of(r)))
-        for r in rows[:per_family]:
+        for r in rows[:per_family_held[f]]:
             held.append({**r, "data_source": HARD_DEV_SOURCE, "extra_info": {**r["extra_info"], "split": "dev"}})
+        if 0 < len(rows) < 3 * per_family:
+            log.warning("hard dev split: %s has %d problems, so it gives %d and keeps %d for training", f, len(rows),
+                        per_family_held[f], len(rows) - per_family_held[f])
     if not held:
         raise ValueError(f"no problem of {sorted(wanted)} in {bank}: wrong family names or stage files {stages}")
     held_uids = {uid_of(r) for r in held}
@@ -377,8 +387,8 @@ def carve_hard_dev(bank: Path, stages: Sequence[Path], families: Sequence[str], 
                    f"{per_family} T1 problems of each of {len(wanted)} hard and long families, held out")
     uid_family = {str(uid_of(r)): fam[str(uid_of(r))] for r in main + hard if str(uid_of(r)) in fam}
     (bank / "uid_family.json").write_text(json.dumps(uid_family, sort_keys=True))
-    per_family_held = {f: min(len(v), per_family) for f, v in candidates.items()}
     res = {**settings, "held_out": len(held), "per_family_held": per_family_held,
+           "per_family_train": {f: len(v) - per_family_held[f] for f, v in candidates.items()},
            "missing_families": sorted(f for f, v in candidates.items() if not v), "family_map": len(uid_family)}
     record.write_text(json.dumps(res, indent=1))
     log.info("hard dev split: %s", res)

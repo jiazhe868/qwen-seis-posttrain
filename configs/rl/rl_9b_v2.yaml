@@ -121,7 +121,9 @@ rl_run:
   # The dev split without its T3 rows (python -m dpt.data.bank_merge without-task). With no judge in this job,
   # T3 rows would score 0 at every dev pass and only cost generation time. Then the hard dev split (2026-11-15).
   dev_files: ["${rl_run.data_dir}/rl_dev_no_t3.parquet", "${rl_run.data_dir}/rl_dev_hard.parquet"]
-  hard_dev_per_family: 10                   # 18 families × 10 = 180 problems; read by rl_v2_job.sh
+  # 18 families × 10 = 180 problems at most; a family gives no more than a third of its problems (2026-11-17,
+  # bank_merge.carve_hard_dev). Read by rl_v2_job.sh.
+  hard_dev_per_family: 10
   dev_freq: 10
   # Every dev pass has a checkpoint to select: 12 × ~126 GB on $SCRATCH.
   save_freq: 10

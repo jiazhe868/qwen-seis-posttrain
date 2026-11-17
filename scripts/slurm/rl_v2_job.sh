@@ -16,7 +16,8 @@
 #      (serve_vllm.sh: SPEC=0), so a frozen head changes no eval output. The choice is kept in
 #      <ckpt>/rl/rl9b_v2_seed1.cap.json, so a later job resumes the run at the same cap.
 #   4. RL v2: rl.slurm --config rl/rl_9b_v2.yaml inside this job (no successor). The trainer saves and stops
-#      DPT_EVAL_H hours (default 5) + 20 min before the job's limit.
+#      DPT_EVAL_H hours (default 5) + 20 min before the job's limit. Seeds 2 and 3 stop at the step where seed 1
+#      stopped for time, so that all seeds train the same number of steps (2026-11-17).
 #   5. the final eval on the same 8 nodes (final_eval_window.slurm), whatever way RL ended.
 #
 # Logs: this job's output, and $WORK/dpt/logs/rlv2_<job>/ (bank build, 24K test).
@@ -131,9 +132,9 @@ fi
 
 # ---- 2. the dev split without T3 -----------------------------------------------------------------------------------
 run python -m dpt.data.bank_merge without-task --task t3_report --out "${V2}/rl_dev_no_t3" "${V2}/rl_dev.jsonl"
-# The hard dev split and the uid → family map (2026-11-15): 10 held-out problems of each hard and long family, with
-# their own pause rules, and the map the curriculum's family weights read. CPU, about a minute; a later seed on the
-# same bank finds hard_dev.json and only reads it.
+# The hard dev split and the uid → family map (2026-11-15): up to 10 held-out problems of each hard and long family
+# (no more than a third of the family, 2026-11-17), with their own pause rules, and the map the curriculum's family
+# weights read. CPU, about a minute; a later seed on the same bank finds hard_dev.json and only reads it.
 HARD_DEV_FAMILIES="$(json_field "${DESCRIBE}" hard_dev_families)"
 HARD_DEV_PER_FAMILY="$(json_field "${DESCRIBE}" hard_dev_per_family)"
 if [[ -n "${HARD_DEV_FAMILIES}" ]] && (( HARD_DEV_PER_FAMILY > 0 )); then
@@ -214,6 +215,25 @@ case "${CAP}" in
   16k) ;;
   *) tdie "unknown cap '${CAP}' (DPT_RL_CAP: 16k, 20k or 24k)" ;;
 esac
+
+# ---- the same number of steps for every seed (2026-11-17, the user's choice) ----------------------------------------
+# Seed 1 built bank v2 inside its own job and had about 12 h left for RL; seeds 2 and 3 skip the build and would run
+# all 120 steps. So a later seed stops where seed 1's RL stopped for time: it reads the step from seed 1's
+# WALLTIME.json and holds there (DPT_STOP_AT_STEP: the trainer saves and stops after that step, HOLD.json). The LR
+# schedule and the sampler still assume 120 steps, so those steps are trained exactly as seed 1 trained them. After a
+# pause, a crash or a full run, seed 1 has no WALLTIME.json and no limit is set. A DPT_STOP_AT_STEP given to the job
+# wins; 0 means no limit.
+if [[ -z "${DPT_STOP_AT_STEP:-}" && "${RUN_NAME}" != *_seed1 ]]; then
+  SEED1_STOP="${RUN_DIR%_seed*}_seed1/WALLTIME.json"
+  if [[ -f "${SEED1_STOP}" ]]; then
+    DPT_STOP_AT_STEP="$(python -c 'import json, sys; print(int(json.load(open(sys.argv[1]))["step"]))' "${SEED1_STOP}")"
+    export DPT_STOP_AT_STEP
+    tlog "the same steps as seed 1: ${RUN_NAME} stops after step ${DPT_STOP_AT_STEP} (${SEED1_STOP})"
+  else
+    tlog "seed 1 did not stop for time (no ${SEED1_STOP}): ${RUN_NAME} has no step limit"
+  fi
+fi
+if [[ "${DPT_STOP_AT_STEP:-}" == 0 ]]; then unset DPT_STOP_AT_STEP; fi
 
 # ---- 4. RL v2 ---------------------------------------------------------------------------------------------------
 LEFT_S="$(time_left_s)"

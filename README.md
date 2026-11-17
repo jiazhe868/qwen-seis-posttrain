@@ -923,7 +923,7 @@ Run 1 passes at 16K and fails at 32K. It made the model faster and did not make 
 | templates the verifiers could not decide go on to the re-grade, which keeps a problem only if the SFT model reaches its label at least once in 8 answers | the verifiers answer within 16K and kept 2 of the 12 long templates, with no label contested (PITFALLS A6) | `dpt.data.bank_merge.readmit_undecided`, `dpt.data.difficulty.drop_unconfirmed` |
 | bank gates: at least 40% of numeric groups expected to have mixed results at step 1, and at least 1,000 numeric problems graded 1–6 of 8; each family's grades listed | run 1 had 13% | `dpt.data.bank_merge check` |
 | run 1's dev split kept, and its problems kept out of training | the re-grading drops the dev problems the SFT model solves, so a newly drawn split would differ from run 1's and leak its problems into training | `dpt.data.bank_merge pin-dev` |
-| a second dev split: 10 held-out problems from each hard and long family, with pause rules (accuracy 10 points below its best, wrong values 10 above their lowest, unfinished answers that already hold the right value 12 above, and length halved within 30 steps together with a 5-point loss, or under 2,500 tokens; halving alone only warns, since hard answers are meant to get shorter) | run 1's dev split held mostly easy problems; on D-Num-hard at 32K, run 1 turned 11.7 points of unfinished answers into 9.0 points of wrong values and 2.0 of right ones | `dpt.data.bank_merge carve-hard-dev`, `dpt.monitoring.bridge` |
+| a second dev split: up to 10 held-out problems from each hard and long family, never more than a third of the family's problems, with pause rules (accuracy 10 points below its best, wrong values 10 above their lowest, unfinished answers that already hold the right value 12 above, and length halved within 30 steps together with a 5-point loss, or under 2,500 tokens; halving alone only warns, since hard answers are meant to get shorter) | run 1's dev split held mostly easy problems; on D-Num-hard at 32K, run 1 turned 11.7 points of unfinished answers into 9.0 points of wrong values and 2.0 of right ones | `dpt.data.bank_merge carve-hard-dev`, `dpt.monitoring.bridge` |
 | the local-magnitude problems left out (836 in the verified bank) | their printed formula is wrong for amplitudes in mm, so every label is 2.681 too low (§8.5) | `dpt.data.bank_merge.FAULTY_FAMILIES` |
 | no report task in training; numeric 70%, code 15%, general 15% of the prompts | the test is numeric; the report reward is lenient (§6.5); code is not re-graded and 90% of its groups were 8/8; the general tasks were 21% of the prompts and gave a median 57% of the gradient | `configs/rl/rl_9b_v2.yaml` |
 | half the learning rate: 1e-6, then 5e-7 | run 1 (2e-6, then 1e-6) peaked on dev at step 20 and drifted after it (§6.4) | `configs/rl/rl_9b_v2.yaml` |
@@ -1186,6 +1186,13 @@ seed reuses the length cap another seed chose, since the model, layout and lengt
 evaluation compares each seed with SFT, and the seeds pooled: each item's score averaged over the seeds
 (`dpt.eval.budget compare --pool`).
 
+The seeds also train the same number of steps. Seed 1 spends its first day building the bank, so it has about 12
+hours left for RL and will stop for time before step 120. The later seeds skip the build and would otherwise run
+all 120 steps, and seeds that trained for different lengths would make the pooled comparison hard to read. So seeds 2
+and 3 read the step where seed 1 stopped (its `WALLTIME.json`) and stop there too (`DPT_STOP_AT_STEP`). Their LR
+schedule and sampler stay set for 120 steps, so they train those steps exactly as seed 1 did. The cluster allows 12
+nodes per user, so the three 8-node jobs run one after another anyway.
+
 ```bash
 scripts/slurm/submit_window.sh rl-build-queue      # seed 1: bank v2 if missing → 24K test → RL v2 → final evaluation
 scripts/slurm/submit_window.sh sft-v2-queue        # seed 2: the same steps (scripts/slurm/sft_v2_job.sh)
@@ -1202,6 +1209,8 @@ Caveats, plainly:
 - three seeds of RL v2, and one of every other run; seed 3 differs only in its budget, so its comparison with
   seeds 1–2 rests on one seed, and if the 24K memory test fails, seeds 1–2 also train at 16K and the seeds differ
   only in which pass rate weights the problems;
+- every seed stops where seed 1 stopped for time, so RL v2 trains fewer than its planned 120 steps and never reaches
+  the lower learning rate planned from step 86;
 - D-Fresh has 60 problems, so its interval is about ±5 points;
 - the pilot has 10 problems per family; bank v2's real grades are known only after its build, and a bank with
   fewer than 1,000 learnable numeric problems stops the job before RL;

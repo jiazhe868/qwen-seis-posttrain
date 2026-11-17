@@ -876,7 +876,7 @@
    "sft_eval": "2026-10-29T21:16"
   }
  },
- "collected_at": "2026-11-16T18:17",
+ "collected_at": "2026-11-17T00:17",
  "compute": {
   "balance": {
    "available_su": 4714,
@@ -1580,7 +1580,7 @@
     "submit": "2026-11-11T22:03:38"
    },
    {
-    "elapsed_s": 35673,
+    "elapsed_s": 57274,
     "end": "Unknown",
     "id": "3576284",
     "name": "dpt-rlv2",
@@ -1588,7 +1588,7 @@
     "partition": "gpu-a100",
     "start": "2026-11-16T08:22:47",
     "state": "RUNNING",
-    "su": 237.82,
+    "su": 381.83,
     "submit": "2026-11-11T22:05:31"
    },
    {

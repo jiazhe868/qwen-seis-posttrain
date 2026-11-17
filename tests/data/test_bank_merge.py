@@ -152,16 +152,34 @@ def test_carve_hard_dev_holds_out_each_family_and_writes_the_family_map(tmp_path
     write_jsonl(tmp_path / "rl_main.jsonl", [_row(u, "t1_num", 0.5) for u in fams if u != "h3"])
     write_jsonl(tmp_path / "rl_hard.jsonl", [_row("h3", "t1_num", 0.0)])
     res = carve_hard_dev(tmp_path, [stage], ["hard_a", "long_b", "missing_c"], per_family=3)
-    assert res["held_out"] == 6 and res["per_family_held"] == {"hard_a": 3, "long_b": 3, "missing_c": 0}
+    # long_b has 8 problems: at most a third of them (2) go to the dev split
+    assert res["held_out"] == 5 and res["per_family_held"] == {"hard_a": 3, "long_b": 2, "missing_c": 0}
+    assert res["per_family_train"] == {"hard_a": 9, "long_b": 6, "missing_c": 0}
     assert res["missing_families"] == ["missing_c"]
     dev = list(read_jsonl(tmp_path / "rl_dev_hard.jsonl"))
     assert {r["data_source"] for r in dev} == {"t1_num_hard"} and {r["extra_info"]["split"] for r in dev} == {"dev"}
     held = {r["extra_info"]["uid"] for r in dev}
     train = [r["extra_info"]["uid"] for n in ("rl_main_train", "rl_hard_train") for r in read_jsonl(tmp_path / f"{n}.jsonl")]
-    assert len(train) == 30 - 6 and not held & set(train)
+    assert len(train) == 30 - 5 and not held & set(train)
     assert json.loads((tmp_path / "uid_family.json").read_text())["v1"] == "v1_fam"
     assert carve_hard_dev(tmp_path, [stage], ["hard_a", "long_b", "missing_c"], per_family=3)["skipped"]
     assert not carve_hard_dev(tmp_path, [stage], ["hard_a"], per_family=2).get("skipped")   # other settings: redo
+
+
+def test_carve_hard_dev_leaves_two_thirds_of_a_small_family_for_training(tmp_path):
+    """2026-11-17: a readmitted family can keep only the few problems the SFT model solved, so the dev split takes at
+    most a third of each family, none of one with two problems, and never fails for a small family."""
+    stage = tmp_path / "stages" / "05_difficulty.jsonl"
+    stage.parent.mkdir()
+    sizes = {"big": 40, "eleven": 11, "two": 2}
+    fams = {f"{name}{i}": name for name, n in sizes.items() for i in range(n)}
+    write_jsonl(stage, [{"uid": u, "task": "t1_num", "source": {"family": f}} for u, f in fams.items()])
+    write_jsonl(tmp_path / "rl_main.jsonl", [_row(u, "t1_num", 0.5) for u in fams])
+    write_jsonl(tmp_path / "rl_hard.jsonl", [])
+    res = carve_hard_dev(tmp_path, [stage], list(sizes), per_family=10)
+    assert res["per_family_held"] == {"big": 10, "eleven": 3, "two": 0}
+    assert res["per_family_train"] == {"big": 30, "eleven": 8, "two": 2}
+    assert res["held_out"] == 13 and res["missing_families"] == []
 
 
 def test_check_needs_enough_learnable_t1_problems_and_lists_families(tmp_path):
