@@ -360,12 +360,14 @@ Counts only: `docs/talk/data/screening_1114.json`.
 
 ## 10. Update (2026-11-15, evening): the reward side of RL v2
 
-I changed one reward rule, first on seed 3 and, since the night of November 15, on every seed: a numeric answer
-that runs out of tokens scores 0 and stays in its group. The soft length penalty is gone with it. A cut-off answer
-scored below a finished wrong one would teach the model to finish wrong rather than late, and on the hard families
-the penalty gave a right answer at 23.5K a negative advantage while a cut-off answer got 0. Everything else in the
-rewards stays. T1 agrees with the grader on 99.3–100%
-of answers, and run 1's trouble was its bank, which the SFT model had already solved (README §8.3).
+I changed one reward rule, first on seed 3 and, since the night of November 15, on every seed. A numeric answer that
+runs out of tokens now scores 0 and stays in its group, and the soft length penalty is gone. The reason is easiest to
+see in one group from the pilot of the new families: five quick right answers, one right answer that finishes at
+23,500 tokens, and two answers cut off at 24K. Under the old rule the late right answer is docked to 0.63, below the
+group's average of 0.94, so the step pushes it down; the two unfinished answers are left out and the step does not
+touch them. Finishing late was punished and not finishing was not. Everything else in the rewards stays. T1 agrees
+with the grader on 99.3–100% of answers, and run 1's trouble was its bank, which the SFT model had already solved
+(README §8.3).
 
 I am keeping the report task out of training. On 100 report questions, after a review of all 300 answers, the gold
 labels agree with Luna's pairwise verdicts on 0.78–0.79 of the decisive pairs and with Gemma's on 0.57–0.59. Gemma
@@ -373,13 +375,18 @@ is the T3 reward model, and it calls about 70% of the pairs that the gold labels
 trained model. Training on that would teach the model what Gemma likes. A rubric version has to reach about 0.75
 on held-out questions before reports go back in.
 
-Criterion by criterion (2026-11-16, 31 held-out questions; `dpt.eval.rubric_calibration`; every format scored on
-one machine), the reward judge fails 1% of the criteria the gold marks met and passes 23% of those it marks not
-met, but it calls 83% of the partly met ones met, and the gold marks 41% of all criteria partly met. Per answer, at
-its best pass mark, it passes 69% of the answers the gold scores below 60. Yes/no checks with a quoted span pass 45%
-and fail 28%. Three levels per criterion (full, partial, none) pass 51% and fail 6%, the best balance (0.72 against
-0.63), yet the judge still calls 82% of the partly met criteria full. All three order pairs of answers to the same
-question alike (66–67%). The partly met need a stronger judge or smaller criteria (README §6.5).
+To find out where Gemma goes wrong, I compared it with the gold labels criterion by criterion (2026-11-16, 31
+held-out questions; `dpt.eval.rubric_calibration`). On the clear cases it is mostly right: it fails 1% of the
+criteria the gold marks met and passes 23% of those it marks not met. The trouble is the criteria in between. The
+gold marks 41% of all criteria partly met, and Gemma calls 83% of those met.
+
+My first guess was that the 0–10 scale hides the problem, so I tried two other formats on the same answers, all
+scored on one machine. Yes/no checks with a quoted span pass fewer weak answers (45% of those the gold scores below
+60, against 69%) and fail many more good ones (28%, against 6%). Three levels per criterion, full, partial or none,
+give the best balance per answer (51% and 6%; balanced accuracy 0.72 against 0.63). Yet even with a "partial" level
+on offer, Gemma still calls 82% of the partly met criteria full, and all three formats order pairs of answers to the
+same question alike, 66–67% of the time. So the format was not the problem. This judge does not see what a partly
+met answer leaves out, and that needs a stronger judge or criteria split into smaller checks (README §6.5).
 
 ## Data and code
 
