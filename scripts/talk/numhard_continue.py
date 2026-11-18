@@ -19,7 +19,9 @@ The prompt is the harness's own, as in the October final eval:
 Continuations are sampled at temperature 1 and top-p 1, like the eval. They are appended to
 `<eval_root>/d_num_hard_64k/<row>/continuations.jsonl`, so a rerun resumes; `--stop-new-after` stops new requests
 before a job's time limit. Grading is the harness's: thinking stripped, fail closed, the numeric grader with strict
-units. Rows: base_medium, sft, rl_seed1.
+units. Rows: base_medium, sft, rl_seed1, and rl_v2_seed1, whose answers `python -m dpt.eval.budget continue` continued
+into the same file with the same prompt and sampling (2026-11-18). `summary` skips a row that has no answers yet, and
+`--eval-secure-root` reads the frozen set from another place than the config's (a copy off the cluster).
 """
 from __future__ import annotations
 
@@ -45,7 +47,7 @@ import failure_types as FT  # noqa: E402  (the same outcome rules as the failure
 
 WORK = Path(os.environ.get("WORK", "."))
 R = WORK / "dpt" / "eval_results"
-ROWS = ("base_medium", "sft", "rl_seed1")
+ROWS = ("base_medium", "sft", "rl_seed1", "rl_v2_seed1")
 BUDGET = 65536
 
 
@@ -130,13 +132,15 @@ async def run_async(a: argparse.Namespace) -> None:
     print(f"{a.row}: finished {dict(stats)} in {time.time() - t0:.0f}s", flush=True)
 
 
-def summary(_: argparse.Namespace) -> None:
+def summary(a: argparse.Namespace) -> None:
     from dpt.common.config import load_config
 
-    secure = Path(str(load_config().project.paths.eval_secure_root))
+    secure = Path(a.eval_secure_root or str(load_config().project.paths.eval_secure_root))
     items = {r["id"]: r for r in read_jsonl(secure / "d_num_hard.jsonl")}
     out: dict[str, Any] = {"collected_at": dt.datetime.now().strftime("%Y-%m-%dT%H:%M"), "budget": BUDGET, "rows": {}}
     for row in ROWS:
+        if not (R / "d_num_hard" / row / "d_num_hard" / "generations.jsonl").exists():
+            continue
         cont = cached(row)
         k32: collections.Counter[str] = collections.Counter()
         k64: collections.Counter[str] = collections.Counter()
@@ -189,7 +193,7 @@ def main() -> None:
     r.add_argument("--concurrency", type=int, default=60)
     r.add_argument("--timeout-s", type=float, default=10800)
     r.add_argument("--stop-new-after", type=float, default=0, help="seconds from start after which no new request")
-    sub.add_parser("summary")
+    sub.add_parser("summary").add_argument("--eval-secure-root", default=None)
     a = ap.parse_args()
     if a.cmd == "todo":
         todo(a)

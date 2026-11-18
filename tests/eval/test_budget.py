@@ -146,7 +146,7 @@ def test_a_pool_of_seeds_is_one_row_with_the_mean_of_each_item(tmp_path):
 
 
 def test_the_success_table_marks_intervals_above_zero_and_gives_the_verdict(capsys, tmp_path):
-    from dpt.eval.budget import success_table, three_budget_main
+    from dpt.eval.budget import main, success_table
 
     def entry(d32, low32):
         e = {f"at_{k}k": {"score": 70.0, "vs_baseline": {"diff": 1.0, "low": -1.0, "high": 3.0}} for k in (16, 32, 64)}
@@ -160,5 +160,7 @@ def test_the_success_table_marks_intervals_above_zero_and_gives_the_verdict(caps
     res["sets"]["d_fresh"]["rl_v2"] = entry(5.0, 0.4)
     assert "rl_v2: passes" in success_table(res, ["rl_v2"]) and "通过" in success_table(res, ["rl_v2"], "zh")
     (tmp_path / "c.json").write_text(json.dumps(res))
-    assert three_budget_main(["table", str(tmp_path / "c.json"), "--rows", "rl_v2"]) == 0
+    # through the module's entry point, as `python -m dpt.eval.budget table` runs it (2026-11-18: main() did not pass
+    # "table" on, so the command the README gives failed with a usage error)
+    assert main(["table", str(tmp_path / "c.json"), "--rows", "rl_v2"]) == 0
     assert "rl_v2: passes" in capsys.readouterr().out

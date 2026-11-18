@@ -8,8 +8,8 @@ Every entry is a mistake actually made here, on the Qwen3.5-9B SFT and multi-tas
 Slurm cluster (8 nodes × 3 A100-40GB) in October and November 2026: caught by a measurement, corrected, and
 given a test or a guard. Nothing below is a generic best-practice list.
 
-**The organising observation: most of the expensive failures here were silent.** In twenty-one of the
-twenty-seven entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
+**The organising observation: most of the expensive failures here were silent.** In twenty-two of the
+twenty-eight entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
 check that checked the other forward pass, a patch that patched nothing, a sandbox that failed closed
 without an alert, framework defaults that overrode the config, a hang that no timeout noticed, a judge that
 graded its own students, verifiers that all agreed with the wrong formula they were given. The loud failures (a crash, an out-of-memory error) cost minutes; the silent ones
@@ -50,6 +50,7 @@ Companion document: [README.md](README.md) explains how the pipeline works and w
 | E1 | The queue sets the pace | operations | days per failed launch | loud |
 | E2 | Unwatched waits: an idle job and a cleanup that cancelled another | operations | 2 idle hours of 8 nodes; a judge job's 4-day queue place | silent |
 | E3 | A synced file that needed code the cluster did not have | operations | a bank build dying at its first import | loud |
+| E4 | A server that never started, and an evaluation that waited for it | operations | every seed's final evaluation lost, and a new place in the queue each time | silent |
 
 Each incident uses the same template: **Symptom → The false story → Root cause → Fix → Permanent
 regression test → Invalidated artifacts → Generalisable lesson.** "The false story" is the plausible
@@ -755,3 +756,32 @@ are imported there the way the jobs import them.
 
 **Generalisable lesson.** A checksum proves the copy, not that it runs. Diff against the target before the copy,
 and import after it.
+
+## E4 — A server that never started, and an evaluation that waited for it
+
+**Symptom.** RL v2's first seed finished training, and the final evaluation that ran next in the same job died an
+hour later with "server … not up after 3600s". Five of its model replicas, on three nodes, had written no log file
+at all.
+
+**The false story.** "The model loads slowly; give the servers more time." The other replicas on the same nodes had
+loaded in a few minutes, and a server that crashes while loading leaves a log with its error. These five had no log:
+their processes never started.
+
+**Root cause.** Not known in detail. Each replica is started in the background over ssh on its node, and for these
+five the launch returned without starting anything. The job ended before the nodes could be examined. What turned
+five missing servers into a lost evaluation was the launcher. It never checked that a launch had left a log, and it
+waited for every replica under one timeout, so any single missing server stopped the whole phase.
+
+**Fix.** The launcher logs a launch that returns an error, relaunches after 60 seconds any replica whose log file is
+missing, and then waits for a quorum: replicas that never answer are dropped, and the evaluation goes on if at least
+two thirds of them answer (`scripts/slurm/final_eval_window.slurm`).
+
+**Permanent regression test.** `test_final_eval_relaunches_missing_replicas_and_goes_on_with_two_thirds`
+(`tests/slurm/test_job_scripts.py`).
+
+**Invalidated artifacts.** None. Training had finished and its checkpoints were safe. The evaluation went back into
+the queue as a 4-node job of its own, and its two headline sets were run on a workstation while it waited (§8.3 of
+the README).
+
+**Generalisable lesson.** When a job starts many servers, check that each one started, and go on with a quorum.
+Waiting for all of them turns one silent launch failure into a lost job and a new place in the queue.

@@ -13,7 +13,7 @@ frozen before any training. Everything ran in one month on 8 nodes of 3 × NVIDI
 <p align="center"><img src="assets/workflow_en.png" width="92%"></p>
 
 <p align="center">D-Num-hard accuracy (avg@8 over 160 held-out problems) and mean tokens per answer at each stage.
-The arrows carry the data that trained the next model.</p>
+The arrows carry the data that trained the next model; both RL runs start from SFT.</p>
 
 ## Summary
 
@@ -86,7 +86,16 @@ solved every D-Num-hard and D-Fresh problem without seeing the answers, and all 
 825 problems in run 1's training bank carried labels 2.681 units too low. Bank v2 leaves them out. Of 100 rows of
 the paper-based report data, it would keep 2 and drop 50: the teacher wrote earthquake facts from memory, and
 many were wrong. Therefore, I dropped SFT v2, and the 8-node job planned for it runs RL v2 again with a second
-seed. A third seed is queued too, and the results of all three are not in yet.
+seed. A third seed is queued too.
+
+RL v2's first seed trained all 110 of its steps without collapsing, and it passes the test. At 32K it is 18.4 points
+above SFT on D-Num-hard [+14.4, +22.4], at 86.5, and 10.4 points above on D-Fresh [+5.2, +16.2]. It stays ahead at
+64K, where run 1 fell 6.4 points below SFT: +6.3 [+3.7, +9.1] and +5.8 [+1.7, +10.4]. Most of the gain is answers
+that now finish. At 32K only 6% of its D-Num-hard answers run out of tokens, against SFT's 28%, and its wrong values
+rise only from 4% to 7%, where run 1's rose to 13%. Late in training only one numeric group in nine still carried
+gradient, as few as in run 1's first steps, and the run stayed stable, so a scarce signal alone did not cause run 1's
+collapse (§8.6). These two sets ran on a workstation while the cluster's final evaluation waited in the queue; RL v2's
+other sets, and seeds 2 and 3, are still to come.
 
 Most of the month went to systems. The one 8-node job ran 71.9 hours: 28.7 of them ran the planned stages,
 and 43.2 went to incidents, waits and holds, 35.1 of those before SFT could start (§9.2). A 9B model on
@@ -136,25 +145,29 @@ catch them.
 
 <p align="center"><img src="assets/results_by_stage_en.png" width="92%"></p>
 
-| set (metric, items) | base | SFT | RL step 20 |
-|---|---|---|---|
-| D-Num (avg@8, 300) | **91.6** ± 1.0 | 89.4 ± 0.9 | 89.2 ± 1.0 |
-| D-Num-hard (avg@8, 160) | 62.0 ± 1.6 | 68.1 ± 1.4 | **70.1** ± 1.7 |
-| D-Fresh (avg@8, 60) | 70.6 ± 2.6 | 78.8 ± 2.3 | **83.3** ± 2.6 |
-| D-Code (pass@1, 150) | 80.5 ± 2.3 | **86.3** ± 2.0 | 85.2 ± 2.2 |
-| D-Report (win rate vs base, lower of two judges, 100) | 50 | 49.0 ± 9.0 | 49.0 ± 8.5 |
-| GPQA Diamond (198) | 56.6 ± 1.6 | 71.3 ± 1.6 | **74.2** ± 1.8 |
-| MMLU-Pro, 2K subset (change only) | 74.8 | 77.3 | 78.3 |
-| IFEval (377) | 93.1 | 93.1 | 93.9 |
-| LiveCodeBench after 2025-01 (70, change only) | 38.2 | **52.5** | 50.0 |
-| tool calling (188) | 83.0 | 88.8 | 86.7 |
-| refusal of should-refuse prompts, % (300) | **56.0** | 51.3 | 45.7 |
-| over-refusal of benign prompts, % (350) | 3.4 | 4.0 | 2.6 |
-| mean output tokens | 14,735 | 9,517 | **5,637** |
+| set (metric, items) | base | SFT | RL step 20 | RL v2, seed 1, step 110 |
+|---|---|---|---|---|
+| D-Num (avg@8, 300) | **91.6** ± 1.0 | 89.4 ± 0.9 | 89.2 ± 1.0 | … |
+| D-Num-hard (avg@8, 160) | 62.0 ± 1.6 | 68.1 ± 1.4 | 70.1 ± 1.7 | **86.5** ± 1.5 |
+| D-Fresh (avg@8, 60) | 70.6 ± 2.6 | 78.8 ± 2.3 | 83.3 ± 2.6 | **89.2** ± 1.9 |
+| D-Code (pass@1, 150) | 80.5 ± 2.3 | **86.3** ± 2.0 | 85.2 ± 2.2 | … |
+| D-Report (win rate vs base, lower of two judges, 100) | 50 | 49.0 ± 9.0 | 49.0 ± 8.5 | … |
+| GPQA Diamond (198) | 56.6 ± 1.6 | 71.3 ± 1.6 | **74.2** ± 1.8 | … |
+| MMLU-Pro, 2K subset (change only) | 74.8 | 77.3 | 78.3 | … |
+| IFEval (377) | 93.1 | 93.1 | 93.9 | … |
+| LiveCodeBench after 2025-01 (70, change only) | 38.2 | **52.5** | 50.0 | … |
+| tool calling (188) | 83.0 | 88.8 | 86.7 | … |
+| refusal of should-refuse prompts, % (300) | **56.0** | 51.3 | 45.7 | … |
+| over-refusal of benign prompts, % (350) | 3.4 | 4.0 | 2.6 | … |
+| mean output tokens | 14,735 | 9,517 | **5,637** | … |
 
 ± is the 95% interval of the sampling noise. Every model, the base included, was re-run in the same harness
 with the same prompts and settings (§3.2); no number is copied from elsewhere. The figure leaves out
-D-Report, which gets its own figure (§6.5). Source: `docs/talk/data/run.json`.
+D-Report, which gets its own figure (§6.5). Source: `docs/talk/data/run.json`. RL v2's final evaluation on the
+cluster was still waiting in the queue when its training ended, so I ran its two headline sets on a workstation's
+four A100s with the same harness, prompts, settings and grader
+(`docs/talk/data/rl_v2_seed1_local_1118.json`). Its other sets (…) come with that evaluation, and so does the
+figure above.
 
 SFT changed the most. It shortened the answers by a third and lifted every set where the base had run
 out of tokens. The share of GPQA answers cut off at 32K fell from 38% to 17%, and for LiveCodeBench from
@@ -169,6 +182,11 @@ i.e. 99.6) was out of reach by construction (§3.5).
 
 D-Report shows no gain under the judge that never touched training, and refusal fell for real (§7.4).
 
+RL v2, the second RL design (§8.3), is the first stage that moves D-Num-hard by a large step. Its first seed scores
+86.5, which is 18.4 points above SFT [+14.4, +22.4] in a paired comparison over the 160 problems, and D-Fresh rises
+by 10.4 [+5.2, +16.2]. Both pass the test fixed before it ran (§8.3). It gets there by finishing its answers: at 32K
+only 6% of its D-Num-hard answers run out of tokens, against SFT's 28%.
+
 ### 1.3 Where the samples go
 
 <p align="center"><img src="assets/where_samples_go_en.png" width="92%"></p>
@@ -179,9 +197,40 @@ grader reads the final answer and nothing else.
 
 On D-Num, most of the base's failures are unfinished answers, and most of SFT's and RL's failures are wrong
 values. D-Num-hard shows the same shift on a larger scale: unfinished answers fall from 33% (base) to 28%
-(SFT) to 16% (RL), and wrong values rise from 1% to 4% to 13%. **Post-training here mostly changed when the
-model stops thinking, and a model that stops earlier is wrong more often.** §7 asks what kind of error these
-wrong values are.
+(SFT) to 16% (RL run 1), and wrong values rise from 1% to 4% to 13%. RL v2's unfinished answers fall to 6%, and its
+wrong values stay at 7%. **Post-training here mostly changed when the model stops thinking.** Run 1 stopped earlier
+and was wrong more often. RL v2 stops earlier too, and most of the answers it now finishes are right (§8.6). §7 asks
+what kind of error run 1's wrong values are.
+
+### 1.4 One question, every stage
+
+The tables count how often each model is right. They do not show what an answer looks like, so here is one
+problem answered by all four models. To keep it from being a picked example, I fixed the problem by a rule
+before any model saw it: the first problem drawn with seed 20261118 from `three_layer_head_wave_time`, one of
+the public training families. It asks for the travel time of a head wave through two flat layers over a
+half-space, a problem a seismology student solves by hand in four steps. The family is in the training data,
+so this is the kind of problem the models were trained on, but this draw of it is new to every model and is
+in no test set.
+
+Each model answered it 16 times with the evaluation's prompt and settings (medium effort, temperature 1,
+top-p 1, at most 32K tokens), and the evaluation's numeric grader scored every answer. The figure shows each
+model's first answer (sample 0): the start and the end of its reasoning, then its final answer. Under each
+box are the counts over all 16 answers.
+
+<p align="center"><img src="assets/stage_outputs_en.png" width="92%"></p>
+
+In their first answers, all four models read the problem the same way: they restate the layers and look for
+the ray that runs along the top of the half-space. The difference is whether they finish. The base model is
+still writing formulas when it reaches 32K tokens, and 14 of its 16 answers run out; its 2 right answers
+took 21K and 23K tokens. SFT writes in the teacher's terse style and gets 9 of 16 right. Its first answer is
+checking its arithmetic a second time when the limit cuts it off, and 7 of its answers run out. Both RL
+models finish all 16 answers and get all 16 right, RL v2 with fewer tokens than run 1 (median 14.9K against
+18.6K). None of the 64 answers gives a wrong value. On this problem every failure is an answer that never
+ended.
+
+One problem is not a test. It shows on one question what §1.3 and §7.1 measure on 160: post-training here
+mostly changed when the model stops thinking. Source: `docs/talk/data/stage_example.json`, written by
+`scripts/talk/stage_example.py`.
 
 ---
 
@@ -799,23 +848,24 @@ Test-time compute is the one scaling axis this project measured well (figure in 
 
 Outcomes of the 1,280 D-Num-hard answers per model, at the eval's 32K budget and at 64K.
 
-| answers cut off at 32K | base | SFT | RL step 20 |
-|---|---|---|---|
-| cut off at 32K | 421 | 361 | 211 |
-| right at 64K | 100 | 202 | 95 |
-| a wrong value at 64K | 148 | 92 | 85 |
-| still unfinished at 64K | 151 | 65 | 30 |
-| a format failure at 64K | 22 | 2 | 1 |
+| answers cut off at 32K | base | SFT | RL step 20 | RL v2, seed 1 |
+|---|---|---|---|---|
+| cut off at 32K | 421 | 361 | 211 | 81 |
+| right at 64K | 100 | 202 | 95 | 48 |
+| a wrong value at 64K | 148 | 92 | 85 | 29 |
+| still unfinished at 64K | 151 | 65 | 30 | 4 |
+| a format failure at 64K | 22 | 2 | 1 | 0 |
 
-With room to finish, the SFT model is the most accurate of the three: 83.9% right at 64K, then RL step 20 at
-77.5% and the base at 69.8%. More than half of SFT's cut-off answers were on their way to the right value. A
+With room to finish, the SFT model is more accurate than run 1 and the base: 83.9% right at 64K, against 77.5% for
+RL step 20 and 69.8% for the base. RL v2 is the most accurate at both budgets, 86.5% at 32K and 90.2% at 64K, and
+48 of its 81 cut-off answers end right. More than half of SFT's cut-off answers were on their way to the right value. A
 quarter of the base's were, and 151 of them run out of room again at 64K. RL's answers rarely run out of room,
 and its wrong values stay: on rupture length, Mw and the ray range in a gradient it scores the same at both
 budgets. The receiver-function families move for the trained models: Vp/Vs from 3.8% to 40.0% and Moho depth
-from 15.0% to 54.4% for SFT. The base stays at 0.0% and 0.6%.
+from 15.0% to 54.4% for SFT, and RL v2 reaches 66.2% and 75.6% at 64K. The base stays at 0.0% and 0.6%.
 
-**A model that thinks longer can be the more accurate one; one budget hides that.** The order at 32K, RL first,
-comes from how soon each model finishes.
+**A model that thinks longer can be the more accurate one; one budget hides that.** At 32K run 1 is ahead of SFT
+only because it finishes sooner. RL v2 is ahead at both budgets.
 
 ### 7.4 Refusals
 
@@ -908,11 +958,32 @@ answers whose thinking did not end within 32K are continued by the same model, a
 | | 64K | 83.9 | 77.5 | **−6.4** [−9.0, −3.8] |
 | D-Fresh (60) | 16K | 66.9 | 77.9 | **+11.0** [+5.0, +17.5] |
 | | 32K | 78.8 | 83.3 | +4.6 [−0.8, +10.4] |
+| | 64K | 84.0 | 85.0 | +1.0 [−4.0, +6.5] |
 
-Source: `docs/talk/data/budgets_1111.json`. D-Fresh at 64K still needs the continuations of SFT's 41 and run
-1's 12 cut-off answers; RL v2's final evaluation adds them.
+Source: `docs/talk/data/budgets_1111.json`. D-Fresh at 64K comes from `docs/talk/data/budgets_rl_v2_seed1_1118.json`:
+the continuations of SFT's 41 and run 1's 12 cut-off answers ran together with RL v2's.
 
 Run 1 passes at 16K and fails at 32K. It made the model faster and did not make it more reliable.
+
+**RL v2's first seed passes.** Step 110 of seed 1 on the same test:
+
+| set (items) | budget | SFT | RL v2, seed 1 | RL v2 − SFT [95%] |
+|---|---|---|---|---|
+| D-Num-hard (160) | 16K | 47.8 | 67.1 | **+19.3** [+16.2, +22.3] |
+| | 32K | 68.1 | 86.5 | **+18.4** [+14.4, +22.4] |
+| | 64K | 83.9 | 90.2 | **+6.3** [+3.7, +9.1] |
+| D-Fresh (60) | 16K | 66.9 | 85.6 | **+18.8** [+12.1, +26.0] |
+| | 32K | 78.8 | 89.2 | **+10.4** [+5.2, +16.2] |
+| | 64K | 84.0 | 89.8 | **+5.8** [+1.7, +10.4] |
+
+Source: `docs/talk/data/budgets_rl_v2_seed1_1118.json` (`python -m dpt.eval.budget compare`, then `table`). Its final
+evaluation on the cluster was still waiting in the queue, so these two sets ran on a workstation's four A100s with the
+same harness, prompts, settings and grader, and the 64K continuations with the same prompt and sampling.
+
+At 32K both sets are above SFT by more than the noise, so the first seed passes. It is above SFT at the other two
+budgets as well. Run 1 was faster than SFT and fell behind it at 64K, where every model has room to finish. RL v2 is
+faster too, and it stays ahead at 64K. So it made the model more reliable as well as faster. Seeds 2 and 3 will show
+whether another seed does the same.
 
 **The changes, each with the evidence behind it:**
 
@@ -1193,6 +1264,11 @@ and 3 read the step where seed 1 stopped (its `WALLTIME.json`) and stop there to
 schedule and sampler stay set for 120 steps, so they train those steps exactly as seed 1 did. The cluster allows 12
 nodes per user, so the three 8-node jobs run one after another anyway.
 
+Seed 1 stopped for time after step 110, at 02:19 on November 18, and its dev passes chose step 110. The final
+evaluation that came next in the same job did not run: five of its servers never started, and the launcher waited
+for them until its timeout ([PITFALLS](PITFALLS.md) E4). The evaluation went back into the queue as a 4-node job of
+its own. Seed 2 started at 04:50 the same morning and stops after step 110; seed 3 waits behind it.
+
 ```bash
 scripts/slurm/submit_window.sh rl-build-queue      # seed 1: bank v2 if missing → 24K test → RL v2 → final evaluation
 scripts/slurm/submit_window.sh sft-v2-queue        # seed 2: the same steps (scripts/slurm/sft_v2_job.sh)
@@ -1209,8 +1285,8 @@ Caveats, plainly:
 - three seeds of RL v2, and one of every other run; seed 3 differs only in its budget, so its comparison with
   seeds 1–2 rests on one seed, and if the 24K memory test fails, seeds 1–2 also train at 16K and the seeds differ
   only in which pass rate weights the problems;
-- every seed stops where seed 1 stopped for time, so RL v2 trains fewer than its planned 120 steps and never reaches
-  the lower learning rate planned from step 86;
+- every seed stops where seed 1 stopped for time, after step 110, so RL v2 trains 110 of its planned 120 steps, and
+  its learning rate, which falls from step 86, ends at 6.5 × 10⁻⁷ instead of the planned 5 × 10⁻⁷;
 - D-Fresh has 60 problems, so its interval is about ±5 points;
 - the pilot has 10 problems per family; bank v2's real grades are known only after its build, and a bank with
   fewer than 1,000 learnable numeric problems stops the job before RL;
@@ -1393,19 +1469,21 @@ Caveats, plainly:
 
 ### 8.6 Why RL v2 trains where run 1 collapsed
 
-By its 69th step, RL v2's first seed had done what run 1 never did: it kept improving after step 20, and its answers
-stopped shrinking at a sensible length. The obvious question is what made the difference. The honest difficulty is
-that RL v2 changed five things at once: the bank, the rule for cut-off answers, the learning rate (halved), the task
-mix (no report task) and the budget (24K instead of 16K). There is no control run, and no time left for ablations.
-So this section asks a narrower question. Using only what the two runs logged, which changes can be seen doing
-something, and which cannot yet be told apart? The numbers are from step 69 of a run still going; they are
-refreshed when it ends (`docs/talk/data/rl_runs_compared.json`).
+RL v2's first seed ran all 110 of its steps and did what run 1 never did: it kept improving after step 20, and its
+answers stopped shrinking at a sensible length. On the test fixed before it ran, it is also well above SFT: +18.4
+points on D-Num-hard and +10.4 on D-Fresh at 32K (§8.3). The obvious question is what made the difference. The honest
+difficulty is that RL v2 changed five things at once: the bank, the rule for cut-off answers, the learning rate
+(halved), the task mix (no report task) and the budget (24K instead of 16K). There is no control run, and no time
+left for ablations. So this section asks a narrower question. Using only what the two runs logged, which changes can
+be seen doing something, and which cannot be told apart? The numbers cover all 110 steps
+(`docs/talk/data/rl_runs_compared.json`).
 
 **One scale for both runs.** RL v2 runs at half run 1's learning rate, so comparing them step by step would be
 unfair to run 1. With the Adam optimizer, one step moves the weights by roughly its learning rate whatever the
 gradient's size, so the sum of the learning rates of all steps so far says how far a run has pushed the policy. On
 that scale, RL v2's step 2n has gone about as far as run 1's step n. Run 1 collapsed at step 40, a learning-rate sum
-of 71 (in units of 10⁻⁶, counting its warm-up); RL v2 reaches 71 at about step 76 and will end near 110.
+of 71 (in units of 10⁻⁶, counting its warm-up). RL v2 passed 71 at step 76 and ended at 101, about where run 1
+stopped (103, at step 56).
 
 <p align="center"><img src="assets/rl_runs_compared_en.png" width="92%"></p>
 
@@ -1417,12 +1495,12 @@ problems, the share of numeric groups whose answers differ, and the length of ri
 **What each run learned from.** The gradient of a GRPO step comes only from groups whose answers got different
 rewards (§8.3), and every task contributes its own share:
 
-| | run 1, steps 1–20 | run 1, steps 21–40 | RL v2, steps 1–20 | RL v2, steps 21–40 | RL v2, steps 41–69 |
-|---|---|---|---|---|---|
-| share of the gradient from numeric problems | 36% | 38% | **93%** | 85% | 77% |
-| … from general prompts | 57% | 18% | 6% | 13% | 21% |
-| … from judged reports | — | 35% | — | — | — |
-| numeric groups with gradient | 12% | 24% | **65%** | 38% | 24% |
+| | run 1, steps 1–20 | run 1, steps 21–40 | RL v2, steps 1–20 | RL v2, steps 21–40 | RL v2, steps 41–90 | RL v2, steps 91–110 |
+|---|---|---|---|---|---|---|
+| share of the gradient from numeric problems | 36% | 38% | **93%** | 85% | 77% | 70% |
+| … from general prompts | 57% | 18% | 6% | 13% | 20% | 28% |
+| … from judged reports | — | 35% | — | — | — | — |
+| numeric groups with gradient | 12% | 24% | **65%** | 38% | 21% | **11%** |
 
 Run 1 was meant to improve numeric reasoning, but most of its gradient came from other tasks, first the general
 prompts and then, from step 27, the judged reports. Its numeric gradient came from about one group in eight. RL v2
@@ -1431,36 +1509,47 @@ fell as the model solved more of the bank, which is the healthy way for it to fa
 for the opposite reason: the model was getting worse, so more groups had a wrong answer in them, until every answer
 was wrong and the share dropped to zero (middle panel).
 
+The last column surprised me. By its last 20 steps, RL v2 had as few numeric groups with gradient as run 1 had in
+its first 20, about one in nine, and it did not collapse. Its training accuracy on numeric problems stayed at 98%,
+and its right answers grew a little longer (medians of 7,339 tokens over steps 41–90 and 8,009 over steps 91–110).
+So a scarce right-against-wrong signal does not by itself make a run collapse. What differed is what filled the rest
+of each step. In RL v2, numeric problems still gave 70% of the gradient, and there was no length term. In run 1,
+other tasks gave most of the gradient, and in its first step a length penalty alone gave 28% of the advantage (next
+paragraph).
+
 **What the gradient paid for.** In run 1's first step, 19% of the groups had a gradient only because the length
 penalty docked a long right answer, and those groups held 28% of the step's advantage, all of it pushing toward
 shorter answers; 13% of the groups had right and wrong answers (§6.4). RL v2 has no length term: a right finished
 answer scores 1, and a wrong or unfinished one scores 0. Inside its groups, the right finished answers were longer
-than the wrong finished ones in 62 of 69 steps (a median of 861 tokens). So its gradient never favoured a short wrong
-answer over a longer right one. The lengths show the difference. At equal learning-rate sums of 10, 40 and 60, run
-1's right numeric answers had 2,230, 1,248 and 815 tokens, and kept falling to a few hundred. RL v2's had 10,881,
-7,061 and 7,178: they shortened while unfinished answers were turning into right ones, then stopped.
+than the wrong finished ones in 88 of 110 steps (a median of 734 tokens). So its gradient never favoured a short wrong
+answer over a longer right one. The lengths show the difference. At equal learning-rate sums of 10, 40, 60 and 80,
+run 1's right numeric answers had 2,230, 1,248, 815 and 458 tokens, and by 100 it had no right answers left. RL v2's
+had 10,881, 7,061, 7,178 and 7,760, and 7,973 at 100: they shortened while unfinished answers were turning into
+right ones, then stopped.
 
 **What happened to the unfinished answers,** the failure both runs were meant to fix:
 
 | | unfinished | right | wrong value |
 |---|---|---|---|
 | run 1, D-Num-hard at 32K, SFT → step 20 | −11.7 | +2.0 | +9.0 |
-| RL v2, hard dev split at 24K, SFT (its step-0 dev pass) → step 60 | −40.6 | **+42.7** | −1.2 |
+| RL v2, D-Num-hard at 32K, SFT → step 110 | −21.9 | **+18.4** | +3.1 |
+| RL v2, hard dev split at 24K, SFT (its step-0 dev pass) → step 110 | −39.8 | **+44.9** | −3.4 |
 
-The two rows use different problems and budgets, so they are not a like-for-like comparison; RL v2's D-Num-hard at
-32K comes with its final evaluation. The direction is what differs. Run 1 turned most of the answers it stopped from
-running out into wrong ones. RL v2 turned all of them into right ones, and a few wrong ones as well.
+The first two rows compare like with like: the same 160 held-out problems at the same budget. Run 1 stopped 11.7
+points of answers from running out, and its wrong values rose by 9.0 points. RL v2 stopped 21.9 points, and its right
+answers rose by 18.4. On its own hard dev split, at the training budget, the shift was larger, and wrong values fell
+too. So what RL v2 learned on the training families carried over to the held-out ones, though less of it.
 
 **The changes, by how much the evidence says about each:**
 
 | change | what it changed | evidence | verdict |
 |---|---|---|---|
 | bank re-graded with the SFT model, 18 new families, weights for problems solved sometimes | where the gradient came from | numeric groups with gradient 65% against 12%; numeric share of the gradient 93% against 36% | changed the signal; measured |
-| a cut-off answer counts as wrong, no length penalty | what the gradient paid for | run 1's first step: 28% of the advantage from the penalty alone; RL v2: right finished answers longer inside 62 of 69 steps, shortening stopped where answers finished | changed the incentive; measured, but entangled with the bank |
-| half the learning rate | how far each step moves | from a learning-rate sum of 10 to 60, run 1's right answers lost 63% of their length; RL v2's none after 40 | not the whole story so far; decisive once RL v2 passes 71 (step ~76) |
+| a cut-off answer counts as wrong, no length penalty | what the gradient paid for | run 1's first step: 28% of the advantage from the penalty alone; RL v2: right finished answers longer inside 88 of 110 steps, shortening stopped where answers finished | changed the incentive; measured, but entangled with the bank |
+| half the learning rate | how far each step moves | RL v2 passed run 1's collapse point (a sum of 71) at step 76 and ended at 101; its right answers had 7,061 tokens at 40 and 7,973 at 100 | how far the policy moved does not explain the collapse alone; whether smaller steps are safer cannot be separated |
 | no report task | removed a judged reward that took 26–72% of run 1's gradient in steps 27–40 | run 1's numeric answers were already shrinking before reports joined (2,205 tokens at step 14) | cannot be separated |
 | a 24K budget instead of 16K | room to finish | seed 3 trains at 16K with everything else the same | open until seed 3 |
-| dev pass every 10 steps, hard dev split, pause rules | what is measured and when the run stops | no pause rule has fired | explains none of the difference; insurance |
+| dev pass every 10 steps, hard dev split, pause rules | what is measured and when the run stops | no pause rule fired in 110 steps | explains none of the difference; insurance |
 
 **What carries over to other projects:**
 - **Count where the gradient comes from before blaming the algorithm.** Both runs used the same losses, clip, group
@@ -1472,11 +1561,13 @@ running out into wrong ones. RL v2 turned all of them into right ones, and a few
 - **Compare runs at equal learning-rate sums, not at equal steps.**
 - **A rising share of groups with gradient is not always progress.** In run 1 it rose because the model was getting
   worse.
+- **Scarce signal alone does not make a run collapse.** RL v2 ended with as few numeric groups with gradient as run 1
+  started with, and stayed stable. What fills the rest of the step matters more.
 
 Caveats, plainly:
-- one seed, and the run is not finished; the final evaluation on D-Num-hard and D-Fresh decides whether any of this
-  carries over to the test;
-- the hard dev split holds new problems from the training families, while D-Num-hard's families are held out;
+- one seed so far; seeds 2 and 3 are still training;
+- the hard dev split holds new problems from the training families; D-Num-hard's families are held out, and there
+  the gain is smaller (the table above);
 - without a control run, the bank and the rule cannot be told apart; the comparison only says that both changed
   what the gradient did.
 
@@ -1568,6 +1659,10 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   uses 41% fewer tokens (§6.4).
 - **Signal.** A difficulty filter run with the base model left 87% of the SFT policy's numeric and code
   groups without gradient (§6.3).
+- **RL v2.** A bank re-graded with the SFT model, cut-off answers counted as wrong and half the learning rate: the
+  first seed trained 110 steps without collapsing and passes the test fixed before it ran. At 32K it is 18.4 points
+  above SFT on D-Num-hard (86.5) and 10.4 on D-Fresh, both beyond the noise, mostly by finishing the answers SFT
+  ran out of tokens on (§8.3, §8.6).
 - **Rewards.** The programmatic rewards agree with the evaluation grader on 99.3–100% of answers. The judged
   report reward is lenient (precision 7% with an independent judge as the reference, at a pass mark of 70),
   and its rubrics are compound (91% of criteria join several claims). There is no judge drift (§6.5).
@@ -1590,10 +1685,11 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   RL step 20 a 60.0% win rate against the base, between Gemma (86.7%) and Luna (45.0%) on the same pairs (§8.5).
 - **Not measured yet:**
   - human gold labels for any reward or test (a model review stood in, §8.5);
-  - a second seed (RL v2's seeds 2 and 3 are queued), and any scaling curve in data, model size or RL steps;
+  - a second seed (RL v2's seed 2 is training and seed 3 is queued), and any scaling curve in data, model size or
+    RL steps;
   - the 27 unclear refusal answers;
-  - the cause of the RL collapse;
-  - whether RL v2 beats SFT at 32K (the test of §8.3; its three seeds are queued).
+  - the cause of run 1's collapse;
+  - RL v2's other sets (D-Num, code, reports, general benchmarks, refusals), which come with its final evaluation.
 
 ---
 
@@ -1605,16 +1701,18 @@ Report portable units. "56 RL steps" means nothing on another batch size. "56 st
 | axis | measured here | what to add |
 |---|---|---|
 | SFT data | one mix: 13,095 conversations, 44.1M tokens, one run | a data sweep (¼, ½, 1×) on D-Num-hard and D-Report; report rows written from papers with every claim matched to its source (the unmatched version failed review, §8.4) |
-| RL compute | 56 steps × 1,008 samples, ~3.7 h on 8 nodes; good to step 20 | more seeds (two more queued for RL v2, §8.3); a run that survives past step 20 |
+| RL compute | run 1: 56 steps × 1,008 samples at ≤ 16K tokens, ~3.7 h on 8 nodes, good to step 20. RL v2 seed 1: 110 steps × 1,008 samples at ≤ 24K tokens, ~20 h on 8 nodes, stable to the end (§8.6) | seeds 2 and 3 of RL v2 (one training, one queued, §8.3); a longer run, to see where the gain stops |
 | model size | 9B only (the 27B line does not fit 40 GB GPUs for RL) | the 27B on 80 GB GPUs, or 4B as a cheap probe |
 | mid-training | none (§8.2) | a small token sweep, only after knowledge-dense SFT data is tried |
 | test-time compute | budgets 2K–32K and votes 1–64 on D-Num; budgets up to 64K on D-Num-hard (§7.3) | one more effort level |
 | evaluation | 770 domain items, one budget, model-made references, a model review of 320 of them (§8.5) | human gold for ~100 reports and ~200 numeric edge cases |
 | systems | 8 × 3 A100-40GB, TP1 × PP8 × DP3, a 3-day queue | each run as one job that reads its steps when it starts (§8.3) |
 
-What limited this run, in order: the queue and the systems (§9), the policy already solving most of its
-training problems (§6.3), and an answer-length drift that RL could not hold (§6.4). Model knowledge is the
-limit in two numeric families and in the reports (§7.2).
+What limited run 1, in order: the queue and the systems (§9), the policy already solving most of its
+training problems (§6.3), and an answer-length drift that RL could not hold (§6.4). RL v2's first seed had neither
+of the last two: its bank was graded by the model it trained, and its answers stopped shrinking where they finished
+(§8.6). The queue still set the pace. Model knowledge is the limit in two numeric families and in the reports
+(§7.2).
 
 ---
 
@@ -1665,7 +1763,7 @@ qwen-seis-posttrain/
 ## 14. Regenerate figures
 
 ```bash
-python scripts/readme_figures.py                     # all 18 figures, English and Chinese → assets/
+python scripts/readme_figures.py                     # all 19 figures, English and Chinese → assets/
 python scripts/readme_figures.py rl_steps            # one figure
 python scripts/talk/collect.py                       # on the cluster: refresh docs/talk/data/run.json from the run
 ```

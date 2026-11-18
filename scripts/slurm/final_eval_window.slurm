@@ -55,13 +55,43 @@ phase() { tlog "final eval: $*"; }
 [[ -z "${DPT_CANCEL_JOB:-}" ]] || run scancel "${DPT_CANCEL_JOB}" || true
 
 # ---- servers --------------------------------------------------------------------------------------------------
+start_one() {        # start_one <host> <model> <served name> <port> <gpu> [env] [max_model_len]: one replica
+  local host="$1" model="$2" name="$3" port="$4" g="$5" extra="${6:-}" maxlen="${7:-40960}" rc=0
+  on_node "${host}" bash -c "${extra} DPT_VLLM_DP=1 CUDA_VISIBLE_DEVICES=${g} GPU_MEM=0.9 setsid nohup bash \
+scripts/serve_vllm.sh '${model}' '${name}' ${port} ${maxlen} 1 > '${LOGS}/${name}_${host}_${port}.log' \
+2>&1 < /dev/null & echo \$! > '${PIDS}/${host}_${port}'" || rc=$?
+  (( rc == 0 )) || tlog "WARN launching ${name} on ${host}:${port} returned ${rc}"
+}
 start_replicas() {   # start_replicas <host> <model> <served name> <first port> [env] [max_model_len]: one per GPU
-  local host="$1" model="$2" name="$3" port0="$4" extra="${5:-}" maxlen="${6:-40960}" g
-  for g in 0 1 2; do
-    on_node "${host}" bash -c "${extra} DPT_VLLM_DP=1 CUDA_VISIBLE_DEVICES=${g} GPU_MEM=0.9 setsid nohup bash \
-scripts/serve_vllm.sh '${model}' '${name}' $((port0 + g)) ${maxlen} 1 > '${LOGS}/${name}_${host}_$((port0 + g)).log' \
-2>&1 < /dev/null & echo \$! > '${PIDS}/${host}_$((port0 + g))'"
+  local g
+  for g in 0 1 2; do start_one "$1" "$2" "$3" $(( $4 + g )) "${g}" "${5:-}" "${6:-}"; done
+}
+# In seed 1's in-job final eval (2026-11-18), 5 of 21 replicas never started: no log, no error anywhere, and waiting for
+# every replica stopped the evaluation after an hour while 16 were up. So a replica whose log has not appeared after a
+# minute is launched once more, and the evaluation goes on with the replicas that answer, if at least two thirds do.
+relaunch_missing() { # relaunch_missing <model> <served name> <first port> <env> <max_model_len> <host…>
+  dry && return 0
+  local model="$1" name="$2" port0="$3" extra="$4" maxlen="$5" h g; shift 5
+  sleep 60
+  for h in "$@"; do
+    for g in 0 1 2; do
+      [[ -f "${LOGS}/${name}_${h}_$(( port0 + g )).log" ]] && continue
+      tlog "relaunching ${name} on ${h}:$(( port0 + g )): no log after 60 s"
+      start_one "${h}" "${model}" "${name}" $(( port0 + g )) "${g}" "${extra}" "${maxlen}"
+    done
   done
+}
+wait_some() {        # wait_some <timeout_s> <url…>: UP_URLS = the ones that answered; dies below two thirds
+  local t="$1" u deadline; shift
+  UP_URLS=()
+  if dry; then UP_URLS=("$@"); return 0; fi
+  deadline=$(( $(date +%s) + t ))
+  for u in "$@"; do
+    until curl -sf --max-time 10 "${u}/v1/models" >/dev/null || (( $(date +%s) >= deadline )); do sleep 10; done
+    if curl -sf --max-time 10 "${u}/v1/models" >/dev/null; then UP_URLS+=("${u}")
+    else tlog "WARN dropping ${u}: not up after ${t} s"; fi
+  done
+  (( ${#UP_URLS[@]} * 3 >= $# * 2 )) || tdie "only ${#UP_URLS[@]} of $# replicas came up (logs ${LOGS})"
 }
 start_here() {       # start_here <pid name> <command…>: in its own process group on this node
   local name="$1"; shift
@@ -103,9 +133,10 @@ gpus_free() {        # wait up to 5 min until no process holds a GPU on this job
 serve_64k() {        # serve_64k <model> <served name>: one replica per GPU on every node at 64K + prompt, proxy :8000
   local urls=() args=() h p
   for h in "${NODES[@]}"; do start_replicas "${h}" "$1" "$2" 8001 DPT_GDN_MODEL=1 67584; done
+  relaunch_missing "$1" "$2" 8001 DPT_GDN_MODEL=1 67584 "${NODES[@]}"
   for h in "${NODES[@]}"; do for p in 8001 8002 8003; do urls+=("http://${h}:${p}"); done; done
-  wait_backends "${urls[@]}"
-  for p in "${urls[@]}"; do args+=(--backend "${p}"); done
+  wait_some 3600 "${urls[@]}"
+  for p in "${UP_URLS[@]}"; do args+=(--backend "${p}"); done
   start_here 8000 python scripts/rr_proxy.py --port 8000 "${args[@]}"
   wait_backends "http://${HEAD}:8000"
 }
@@ -138,10 +169,13 @@ if want main || want hard || want k64; then
     --container-image "${DPT_SANDBOX_SIF}"
   start_replicas "${HEAD}" "${JUDGE_ID}" judge 8101
   urls=(); for h in "${WORKERS[@]}"; do start_replicas "${h}" "${EXPORT}" "${ROW}" 8001 DPT_GDN_MODEL=1; done
+  relaunch_missing "${EXPORT}" "${ROW}" 8001 DPT_GDN_MODEL=1 "" "${WORKERS[@]}"
+  relaunch_missing "${JUDGE_ID}" judge 8101 "" "" "${HEAD}"
   for h in "${WORKERS[@]}"; do for p in 8001 8002 8003; do urls+=("http://${h}:${p}"); done; done
-  wait_backends "http://${HEAD}:8101" "http://${HEAD}:8102" "http://${HEAD}:8103" "${urls[@]}"
-  start_here 8100 python scripts/rr_proxy.py --port 8100 --backend http://127.0.0.1:8101 \
-    --backend http://127.0.0.1:8102 --backend http://127.0.0.1:8103
+  wait_some 3600 "http://${HEAD}:8101" "http://${HEAD}:8102" "http://${HEAD}:8103"
+  args=(); for u in "${UP_URLS[@]}"; do args+=(--backend "${u}"); done
+  start_here 8100 python scripts/rr_proxy.py --port 8100 "${args[@]}"
+  wait_some 3600 "${urls[@]}"; urls=("${UP_URLS[@]}")
   args=(); for u in "${urls[@]}"; do args+=(--backend "${u}"); done
   start_here 8000 python scripts/rr_proxy.py --port 8000 "${args[@]}"
   wait_backends "http://${HEAD}:8100" "http://${HEAD}:8000"; wait_sandbox

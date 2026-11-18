@@ -1,4 +1,92 @@
 {
+ "bank_v2": {
+  "check": {
+   "dev": {
+    "t1_num": 128,
+    "t2_code": 12,
+    "t3_report": 12,
+    "t4_general": 38
+   },
+   "expected_mixed_t1_at_step_1": 0.764,
+   "hard": {
+    "t1_num": 18,
+    "t4_general": 496
+   },
+   "learnable_t1": 2467,
+   "main": {
+    "t1_num": 7577,
+    "t2_code": 2442,
+    "t3_report": 1181,
+    "t4_general": 2704
+   },
+   "pass_rate_bands": {
+    "t1_num": {
+     "4_5_of_8": 564,
+     "6_7_of_8": 3462,
+     "8_of_8": 2479,
+     "le_3_of_8": 1072,
+     "unknown": 0
+    },
+    "t2_code": {
+     "4_5_of_8": 0,
+     "6_7_of_8": 0,
+     "8_of_8": 0,
+     "le_3_of_8": 0,
+     "unknown": 2442
+    },
+    "t3_report": {
+     "4_5_of_8": 0,
+     "6_7_of_8": 0,
+     "8_of_8": 0,
+     "le_3_of_8": 0,
+     "unknown": 1181
+    },
+    "t4_general": {
+     "4_5_of_8": 379,
+     "6_7_of_8": 1197,
+     "8_of_8": 575,
+     "le_3_of_8": 553,
+     "unknown": 0
+    }
+   }
+  },
+  "hard_dev": {
+   "held_out": 162,
+   "max_dev_share": "1/3",
+   "per_family": 10
+  },
+  "published": {
+   "rl_dev": {
+    "t1_num": 38,
+    "t2_code": 12,
+    "t3_report": 12,
+    "t4_general": 14
+   },
+   "rl_hard": {
+    "t1_num": 18,
+    "t4_general": 498
+   },
+   "rl_main": {
+    "t1_num": 7577,
+    "t2_code": 2442,
+    "t3_report": 1181,
+    "t4_general": 2704
+   }
+  },
+  "t1_families": 41,
+  "trained": {
+   "hard": {
+    "t1_num": 18,
+    "t4_general": 496
+   },
+   "main": {
+    "t1_num": 7415,
+    "t2_code": 2442,
+    "t3_report": 1181,
+    "t4_general": 2704
+   }
+  }
+ },
  "base_replies": {
   "chars_max": 178942,
   "chars_p10": 14509,
@@ -876,10 +964,10 @@
    "sft_eval": "2026-10-29T21:16"
   }
  },
- "collected_at": "2026-11-17T18:17",
+ "collected_at": "2026-11-18T12:17",
  "compute": {
   "balance": {
-   "available_su": 4714,
+   "available_su": 3678,
    "expires": "2026-11-30"
   },
   "jobs": [
@@ -1580,15 +1668,15 @@
     "submit": "2026-11-11T22:03:38"
    },
    {
-    "elapsed_s": 122073,
-    "end": "Unknown",
+    "elapsed_s": 155386,
+    "end": "2026-11-18T03:32:33",
     "id": "3576284",
     "name": "dpt-rlv2",
     "nodes": 8,
     "partition": "gpu-a100",
     "start": "2026-11-16T08:22:47",
-    "state": "RUNNING",
-    "su": 813.82,
+    "state": "FAILED",
+    "su": 1035.91,
     "submit": "2026-11-11T22:05:31"
    },
    {
@@ -1640,15 +1728,15 @@
     "submit": "2026-11-11T23:46:44"
    },
    {
-    "elapsed_s": 0,
+    "elapsed_s": 26781,
     "end": "Unknown",
     "id": "3576469",
     "name": "dpt-sftv2",
     "nodes": 8,
     "partition": "gpu-a100",
-    "start": "Unknown",
-    "state": "PENDING",
-    "su": 0.0,
+    "start": "2026-11-18T04:50:48",
+    "state": "RUNNING",
+    "su": 178.54,
     "submit": "2026-11-12T00:14:31"
    },
    {
@@ -1782,6 +1870,18 @@
     "state": "CANCELLED",
     "su": 0.0,
     "submit": "2026-11-16T11:05:14"
+   },
+   {
+    "elapsed_s": 0,
+    "end": "Unknown",
+    "id": "3592027",
+    "name": "dpt-fe-s1",
+    "nodes": 4,
+    "partition": "gpu-a100",
+    "start": "Unknown",
+    "state": "PENDING",
+    "su": 0.0,
+    "submit": "2026-11-18T03:44:21"
    }
   ],
   "since": "2026-10-13",

@@ -12,7 +12,7 @@ nanogpt-seis-posttrain PITFALLS F2, where figures drifted away from the logs the
                                      (written on the cluster by scripts/talk/collect.py)
 - docs/talk/data/rl.json             per-step RL metrics and GPU memory samples (scripts/talk/collect_rl.py)
 - docs/talk/data/reward_vs_eval.json, judge_drift.json, refusal.json, failure_types.json, research_1110.json
-- docs/talk/data/numhard_64k.json   D-Num-hard with a 64K budget (scripts/talk/numhard_continue.py)
+- docs/talk/data/numhard_64k.json   D-Num-hard with a 64K budget (scripts/talk/numhard_continue.py summary)
 - docs/talk/data/campaign_hours.json and last_stage_memory.json: values measured by hand during the
   run, each with the note it came from (the run log)
 - docs/talk/data/difficulty_pilot_1115.json, run1_step0_replay_1116.json, value_positions_1115.json: the SFT model's
@@ -20,6 +20,9 @@ nanogpt-seis-posttrain PITFALLS F2, where figures drifted away from the logs the
 - docs/talk/data/rubric_formats_1116.json: the reward judge in three formats against gold labels
   (python -m dpt.eval.rubric_calibration --formats-out)
 - docs/talk/data/rl_runs_compared.json: run 1 against RL v2, step by step (scripts/talk/rl_compare.py)
+- docs/talk/data/stage_example.json: one new question answered 16 times by every model (scripts/talk/stage_example.py)
+- docs/talk/data/rl_v2_seed1_local_1118.json: RL v2 seed 1 on D-Num-hard and D-Fresh, run on the workstation while its
+  final evaluation waited for the cluster (scripts/talk/collect.py --eval-only); run.json's own results replace it
 
 Colours follow the talk deck (scripts/talk/render.py), whose categorical slots were checked with the
 data-viz palette validator: models are base grey, SFT blue, RL orange; tasks T1 blue, T2 orange,
@@ -35,7 +38,9 @@ import datetime
 import json
 import os
 import random
+import re
 import sys
+import textwrap
 from pathlib import Path
 
 import matplotlib
@@ -60,8 +65,9 @@ secondary_ink_color = "#52514e"
 muted_ink_color = "#898781"
 grid_color = "#e1e0d9"
 axis_color = "#c3c2b7"
-model_keys = ("base_medium", "sft", "rl_seed1")
-model_color = {"base_medium": "#8a8984", "sft": "#2a78d6", "rl_seed1": "#eb6834"}
+model_keys = ("base_medium", "sft", "rl_seed1")          # the three models every figure has
+rl_v2_key = "rl_v2_seed1"                                 # RL v2 joins a figure once its results on that figure exist
+model_color = {"base_medium": "#8a8984", "sft": "#2a78d6", "rl_seed1": "#eb6834", "rl_v2_seed1": "#6250d6"}
 task_color = {"t1_num": "#2a78d6", "t2_code": "#eb6834", "t3_report": "#1baf7a", "t4_general": "#eda100"}
 outcome_color = {"right": "#b7d3f6", "unfinished": "#e87ba4", "wrong_value": "#6250d6", "format": "#008300"}
 cause_color = {"execution": "#1baf7a", "concept": "#6250d6", "other": "#c3c2b7"}
@@ -70,15 +76,16 @@ judge_color = {"primary": "#1baf7a", "second": "#6250d6"}
 planned_time_color, lost_time_color = "#2a78d6", "#e87ba4"
 length_only_color = "#c3c2b7"           # gradient from the length penalty alone, not from right against wrong
 partial_level_color = "#9fdcc3"         # a three-level judge's "partial", a tint of the judge's green
-run_color = {"run1": model_color["rl_seed1"], "rl_v2_seed1": "#6250d6"}     # run 1 keeps RL's orange
+run_color = {"run1": model_color["rl_seed1"], "rl_v2_seed1": model_color["rl_v2_seed1"]}   # run 1 keeps RL's orange
 
 # ---------------------------------------------------------------------------
 # the only words in the figures, in both languages
 # ---------------------------------------------------------------------------
 label_text = {
     "en": {
-        "model": {"base_medium": "base", "sft": "SFT", "rl_seed1": "RL"},
-        "workflow_model": {"base_medium": "Qwen3.5-9B", "sft": "SFT", "rl_seed1": "RL, step 20"},
+        "model": {"base_medium": "base", "sft": "SFT", "rl_seed1": "RL run 1", "rl_v2_seed1": "RL v2"},
+        "workflow_model": {"base_medium": "Qwen3.5-9B", "sft": "SFT", "rl_seed1": "RL run 1, step 20",
+                           "rl_v2_seed1": "RL v2, step 110"},
         "workflow_score": "D-Num-hard", "workflow_tokens": "tokens / answer",
         "conversations": "conversations", "problems": "problems",
         "score": "score", "tokens_thousands": "tokens (K)",
@@ -119,10 +126,17 @@ label_text = {
         "numeric_grad_share": "gradient from numeric (%)",
         "numeric_groups_with_gradient": "numeric groups with gradient (%)",
         "right_answer_length": "right numeric answers (tokens)",
+        "stage_title": {"base": "Base  ·  Qwen3.5-9B", "sft": "SFT", "rl_seed1": "RL run 1  ·  step 20",
+                        "rl_v2_seed1": "RL v2  ·  seed 1, step 110"},
+        "question": "Question", "expected": "expected", "tokens_of_reasoning": "… {n:,} tokens of reasoning in all …",
+        "cut_off": "cut off at {n:,} tokens: no answer", "verdict_right": "right", "verdict_cut": "ran out of tokens",
+        "verdict_wrong": "wrong value", "of_n_right": "{k} of {n} right", "of_n_cut": "{u} of {n} ran out",
+        "median_tokens": "median {n:.1f}K tokens", "pending": "not answered yet",
     },
     "zh": {
-        "model": {"base_medium": "基座", "sft": "SFT", "rl_seed1": "RL"},
-        "workflow_model": {"base_medium": "Qwen3.5-9B", "sft": "SFT", "rl_seed1": "RL，第 20 步"},
+        "model": {"base_medium": "基座", "sft": "SFT", "rl_seed1": "第 1 次 RL", "rl_v2_seed1": "RL v2"},
+        "workflow_model": {"base_medium": "Qwen3.5-9B", "sft": "SFT", "rl_seed1": "第 1 次 RL，第 20 步",
+                           "rl_v2_seed1": "RL v2，第 110 步"},
         "workflow_score": "D-Num-hard", "workflow_tokens": "每个回答的 token",
         "conversations": "条对话", "problems": "道题",
         "score": "得分", "tokens_thousands": "token 数（千）",
@@ -161,6 +175,12 @@ label_text = {
         "run": {"run1": "第 1 次运行", "rl_v2_seed1": "RL v2"}, "lr_sum": "学习率之和（×10⁻⁶）",
         "numeric_grad_share": "来自数值题的梯度（%）", "numeric_groups_with_gradient": "带有梯度的数值题组（%）",
         "right_answer_length": "数值题正确回答（token）",
+        "stage_title": {"base": "基座  ·  Qwen3.5-9B", "sft": "SFT", "rl_seed1": "第 1 次 RL  ·  第 20 步",
+                        "rl_v2_seed1": "RL v2  ·  种子 1，第 110 步"},
+        "question": "问题", "expected": "标准答案", "tokens_of_reasoning": "…… 推理共 {n:,} 个 token ……",
+        "cut_off": "在 {n:,} 个 token 处截断：没有答案", "verdict_right": "正确", "verdict_cut": "用光 token",
+        "verdict_wrong": "数值错误", "of_n_right": "{n} 次中 {k} 次正确", "of_n_cut": "{n} 次中 {u} 次用光 token",
+        "median_tokens": "中位数 {n:.1f}K 个 token", "pending": "尚未作答",
     },
 }
 
@@ -226,8 +246,16 @@ def load_result_file(file_name: str) -> dict:
 
 
 def load_all_result_files() -> dict:
+    cluster = load_result_file("run.json")
+    # RL v2 seed 1's two headline sets ran on the workstation while its final evaluation waited in the cluster's queue;
+    # they fill in only what run.json does not have yet, so the cluster's own runs replace them when collected
+    workstation = load_result_file("rl_v2_seed1_local_1118.json")
+    for run_name, run in workstation["eval"]["runs"].items():
+        cluster["eval"]["runs"].setdefault(run_name, run)
+    for entry_name, entry in workstation["budget"].items():
+        cluster["budget"].setdefault(entry_name, entry)
     return {
-        "run": load_result_file("run.json"),
+        "run": cluster,
         "rl": load_result_file("rl.json"),
         "reward_vs_eval": load_result_file("reward_vs_eval.json"),
         "judge_drift": load_result_file("judge_drift.json"),
@@ -242,6 +270,7 @@ def load_all_result_files() -> dict:
         "value_positions": load_result_file("value_positions_1115.json"),
         "rubric_formats": load_result_file("rubric_formats_1116.json"),
         "rl_runs_compared": load_result_file("rl_runs_compared.json"),
+        "stage_example": load_result_file("stage_example.json"),
     }
 
 
@@ -249,6 +278,17 @@ def eval_set_result(results: dict, model_key: str, set_name: str) -> dict:
     """D-Num-hard was scored in its own runs (d_num_hard/<model>); every other set in the model's main run."""
     run_key = f"d_num_hard/{model_key}" if set_name == "d_num_hard" else model_key
     return results["run"]["eval"]["runs"][run_key]["sets"][set_name]
+
+
+def models_scored_on(results: dict, set_names: list[str]) -> list[str]:
+    """The three models, and RL v2 once it has a result on every one of these sets."""
+    runs = results["run"]["eval"]["runs"]
+
+    def has_set(model: str, set_name: str) -> bool:
+        run = runs.get(f"d_num_hard/{model}" if set_name == "d_num_hard" else model) or {}
+        return set_name in (run.get("sets") or {})
+
+    return [model for model in model_keys + (rl_v2_key,) if all(has_set(model, name) for name in set_names)]
 
 
 def thousands_label(value: float) -> str:
@@ -259,55 +299,71 @@ def thousands_label(value: float) -> str:
 # 1. the pipeline strip at the top of the README
 # ---------------------------------------------------------------------------
 def draw_workflow_strip(results: dict, language: str) -> None:
-    """Three models in boxes; each arrow carries the data that trained the next model.
+    """The models in boxes; each arrow carries the data that trained the next model. Both RL runs start from SFT, so
+    once RL v2 has a D-Num-hard score the strip branches after SFT: run 1 above, RL v2 below.
 
     The big number is D-Num-hard (avg@8), the held-out slice with headroom; the small number is the
     mean output length on it.
     """
     text = label_text[language]
-    hard_scores = [eval_set_result(results, model, "d_num_hard")["score"] for model in model_keys]
-    hard_mean_tokens = [eval_set_result(results, model, "d_num_hard")["mean_output_tokens"] for model in model_keys]
+    strip_models = models_scored_on(results, ["d_num_hard"])
+    branched = rl_v2_key in strip_models
     sft_conversation_count = sum(results["run"]["sft_mix"]["conversations_by_subset"].values())
     rl_problem_count = sum(task["after_difficulty"] for task in results["run"]["pipeline"]["by_task"].values())
+    # RL v2 trains on numeric, code and general problems; its bank's report problems are never drawn (README §8.3)
+    rl_v2_problem_count = sum(count for pool in results["run"]["bank_v2"]["trained"].values()
+                              for task, count in pool.items() if task != "t3_report")
 
-    figure = plt.figure(figsize=(12.4, 2.7))
+    figure_height = 5.0 if branched else 2.7
+    figure = plt.figure(figsize=(12.4, figure_height))
     axes = figure.add_axes([0, 0, 1, 1])
     axes.set_xlim(0, 12.4)
-    axes.set_ylim(0, 2.7)
+    axes.set_ylim(0, figure_height)
     axes.axis("off")
-    box_width, box_height, box_bottom = 2.45, 2.2, 0.25
-    box_lefts = [2.1, 5.95, 9.8]
-    score_height, token_height, name_height = box_bottom + 1.05, box_bottom + 0.42, box_bottom + 1.78
+    box_width, box_height = 2.45, 2.2
+    middle_bottom = (figure_height - box_height) / 2
+    box_corner = {"base_medium": (2.1, middle_bottom), "sft": (5.95, middle_bottom),
+                  "rl_seed1": (9.8, figure_height - box_height - 0.12 if branched else middle_bottom),
+                  rl_v2_key: (9.8, 0.12)}
 
-    axes.text(1.95, score_height, text["workflow_score"], ha="right", va="center", fontsize=12,
+    axes.text(1.95, middle_bottom + 1.05, text["workflow_score"], ha="right", va="center", fontsize=12,
               color=muted_ink_color)
-    axes.text(1.95, token_height, text["workflow_tokens"], ha="right", va="center", fontsize=12,
+    axes.text(1.95, middle_bottom + 0.42, text["workflow_tokens"], ha="right", va="center", fontsize=12,
               color=muted_ink_color)
-    for box_index, model in enumerate(model_keys):
-        box_left = box_lefts[box_index]
+    for model in strip_models:
+        box_left, box_bottom = box_corner[model]
+        hard_result = eval_set_result(results, model, "d_num_hard")
         axes.add_patch(FancyBboxPatch((box_left, box_bottom), box_width, box_height,
                                       boxstyle="round,pad=0.02,rounding_size=0.12", linewidth=1.6,
                                       edgecolor=model_color[model], facecolor=model_color[model] + "14"))
         box_center = box_left + box_width / 2
-        axes.text(box_center, name_height, text["workflow_model"][model], ha="center", va="center",
-                  fontsize=15, fontweight="bold", color=ink_color)
-        axes.text(box_center, score_height, f"{hard_scores[box_index]:.1f}", ha="center", va="center",
+        axes.text(box_center, box_bottom + 1.78, text["workflow_model"][model], ha="center", va="center",
+                  fontsize=15 if len(text["workflow_model"][model]) < 16 else 13.5, fontweight="bold",
+                  color=ink_color)
+        axes.text(box_center, box_bottom + 1.05, f"{hard_result['score']:.1f}", ha="center", va="center",
                   fontsize=26, fontweight="bold", color=model_color[model])
-        axes.text(box_center, token_height, thousands_label(hard_mean_tokens[box_index]), ha="center",
+        axes.text(box_center, box_bottom + 0.42, thousands_label(hard_result["mean_output_tokens"]), ha="center",
                   va="center", fontsize=13, color=secondary_ink_color)
 
-    arrow_tags = [(f"{sft_conversation_count:,}", text["conversations"]), (f"{rl_problem_count:,}", text["problems"])]
-    for arrow_index, (count_text, unit_text) in enumerate(arrow_tags):
-        arrow_start = box_lefts[arrow_index] + box_width + 0.08
-        arrow_end = box_lefts[arrow_index + 1] - 0.08
-        arrow_height = box_bottom + box_height / 2
-        axes.add_patch(FancyArrowPatch((arrow_start, arrow_height - 0.25), (arrow_end, arrow_height - 0.25),
-                                       arrowstyle="-|>", mutation_scale=18, linewidth=1.6, color=secondary_ink_color))
-        arrow_center = (arrow_start + arrow_end) / 2
-        axes.text(arrow_center, arrow_height + 0.38, count_text, ha="center", va="center", fontsize=13,
-                  fontweight="bold", color=secondary_ink_color)
-        axes.text(arrow_center, arrow_height + 0.05, unit_text, ha="center", va="center", fontsize=11.5,
-                  color=muted_ink_color)
+    def arrow(start_model: str, end_model: str, count: int, unit_text: str, label_side: str,
+              start_shift: float = 0.0) -> None:
+        start_left, start_bottom = box_corner[start_model]
+        end_left, end_bottom = box_corner[end_model]
+        start = (start_left + box_width + 0.08, start_bottom + box_height / 2 - 0.25 + start_shift)
+        end = (end_left - 0.08, end_bottom + box_height / 2 - 0.25)
+        axes.add_patch(FancyArrowPatch(start, end, arrowstyle="-|>", mutation_scale=18, linewidth=1.6,
+                                       color=secondary_ink_color))
+        label_x = (start[0] + end[0]) / 2
+        # a straight arrow carries its label above; a branch labels its far side, away from the other branch
+        label_y = {"above": max(start[1], end[1]) + 0.63, "below": min(start[1], end[1]) - 0.33}[label_side]
+        axes.text(label_x, label_y, f"{count:,}", ha="center", va="center", fontsize=13, fontweight="bold",
+                  color=secondary_ink_color)
+        axes.text(label_x, label_y - 0.33, unit_text, ha="center", va="center", fontsize=11.5, color=muted_ink_color)
+
+    arrow("base_medium", "sft", sft_conversation_count, text["conversations"], "above")
+    arrow("sft", "rl_seed1", rl_problem_count, text["problems"], "above", start_shift=0.35 if branched else 0.0)
+    if branched:
+        arrow("sft", rl_v2_key, rl_v2_problem_count, text["problems"], "below", start_shift=-0.1)
     save_figure(figure, "workflow", language)
 
 
@@ -315,9 +371,10 @@ def draw_workflow_strip(results: dict, language: str) -> None:
 # 2. results by stage: domain sets, general benchmarks, answer length
 # ---------------------------------------------------------------------------
 def draw_grouped_bars(axes, values_by_model: dict, halfwidths_by_model: dict, group_count: int) -> None:
-    bar_width = 0.25
-    for model_index, model in enumerate(model_keys):
-        positions = [group + (model_index - 1) * (bar_width + 0.02) for group in range(group_count)]
+    bar_width = 0.75 / len(values_by_model)
+    middle = (len(values_by_model) - 1) / 2
+    for model_index, model in enumerate(values_by_model):
+        positions = [group + (model_index - middle) * (bar_width + 0.02) for group in range(group_count)]
         axes.bar(positions, values_by_model[model], width=bar_width, color=model_color[model], zorder=2)
         axes.errorbar(positions, values_by_model[model], yerr=halfwidths_by_model[model], fmt="none",
                       ecolor=ink_color, elinewidth=1.0, capsize=2.5, zorder=3)
@@ -335,14 +392,16 @@ def draw_results_by_stage(results: dict, language: str) -> None:
     general_set_names = ["gpqa_diamond", "mmlu_pro_2k", "ifeval", "livecodebench_post_2025_01", "tool_calling"]
 
     domain_scores, domain_halfwidths, general_scores, general_halfwidths = {}, {}, {}, {}
-    for model in model_keys:
+    stage_models = [model for model in models_scored_on(results, domain_set_names)
+                    if set(general_set_names) <= set(runs[model].get("general") or {})]
+    for model in stage_models:
         domain_results = [eval_set_result(results, model, set_name) for set_name in domain_set_names]
         domain_scores[model] = [result["score"] for result in domain_results]
         domain_halfwidths[model] = [result["ci"]["halfwidth"] for result in domain_results]
         general_results = [runs[model]["general"][set_name] for set_name in general_set_names]
         general_scores[model] = [result["score"] for result in general_results]
         general_halfwidths[model] = [result["ci"]["halfwidth"] for result in general_results]
-    mean_output_tokens = [runs[model]["mean_output_tokens"] for model in model_keys]
+    mean_output_tokens = [runs[model]["mean_output_tokens"] for model in stage_models]
 
     figure, (domain_axes, general_axes, token_axes) = plt.subplots(
         1, 3, figsize=(14.5, 4.3), gridspec_kw={"width_ratios": [4, 5, 1.6], "wspace": 0.16})
@@ -358,7 +417,7 @@ def draw_results_by_stage(results: dict, language: str) -> None:
     domain_axes.set_ylabel(text["score"])
     general_axes.set_yticklabels([])
 
-    for model_index, model in enumerate(model_keys):
+    for model_index, model in enumerate(stage_models):
         token_axes.bar(model_index, mean_output_tokens[model_index] / 1000, width=0.62, color=model_color[model],
                        zorder=2)
         token_axes.text(model_index, mean_output_tokens[model_index] / 1000 + 0.3,
@@ -369,8 +428,8 @@ def draw_results_by_stage(results: dict, language: str) -> None:
     token_axes.set_ylim(0, max(mean_output_tokens) / 1000 * 1.18)
     add_horizontal_grid(token_axes)
 
-    legend_handles = [plt.Rectangle((0, 0), 1, 1, color=model_color[model]) for model in model_keys]
-    domain_axes.legend(legend_handles, [text["model"][model] for model in model_keys], ncol=3,
+    legend_handles = [plt.Rectangle((0, 0), 1, 1, color=model_color[model]) for model in stage_models]
+    domain_axes.legend(legend_handles, [text["model"][model] for model in stage_models], ncol=len(stage_models),
                        loc="lower left", bbox_to_anchor=(0.0, 1.0), handlelength=1.0, columnspacing=1.4)
     save_figure(figure, "results_by_stage", language)
 
@@ -414,8 +473,10 @@ def draw_test_time_compute(results: dict, language: str) -> None:
     # the dotted line shows how much of each model's accuracy fits under that cap
     rl_response_cap_thousands = read_rl_response_cap_tokens() / 1024
     for axes, set_name, set_tag in ((d_num_axes, "d_num", "D-Num"), (hard_axes, "d_num_hard", "D-Num-hard")):
-        for model in model_keys:
-            entry_keys = d_num_budget_entries[model] if set_name == "d_num" else [f"d_num_hard__{model}"]
+        for model in model_keys + (rl_v2_key,):
+            entry_keys = d_num_budget_entries.get(model) if set_name == "d_num" else [f"d_num_hard__{model}"]
+            if not entry_keys or any(key not in results["run"]["budget"] for key in entry_keys):
+                continue
             budgets, accuracy = pooled_accuracy_within_budget(results, set_name, entry_keys)
             axes.plot(budgets, accuracy, color=model_color[model], linewidth=2.2, marker="o", markersize=4.5,
                       label=text["model"][model])
@@ -427,7 +488,7 @@ def draw_test_time_compute(results: dict, language: str) -> None:
                   fontweight="bold", color=ink_color)
         add_horizontal_grid(axes)
     d_num_axes.set_ylabel(text["percent_right"])
-    d_num_axes.legend(loc="lower right", handlelength=1.4)
+    hard_axes.legend(loc="lower right", handlelength=1.4)
 
     for model in model_keys:
         majority_vote = results["research_1110"]["d_num_voting"][model]["maj_at_k"]
@@ -463,10 +524,13 @@ def draw_d_num_hard_at_64k(results: dict, language: str) -> None:
     """
     text = label_text[language]
     budget_rows = results["numhard_64k"]["rows"]
+    # a model joins once every one of its cut-off answers has been continued
+    figure_models = [model for model in model_keys + (rl_v2_key,)
+                     if model in budget_rows and budget_rows[model]["missing_continuations"] == 0]
     outcome_order = ("right", "unfinished", "wrong_value", "format")
-    figure, axes = plt.subplots(figsize=(12.4, 4.4))
+    figure, axes = plt.subplots(figsize=(12.4, 1.47 * len(figure_models)))
     row_positions, row_labels = [], []
-    for model_index, model in enumerate(model_keys):
+    for model_index, model in enumerate(figure_models):
         group_top = model_index * 3.0
         axes.text(-1.0, group_top - 0.75, text["model"][model], ha="left", va="center", fontsize=13,
                   fontweight="bold", color=ink_color, clip_on=False)
@@ -499,13 +563,15 @@ def draw_d_num_hard_at_64k(results: dict, language: str) -> None:
 
 def draw_where_samples_go(results: dict, language: str) -> None:
     text = label_text[language]
-    figure, axes = plt.subplots(figsize=(12.4, 4.0))
+    groups = [(set_name, set_tag, models_scored_on(results, [set_name]))
+              for set_name, set_tag in (("d_num", "D-Num"), ("d_num_hard", "D-Num-hard"))]
+    figure, axes = plt.subplots(figsize=(12.4, 4.0 + 0.45 * (sum(len(models) for *_, models in groups) - 6)))
     row_positions, row_labels = [], []
-    for group_index, (set_name, set_tag) in enumerate((("d_num", "D-Num"), ("d_num_hard", "D-Num-hard"))):
-        group_top = group_index * 4.0
+    group_top = 0.0
+    for set_name, set_tag, group_models in groups:
         axes.text(-1.0, group_top - 0.75, set_tag, ha="left", va="center", fontsize=13, fontweight="bold",
                   color=ink_color, clip_on=False)
-        for model_index, model in enumerate(model_keys):
+        for model_index, model in enumerate(group_models):
             row_position = group_top + model_index
             row_positions.append(row_position)
             row_labels.append(text["model"][model])
@@ -519,6 +585,7 @@ def draw_where_samples_go(results: dict, language: str) -> None:
                     axes.text(segment_left + shares[outcome] / 2, row_position, f"{shares[outcome]:.0f}",
                               ha="center", va="center", fontsize=11.5, color=label_color)
                 segment_left += shares[outcome]
+        group_top += len(group_models) + 1.0
     axes.set_yticks(row_positions, row_labels)
     axes.invert_yaxis()
     axes.set_xlim(0, 100)
@@ -1023,13 +1090,22 @@ def draw_rl_runs_compared(results: dict, language: str) -> None:
               ("t1_len_right", text["right_answer_length"], 1, "log"))
     figure, panel_axes = plt.subplots(1, 3, figsize=(14.5, 4.0), gridspec_kw={"wspace": 0.28})
     for axes, (key, axis_label, scale, y_scale) in zip(panel_axes, panels):
+        ends = {}
         for run in ("run1", "rl_v2_seed1"):
             rows = compared["per_step"][run]
             values = rolling_mean([r.get(key) for r in rows])
             points = [(r["lr_sum"], scale * v) for r, v in zip(rows, values) if v is not None and v > 0]
             axes.plot([x for x, _ in points], [y for _, y in points], color=run_color[run], linewidth=2.0, zorder=3)
-            axes.text(points[-1][0] + 1.5, points[-1][1], text["run"][run], color=run_color[run], fontsize=11.5,
-                      va="center", ha="left")
+            ends[run] = points[-1]
+        # direct labels at the line ends, pushed apart when the two ends nearly meet
+        label_y = {run: y for run, (_, y) in ends.items()}
+        if y_scale == "linear" and abs(label_y["run1"] - label_y["rl_v2_seed1"]) < 7:
+            upper = max(label_y, key=label_y.get)
+            middle = (label_y["run1"] + label_y["rl_v2_seed1"]) / 2
+            label_y = {run: middle + (3.5 if run == upper else -3.5) for run in label_y}
+        for run, (x, _) in ends.items():
+            axes.text(x + 1.5, label_y[run], text["run"][run], color=run_color[run], fontsize=11.5, va="center",
+                      ha="left")
         axes.axvline(collapse_lr_sum, color=muted_ink_color, linewidth=1.0, linestyle=":", zorder=1)
         axes.set_yscale(y_scale)
         axes.set_xlabel(text["lr_sum"])
@@ -1039,6 +1115,102 @@ def draw_rl_runs_compared(results: dict, language: str) -> None:
     panel_axes[0].set_ylim(0, 103)
     panel_axes[1].set_ylim(0, 80)
     save_figure(figure, "rl_runs_compared", language)
+
+
+# ---------------------------------------------------------------------------
+# 18. one question, every stage
+# ---------------------------------------------------------------------------
+stage_order = ("base", "sft", "rl_seed1", "rl_v2_seed1")
+stage_color = {"base": model_color["base_medium"], "sft": model_color["sft"], "rl_seed1": model_color["rl_seed1"],
+               "rl_v2_seed1": run_color["rl_v2_seed1"]}
+stage_tint = {"base": "#f4f4f2", "sft": "#eef4fc", "rl_seed1": "#fdf1eb", "rl_v2_seed1": "#f2f0fc"}
+right_color, wrong_color = "#1a8f5a", "#c0392b"
+
+
+def plain_text(text: str) -> str:
+    """Model text without the markup that would not read in a box: LaTeX delimiters and \\text{}, markdown bold. Also
+    no '$', which matplotlib would read as math."""
+    text = re.sub(r"\\text\{([^}]*)\}", r"\1", text)
+    text = re.sub(r"\\[ ;,!]", " ", text)                    # LaTeX spacing commands
+    text = re.sub(r"\\[()\[\]]", "", text).replace("$", "").replace("**", "")
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def wrapped_lines(text: str, width: int, max_lines: int, keep: str = "start") -> list[str]:
+    lines = []
+    for line in plain_text(text).splitlines():
+        lines += textwrap.wrap(line.strip(), width=width) or [""]
+    lines = [line for i, line in enumerate(lines) if line or (i and lines[i - 1])]
+    return lines[:max_lines] if keep == "start" else lines[-max_lines:]
+
+
+def draw_stage_outputs(results: dict, language: str) -> None:
+    """The same new question answered by every model: each model's first answer (sample 0 of 16) shortened to the start
+    and the end of its reasoning and its final answer, and a verdict that counts all 16 answers."""
+    text = label_text[language]
+    example = results["stage_example"]
+    question, gold = example["question"]["question"], example["question"]["answer"]
+    figure = plt.figure(figsize=(14.2, 10.6))
+    # the answers are English; the Chinese marker lines need a CJK fallback behind the monospace font
+    mono_family = ["DejaVu Sans Mono", "Noto Sans CJK SC"] if language == "zh" else ["DejaVu Sans Mono"]
+    width_chars, mono = 88, {"family": mono_family, "fontsize": 8.2}
+    question_axes = figure.add_axes([0.02, 0.83, 0.96, 0.15])
+    question_axes.axis("off")
+    question_axes.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0,rounding_size=0.02",
+                                           facecolor="#f4f4f2", edgecolor=axis_color, linewidth=1.4,
+                                           transform=question_axes.transAxes))
+    question_axes.text(0.02, 0.8, text["question"], fontsize=13, fontweight="bold", color=ink_color,
+                       transform=question_axes.transAxes)
+    question_axes.text(0.98, 0.8, f"{text['expected']}: {gold['value']:.1f} {gold['unit']}", fontsize=12, ha="right",
+                       color=secondary_ink_color, transform=question_axes.transAxes)
+    question_axes.text(0.02, 0.58, "\n".join(textwrap.wrap(question, 150)), fontsize=11.5, va="top", color=ink_color,
+                       transform=question_axes.transAxes, linespacing=1.4)
+    for index, stage in enumerate(stage_order):
+        row, column = divmod(index, 2)
+        axes = figure.add_axes([0.02 + column * 0.49, 0.42 - row * 0.405, 0.47, 0.39])
+        axes.axis("off")
+        axes.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0,rounding_size=0.02",
+                                      facecolor=stage_tint[stage], edgecolor=stage_color[stage], linewidth=1.6,
+                                      transform=axes.transAxes))
+        axes.text(0.04, 0.92, text["stage_title"][stage], fontsize=13, fontweight="bold", color=ink_color,
+                  transform=axes.transAxes)
+        model = example["models"].get(stage)
+        if model is None:
+            axes.text(0.5, 0.5, text["pending"], ha="center", va="center", color=muted_ink_color,
+                      transform=axes.transAxes)
+            continue
+        sample = model["example"]
+        body = wrapped_lines(sample["thinking_start"], width_chars, 7)
+        if sample["thinking_end"]:
+            body += ["", text["tokens_of_reasoning"].format(n=sample["tokens"]), ""]
+            body += wrapped_lines(sample["thinking_end"], width_chars, 3, keep="end")
+        if sample["finished"]:
+            if sample["final_answer_end"]:
+                final = (wrapped_lines(sample["final_answer_start"], width_chars, 2) + ["…"]
+                         + wrapped_lines(sample["final_answer_end"], width_chars, 3, keep="end"))
+            else:                                 # short enough to be kept whole; its end holds the boxed result
+                final = wrapped_lines(sample["final_answer_start"], width_chars, 99)
+                final = final if len(final) <= 6 else final[:2] + ["…"] + final[-3:]
+            body += ["</think>"] + final
+        axes.text(0.04, 0.83, "\n".join(body), va="top", color=ink_color, transform=axes.transAxes, linespacing=1.25,
+                  **mono)
+        if not sample["finished"]:
+            axes.text(0.04, 0.2, text["cut_off"].format(n=sample["tokens"]), fontsize=10.5, color=wrong_color,
+                      style="italic", transform=axes.transAxes)
+        verdict = (text["verdict_right"] if sample["right"] else
+                   text["verdict_cut"] if not sample["finished"] else text["verdict_wrong"])
+        if sample.get("answer") and sample["finished"]:
+            verdict += f":  {plain_text(sample['answer'])}"
+        n_samples = len(model["samples"])
+        counts = [text["of_n_right"].format(k=model["right"], n=n_samples)]
+        if model["unfinished"]:
+            counts.append(text["of_n_cut"].format(u=model["unfinished"], n=n_samples))
+        counts.append(text["median_tokens"].format(n=model["median_tokens"] / 1000))
+        axes.text(0.04, 0.105, f"{'✓' if sample['right'] else '✗'}  {verdict}", fontsize=11.5, fontweight="bold",
+                  color=right_color if sample["right"] else wrong_color, transform=axes.transAxes)
+        axes.text(0.04, 0.04, "  ·  ".join(counts), fontsize=10.5, color=secondary_ink_color,
+                  transform=axes.transAxes)
+    save_figure(figure, "stage_outputs", language)
 
 
 figure_drawers = {
@@ -1060,6 +1232,7 @@ figure_drawers = {
     "value_positions": draw_value_positions,
     "pilot_families": draw_pilot_families,
     "rl_runs_compared": draw_rl_runs_compared,
+    "stage_outputs": draw_stage_outputs,
 }
 
 

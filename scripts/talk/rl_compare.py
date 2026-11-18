@@ -50,8 +50,14 @@ def median_over(rows: list[dict], key: str, first: int, last: int) -> float | No
 
 
 def windows(rows: list[dict]) -> dict:
+    """Medians over steps 1-20 and 21-40, then the rest; a run longer than 60 steps also gets its last 20 alone,
+    which is where RL v2 had as few numeric groups with gradient as run 1 had at the start."""
     last = max(r["step"] for r in rows)
-    spans = [(1, 20), (21, 40), (41, last)] if last > 40 else [(1, 20), (21, last)]
+    spans = [(1, 20), (21, min(40, last))]
+    if last > 60:
+        spans += [(41, last - 20), (last - 19, last)]
+    elif last > 40:
+        spans += [(41, last)]
     keys = [f"{t}_grad_share" for t in TASKS] + ["t1_groups_with_gradient", "t1_len_right", "t1_acc", "t1_truncation"]
     return {f"{a}-{b}": {k: median_over(rows, k, a, b) for k in keys} for a, b in spans}
 
@@ -81,8 +87,8 @@ def main() -> None:
         return round(scale * (after[key] - before[key]), 1)
 
     out = {
-        "about": "Run 1 (rl9b_seed1, docs/talk/data/rl.json) against RL v2 seed 1 (rl_v2_seed1.json, still running "
-                 "when collected): per-step series with the running sum of learning rates (units of 1e-6), medians "
+        "about": "Run 1 (rl9b_seed1, docs/talk/data/rl.json) against RL v2 seed 1 (rl_v2_seed1.json): per-step "
+                 "series with the running sum of learning rates (units of 1e-6), medians "
                  "over step windows, values at equal learning-rate sums, and what happened to unfinished answers. "
                  "Counts and rates only (scripts/talk/rl_compare.py).",
         "collected": {"run1": run1.get("collected_at"), "rl_v2_seed1": v2.get("collected_at"),

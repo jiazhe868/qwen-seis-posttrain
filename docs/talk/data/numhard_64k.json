@@ -1,5 +1,5 @@
 {
- "collected_at": "2026-11-11T19:02",
+ "collected_at": "2026-11-18T15:03",
  "budget": 65536,
  "rows": {
   "base_medium": {
@@ -194,6 +194,66 @@
     "rupture_length_from_directivity": {
      "right": 86.9,
      "wrong_value": 13.1
+    }
+   }
+  },
+  "rl_v2_seed1": {
+   "answers": 1280,
+   "missing_continuations": 0,
+   "at_32k_pct": {
+    "right": 86.5,
+    "wrong_value": 6.7,
+    "unfinished": 6.3,
+    "format": 0.5
+   },
+   "at_64k_pct": {
+    "right": 90.2,
+    "wrong_value": 9.0,
+    "format": 0.5,
+    "unfinished": 0.3
+   },
+   "unfinished_at_32k_became": {
+    "right": 48,
+    "unfinished": 4,
+    "wrong_value": 29
+   },
+   "extra_tokens_median": 7320,
+   "families_64k_pct": {
+    "coulomb_stress_change": {
+     "right": 99.4,
+     "wrong_value": 0.6
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "right": 66.2,
+     "wrong_value": 28.8,
+     "unfinished": 2.5,
+     "format": 2.5
+    },
+    "gmpe_distance_for_pga": {
+     "right": 98.1,
+     "wrong_value": 1.2,
+     "format": 0.6
+    },
+    "gradient_ray_range": {
+     "right": 97.5,
+     "wrong_value": 2.5
+    },
+    "gradient_ray_travel_time": {
+     "right": 96.2,
+     "wrong_value": 3.8
+    },
+    "moho_depth_from_ps_delay": {
+     "right": 75.6,
+     "wrong_value": 23.8,
+     "format": 0.6
+    },
+    "mw_from_spectral_plateau": {
+     "right": 91.2,
+     "wrong_value": 8.8
+    },
+    "rupture_length_from_directivity": {
+     "right": 97.5,
+     "wrong_value": 2.5
     }
    }
   }

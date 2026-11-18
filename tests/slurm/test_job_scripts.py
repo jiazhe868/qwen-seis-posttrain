@@ -626,6 +626,17 @@ def _fake_squeue(tmp_path, window_1_ids=""):
     return f"{fake}:{os.environ['PATH']}"
 
 
+def test_final_eval_relaunches_missing_replicas_and_goes_on_with_two_thirds():
+    """2026-11-18: in seed 1's in-job final eval 5 of 21 replicas never started and waiting for all of them stopped the
+    evaluation after an hour. A replica without a log is launched once more, and the evaluation goes on with the
+    replicas that answer, if at least two thirds do, for the model, the judge and the 64K servers alike."""
+    text = (REPO / "scripts" / "slurm" / "final_eval_window.slurm").read_text()
+    assert "relaunch_missing()" in text and "wait_some()" in text
+    assert '${#UP_URLS[@]} * 3 >= $# * 2' in text
+    assert text.count("relaunch_missing \"") >= 3 and text.count("wait_some 3600") >= 3
+    assert 'wait_backends "http://${HEAD}:8101"' not in text      # the judge no longer waits for all three
+
+
 def test_rl_v2_queue_waits_for_the_go_ahead_and_then_runs_the_job_script(tmp_path):
     """The batch script is frozen at submission, so it only hands over to rl_v2_job.sh, read when the job starts."""
     text = (REPO / "scripts" / "slurm" / "rl_v2_queue.slurm").read_text()

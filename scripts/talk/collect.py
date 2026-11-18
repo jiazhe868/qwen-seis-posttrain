@@ -91,6 +91,26 @@ def pipeline() -> dict[str, Any] | None:
                 all(by_task[t]["after_difficulty"] == kept[t] for t in TASKS)}
 
 
+def bank_v2() -> dict[str, Any] | None:
+    """RL v2's bank (built 2026-11-16): what the build kept per task and pool, the SFT model's pass-rate bands, and what
+    the training files hold once the hard dev split is carved out. Counts only."""
+    v2 = DATA / "v2"
+    check = read_json(v2 / "bank_check.json")
+    if check is None:
+        return None
+    trained = {}
+    for pool in ("main", "hard"):
+        path = v2 / f"rl_{pool}_train.jsonl"
+        if path.exists():
+            trained[pool] = dict(collections.Counter(r["ability"] for r in jsonl(path)))
+    hard_dev = read_json(v2 / "hard_dev.json") or {}
+    check_keys = ("main", "hard", "dev", "pass_rate_bands", "learnable_t1", "expected_mixed_t1_at_step_1")
+    return {"check": {k: check[k] for k in check_keys if k in check},
+            "t1_families": len(check.get("t1_families") or {}), "trained": trained,
+            "hard_dev": {k: hard_dev.get(k) for k in ("per_family", "max_dev_share", "held_out")},
+            "published": (read_json(v2 / "publish_summary.json") or {}).get("counts")}
+
+
 def groups() -> dict[str, Any]:
     verify = read_json(BANK / "reports" / "verify_groups.json") or {}
     for g in verify.values():
@@ -303,10 +323,24 @@ def campaign() -> dict[str, Any]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", default=str(WORK / "dpt" / "talk" / "data.json"))
+    # 2026-11-18: RL v2 seed 1's final evaluation waited in the queue, so its two headline sets ran on the workstation.
+    # This writes only those runs, from a folder laid out like the cluster's (WORK=<folder> holding dpt/eval_results
+    # and dpt/talk/budget), and the figures read them until the cluster's own results replace them.
+    ap.add_argument("--eval-only", metavar="NAME", default=None,
+                    help="write only the eval runs and budget counts whose name contains NAME")
     args = ap.parse_args()
+    if args.eval_only:
+        runs = eval_results()["runs"]
+        data = {"collected_at": dt.datetime.now().isoformat(timespec="minutes"),
+                "eval": {"runs": {k: v for k, v in runs.items() if args.eval_only in k}},
+                "budget": {k: v for k, v in budget().items() if args.eval_only in k}}
+        Path(args.out).write_text(json.dumps(data, indent=1, sort_keys=True))
+        print(f"wrote {args.out}: {sorted(data['eval']['runs'])}, {sorted(data['budget'])}")
+        return
     data = {"collected_at": dt.datetime.now().isoformat(timespec="minutes"), "pipeline": pipeline(),
             "groups": groups(), "base_replies": base_replies(), "sft_mix": sft(),
             "contamination": drop_keys(read_json(BANK / "reports" / "contamination_report.json"), {"path"}),
+            "bank_v2": bank_v2(),
             "eval_sets": eval_sets(), "compute": jobs(), "campaign": campaign(), "eval": eval_results(),
             "budget": budget(), "family_scores": family_scores(), "diagnostics": diagnostics()}
     out = Path(args.out)

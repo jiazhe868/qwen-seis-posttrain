@@ -422,7 +422,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     import sys
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] in ("todo", "continue", "compare"):
+    if argv and argv[0] in ("todo", "continue", "compare", "table"):
         return three_budget_main(argv)
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--eval-root", required=True)
