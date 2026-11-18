@@ -19,6 +19,7 @@ nanogpt-seis-posttrain PITFALLS F2, where figures drifted away from the logs the
   answers on bank v2's new families and on run 1's first step (scripts/talk/difficulty_pilot.py)
 - docs/talk/data/rubric_formats_1116.json: the reward judge in three formats against gold labels
   (python -m dpt.eval.rubric_calibration --formats-out)
+- docs/talk/data/rl_runs_compared.json: run 1 against RL v2, step by step (scripts/talk/rl_compare.py)
 
 Colours follow the talk deck (scripts/talk/render.py), whose categorical slots were checked with the
 data-viz palette validator: models are base grey, SFT blue, RL orange; tasks T1 blue, T2 orange,
@@ -69,6 +70,7 @@ judge_color = {"primary": "#1baf7a", "second": "#6250d6"}
 planned_time_color, lost_time_color = "#2a78d6", "#e87ba4"
 length_only_color = "#c3c2b7"           # gradient from the length penalty alone, not from right against wrong
 partial_level_color = "#9fdcc3"         # a three-level judge's "partial", a tint of the judge's green
+run_color = {"run1": model_color["rl_seed1"], "rl_v2_seed1": "#6250d6"}     # run 1 keeps RL's orange
 
 # ---------------------------------------------------------------------------
 # the only words in the figures, in both languages
@@ -113,6 +115,10 @@ label_text = {
                          "three levels": "three levels"},
         "gold_mark": {"yes": "met", "partly": "partly met", "no": "not met"},
         "judged_met_share": "judged met (% of criteria)", "judged_met": "met", "judged_partial": "partial",
+        "run": {"run1": "run 1", "rl_v2_seed1": "RL v2"}, "lr_sum": "learning-rate sum (×10⁻⁶)",
+        "numeric_grad_share": "gradient from numeric (%)",
+        "numeric_groups_with_gradient": "numeric groups with gradient (%)",
+        "right_answer_length": "right numeric answers (tokens)",
     },
     "zh": {
         "model": {"base_medium": "基座", "sft": "SFT", "rl_seed1": "RL"},
@@ -152,6 +158,9 @@ label_text = {
                          "three levels": "三个等级"},
         "gold_mark": {"yes": "满足", "partly": "部分满足", "no": "不满足"},
         "judged_met_share": "判为满足（占标准的 %）", "judged_met": "满足", "judged_partial": "部分满足",
+        "run": {"run1": "第 1 次运行", "rl_v2_seed1": "RL v2"}, "lr_sum": "学习率之和（×10⁻⁶）",
+        "numeric_grad_share": "来自数值题的梯度（%）", "numeric_groups_with_gradient": "带有梯度的数值题组（%）",
+        "right_answer_length": "数值题正确回答（token）",
     },
 }
 
@@ -232,6 +241,7 @@ def load_all_result_files() -> dict:
         "run1_step0_replay": load_result_file("run1_step0_replay_1116.json"),
         "value_positions": load_result_file("value_positions_1115.json"),
         "rubric_formats": load_result_file("rubric_formats_1116.json"),
+        "rl_runs_compared": load_result_file("rl_runs_compared.json"),
     }
 
 
@@ -989,6 +999,48 @@ def draw_pilot_families(results: dict, language: str) -> None:
     save_figure(figure, "pilot_families", language)
 
 
+# ---------------------------------------------------------------------------
+# 17. run 1 against RL v2, at equal learning-rate sums
+# ---------------------------------------------------------------------------
+def rolling_mean(values: list, width: int = 5) -> list:
+    """Centered mean over ``width`` steps, skipping missing values (the per-step series are noisy)."""
+    half, out = width // 2, []
+    for i in range(len(values)):
+        window = [v for v in values[max(0, i - half): i + half + 1] if isinstance(v, (int, float))]
+        out.append(sum(window) / len(window) if window else None)
+    return out
+
+
+def draw_rl_runs_compared(results: dict, language: str) -> None:
+    """Three series for both runs against the sum of the learning rates so far (with Adam, how far a run has pushed
+    the policy): the share of the gradient from numeric problems, the share of numeric groups whose answers differ,
+    and the length of right numeric answers. 5-step centered means; the dotted line is run 1's collapse (step 40)."""
+    text = label_text[language]
+    compared = results["rl_runs_compared"]
+    collapse_lr_sum = compared["run1_collapse"]["lr_sum"]
+    panels = (("t1_num_grad_share", text["numeric_grad_share"], 100, "linear"),
+              ("t1_groups_with_gradient", text["numeric_groups_with_gradient"], 100, "linear"),
+              ("t1_len_right", text["right_answer_length"], 1, "log"))
+    figure, panel_axes = plt.subplots(1, 3, figsize=(14.5, 4.0), gridspec_kw={"wspace": 0.28})
+    for axes, (key, axis_label, scale, y_scale) in zip(panel_axes, panels):
+        for run in ("run1", "rl_v2_seed1"):
+            rows = compared["per_step"][run]
+            values = rolling_mean([r.get(key) for r in rows])
+            points = [(r["lr_sum"], scale * v) for r, v in zip(rows, values) if v is not None and v > 0]
+            axes.plot([x for x, _ in points], [y for _, y in points], color=run_color[run], linewidth=2.0, zorder=3)
+            axes.text(points[-1][0] + 1.5, points[-1][1], text["run"][run], color=run_color[run], fontsize=11.5,
+                      va="center", ha="left")
+        axes.axvline(collapse_lr_sum, color=muted_ink_color, linewidth=1.0, linestyle=":", zorder=1)
+        axes.set_yscale(y_scale)
+        axes.set_xlabel(text["lr_sum"])
+        axes.set_ylabel(axis_label)
+        axes.set_xlim(0, 125)
+        add_horizontal_grid(axes)
+    panel_axes[0].set_ylim(0, 103)
+    panel_axes[1].set_ylim(0, 80)
+    save_figure(figure, "rl_runs_compared", language)
+
+
 figure_drawers = {
     "workflow": draw_workflow_strip,
     "results_by_stage": draw_results_by_stage,
@@ -1007,6 +1059,7 @@ figure_drawers = {
     "gradient_by_rule": draw_gradient_by_rule,
     "value_positions": draw_value_positions,
     "pilot_families": draw_pilot_families,
+    "rl_runs_compared": draw_rl_runs_compared,
 }
 
 

@@ -128,10 +128,11 @@ def draw_page(runs: dict[str, list[dict]], reference: dict[str, list[dict]], rul
             if metric == "task/t1_num/len_gap_within_finished":
                 all_steps, all_values = metric_series(rows, "task/t1_num/len_gap_within", 1.0)
                 axes.plot(all_steps, all_values, color=color, linewidth=1.0, linestyle="--", alpha=0.7, zorder=2)
-        if metric == "dev/t1_hard_len" and "dev_t1_hard_length_floor" in rules:
+        has_data = any(metric_series(rows, metric, scale)[0] for rows in every_run)
+        if metric == "dev/t1_hard_len" and "dev_t1_hard_length_floor" in rules and has_data:
             floor = float(rules["dev_t1_hard_length_floor"]["below"]["pause"])
             axes.axhline(floor, color=ink_color, linewidth=1.0, linestyle="--", zorder=2)
-        if metric == "task/t1_num/len_gap_within_finished":
+        if metric == "task/t1_num/len_gap_within_finished" and has_data:
             axes.axhline(0.0, color=muted_ink_color, linewidth=1.0, zorder=1)
         axes.set_title(title, fontsize=12, loc="left", color=ink_color)
         axes.set_xlim(0, last_step + 1)

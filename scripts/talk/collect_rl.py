@@ -2,6 +2,8 @@
 text of a prompt, an answer or a reference.
 
     python3 scripts/talk/collect_rl.py --out $WORK/dpt/talk/rl.json      # ~30 s, standard library only
+    python3 scripts/talk/collect_rl.py --run $SCRATCH/dpt/checkpoints/rl/rl9b_v2_seed1 --metrics-only \
+        --hard-dev $WORK/dpt/data/v2/rl_dev_hard.jsonl --out $WORK/dpt/talk/rl_v2_seed1.json   # RL v2
 
 Sources (campaign 3532660, RL from step 0 at 2026-10-29 22:50):
 - `<run>/metrics.jsonl`: the trainer's per-step metrics; the keys the figures read are kept.
@@ -30,7 +32,7 @@ TASKS = ["t1_num", "t2_code", "t3_report", "t4_general"]
 KEEP = ("task/", "filter/", "curriculum/", "dev/", "alert/", "actor/entropy", "actor/pg_clipfrac", "actor/grad_norm",
         "actor/lr", "actor/ppo_kl", "actor/mtp_losses/", "actor/perf/", "mismatch/log_ppl_diff",
         "mismatch/log_ppl_abs_diff", "mismatch/kl_k3", "drift/log_ppl_diff", "drift/kl_k3", "critic/score/mean",
-        "batch/", "response_length/", "timing_s/step", "timing_s/gen", "perf/")
+        "batch/", "response_length/", "timing_s/step", "timing_s/gen", "perf/", "val-core/")
 LEN_BINS = [2 ** (k / 2) for k in range(12, 30)]          # 64 .. 16K tokens, half-octave edges
 
 
@@ -145,10 +147,75 @@ def sft_steps() -> list[dict[str, float]]:
     return run
 
 
+def user_turn(prompt: str) -> str:
+    """The question in a rendered prompt: the text of the user turn."""
+    head, _, rest = prompt.rpartition("user\n")
+    return rest.split("<|im_end|>")[0].split("\nassistant")[0].strip() if head or rest else prompt.strip()
+
+
+def dev_splits(hard_dev: Path | None) -> dict[str, Any]:
+    """RL v2's dev passes split by dev set, from the dumps (step 0 is the SFT model): run 1's pinned numeric split,
+    the hard dev split, code and general. The dumps carry no problem id, so a numeric row belongs to the hard split
+    when its question is one of rl_dev_hard.jsonl's. Per set: answers, right, median lengths; for the numeric sets
+    also the gold grader's wrong-value, unfinished and unfinished-with-value shares. Aggregates only."""
+    hard: set[str] = set()
+    if hard_dev is not None and hard_dev.exists():
+        with hard_dev.open() as f:
+            hard = {str((json.loads(line).get("extra_info") or {}).get("question", "")).strip() for line in f
+                    if line.strip()}
+    out: dict[str, Any] = {}
+    for p in sorted((RUN / "val_generations").glob("*.jsonl"), key=lambda p: int(p.stem)):
+        by_set: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
+        with p.open() as f:
+            for line in f:
+                if line.strip():
+                    r = json.loads(line)
+                    task = r.get("task", "?")
+                    if task == "t1_num":
+                        name = "hard_dev" if user_turn(str(r.get("input", ""))) in hard else "run1_dev"
+                    else:
+                        name = task
+                    by_set[name].append({k: r.get(k) for k in ("acc", "gold_score", "gold_wrong_value",
+                                                               "gold_unfinished", "gold_unfinished_seen",
+                                                               "response_length")})
+        step = {}
+        for name, rs in by_set.items():
+            right = [r for r in rs if (r["gold_score"] if r["gold_score"] is not None else r["acc"] or 0) >= 1]
+            cell = {"n": len(rs), "right": len(right) / len(rs),
+                    "len": quantiles([r["response_length"] or 0 for r in rs]),
+                    "len_right": quantiles([r["response_length"] or 0 for r in right])}
+            if name in ("run1_dev", "hard_dev"):
+                for key in ("gold_wrong_value", "gold_unfinished", "gold_unfinished_seen"):
+                    cell[key.removeprefix("gold_")] = sum(1 for r in rs if (r[key] or 0) > 0) / len(rs)
+            step[name] = cell
+        out[p.stem] = step
+    return out
+
+
+def stop_markers() -> dict[str, Any]:
+    """How the run stopped, if it did: the trainer's marker files (PAUSED, WALLTIME, HOLD.json)."""
+    markers = (RUN / f"{name}.json" for name in ("PAUSED", "WALLTIME", "HOLD"))
+    return {p.stem: json.loads(p.read_text()) for p in markers if p.exists()}
+
+
 def main() -> None:
+    global RUN
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=WORK / "dpt" / "talk" / "rl.json")
+    ap.add_argument("--run", type=Path, default=RUN, help="the RL run directory (default: run 1, rl9b_seed1)")
+    ap.add_argument("--metrics-only", action="store_true",
+                    help="only the per-step metrics, the stop markers and the dev passes by set (RL v2)")
+    ap.add_argument("--hard-dev", type=Path, default=None, help="rl_dev_hard.jsonl, to split RL v2's dev passes")
     a = ap.parse_args()
+    RUN = a.run
+    if a.metrics_only:
+        data = {"collected_at": dt.datetime.now().isoformat(timespec="minutes"), "run": str(RUN),
+                "metrics": metrics(), "stopped": stop_markers(), "dev_by_set": dev_splits(a.hard_dev)}
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(json.dumps(data, separators=(",", ":")))
+        print(f"{a.out}: {a.out.stat().st_size / 1e3:.0f} KB, {len(data['metrics'])} steps, "
+              f"stopped {list(data['stopped'])}")
+        return
     data = {"collected_at": dt.datetime.now().isoformat(timespec="minutes"), "run": str(RUN),
             "metrics": metrics(), "dev": dev(), "host_memory_stage8": host_memory(),
             "gpu_memory_stage7_rl": gpu_memory("rl_stage7_mem.csv"),

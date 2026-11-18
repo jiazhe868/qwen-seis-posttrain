@@ -1391,6 +1391,102 @@ Caveats, plainly:
 - the flagged items stay in the frozen sets, and the tables report both versions;
 - the blind review has 30 pairs.
 
+### 8.6 Why RL v2 trains where run 1 collapsed
+
+By its 69th step, RL v2's first seed had done what run 1 never did: it kept improving after step 20, and its answers
+stopped shrinking at a sensible length. The obvious question is what made the difference. The honest difficulty is
+that RL v2 changed five things at once: the bank, the rule for cut-off answers, the learning rate (halved), the task
+mix (no report task) and the budget (24K instead of 16K). There is no control run, and no time left for ablations.
+So this section asks a narrower question. Using only what the two runs logged, which changes can be seen doing
+something, and which cannot yet be told apart? The numbers are from step 69 of a run still going; they are
+refreshed when it ends (`docs/talk/data/rl_runs_compared.json`).
+
+**One scale for both runs.** RL v2 runs at half run 1's learning rate, so comparing them step by step would be
+unfair to run 1. With the Adam optimizer, one step moves the weights by roughly its learning rate whatever the
+gradient's size, so the sum of the learning rates of all steps so far says how far a run has pushed the policy. On
+that scale, RL v2's step 2n has gone about as far as run 1's step n. Run 1 collapsed at step 40, a learning-rate sum
+of 71 (in units of 10⁻⁶, counting its warm-up); RL v2 reaches 71 at about step 76 and will end near 110.
+
+<p align="center"><img src="assets/rl_runs_compared_en.png" width="92%"></p>
+
+Both runs against the sum of their learning rates so far: the share of the gradient that comes from numeric
+problems, the share of numeric groups whose answers differ, and the length of right numeric answers (log scale).
+5-step means; the dotted line is run 1's collapse at step 40 (`docs/talk/data/rl_runs_compared.json`,
+`scripts/talk/rl_compare.py`).
+
+**What each run learned from.** The gradient of a GRPO step comes only from groups whose answers got different
+rewards (§8.3), and every task contributes its own share:
+
+| | run 1, steps 1–20 | run 1, steps 21–40 | RL v2, steps 1–20 | RL v2, steps 21–40 | RL v2, steps 41–69 |
+|---|---|---|---|---|---|
+| share of the gradient from numeric problems | 36% | 38% | **93%** | 85% | 77% |
+| … from general prompts | 57% | 18% | 6% | 13% | 21% |
+| … from judged reports | — | 35% | — | — | — |
+| numeric groups with gradient | 12% | 24% | **65%** | 38% | 24% |
+
+Run 1 was meant to improve numeric reasoning, but most of its gradient came from other tasks, first the general
+prompts and then, from step 27, the judged reports. Its numeric gradient came from about one group in eight. RL v2
+learned mostly from numeric problems, from two groups in three at the start. Its share of groups with gradient then
+fell as the model solved more of the bank, which is the healthy way for it to fall. Run 1's rose after about step 20
+for the opposite reason: the model was getting worse, so more groups had a wrong answer in them, until every answer
+was wrong and the share dropped to zero (middle panel).
+
+**What the gradient paid for.** In run 1's first step, 19% of the groups had a gradient only because the length
+penalty docked a long right answer, and those groups held 28% of the step's advantage, all of it pushing toward
+shorter answers; 13% of the groups had right and wrong answers (§6.4). RL v2 has no length term: a right finished
+answer scores 1, and a wrong or unfinished one scores 0. Inside its groups, the right finished answers were longer
+than the wrong finished ones in 62 of 69 steps (a median of 861 tokens). So its gradient never favoured a short wrong
+answer over a longer right one. The lengths show the difference. At equal learning-rate sums of 10, 40 and 60, run
+1's right numeric answers had 2,230, 1,248 and 815 tokens, and kept falling to a few hundred. RL v2's had 10,881,
+7,061 and 7,178: they shortened while unfinished answers were turning into right ones, then stopped.
+
+**What happened to the unfinished answers,** the failure both runs were meant to fix:
+
+| | unfinished | right | wrong value |
+|---|---|---|---|
+| run 1, D-Num-hard at 32K, SFT → step 20 | −11.7 | +2.0 | +9.0 |
+| RL v2, hard dev split at 24K, SFT (its step-0 dev pass) → step 60 | −40.6 | **+42.7** | −1.2 |
+
+The two rows use different problems and budgets, so they are not a like-for-like comparison; RL v2's D-Num-hard at
+32K comes with its final evaluation. The direction is what differs. Run 1 turned most of the answers it stopped from
+running out into wrong ones. RL v2 turned all of them into right ones, and a few wrong ones as well.
+
+**The changes, by how much the evidence says about each:**
+
+| change | what it changed | evidence | verdict |
+|---|---|---|---|
+| bank re-graded with the SFT model, 18 new families, weights for problems solved sometimes | where the gradient came from | numeric groups with gradient 65% against 12%; numeric share of the gradient 93% against 36% | changed the signal; measured |
+| a cut-off answer counts as wrong, no length penalty | what the gradient paid for | run 1's first step: 28% of the advantage from the penalty alone; RL v2: right finished answers longer inside 62 of 69 steps, shortening stopped where answers finished | changed the incentive; measured, but entangled with the bank |
+| half the learning rate | how far each step moves | from a learning-rate sum of 10 to 60, run 1's right answers lost 63% of their length; RL v2's none after 40 | not the whole story so far; decisive once RL v2 passes 71 (step ~76) |
+| no report task | removed a judged reward that took 26–72% of run 1's gradient in steps 27–40 | run 1's numeric answers were already shrinking before reports joined (2,205 tokens at step 14) | cannot be separated |
+| a 24K budget instead of 16K | room to finish | seed 3 trains at 16K with everything else the same | open until seed 3 |
+| dev pass every 10 steps, hard dev split, pause rules | what is measured and when the run stops | no pause rule has fired | explains none of the difference; insurance |
+
+**What carries over to other projects:**
+- **Count where the gradient comes from before blaming the algorithm.** Both runs used the same losses, clip, group
+  size and batch. Run 1's bank left most of its gradient to other tasks and to a length penalty.
+- **A length penalty rewards brevity whether the answer is right or not.** When right-against-wrong signal is
+  scarce, such a term can carry a large share of what a step learns: 28% in run 1's first step.
+- **When the goal is to finish within a budget, score a cut-off answer as wrong.** Then the only way to earn reward
+  is to finish and be right, and shortening stops where answers finish.
+- **Compare runs at equal learning-rate sums, not at equal steps.**
+- **A rising share of groups with gradient is not always progress.** In run 1 it rose because the model was getting
+  worse.
+
+Caveats, plainly:
+- one seed, and the run is not finished; the final evaluation on D-Num-hard and D-Fresh decides whether any of this
+  carries over to the test;
+- the hard dev split holds new problems from the training families, while D-Num-hard's families are held out;
+- without a control run, the bank and the rule cannot be told apart; the comparison only says that both changed
+  what the gradient did.
+
+```bash
+python scripts/talk/collect_rl.py --run $SCRATCH/dpt/checkpoints/rl/rl9b_v2_seed1 --metrics-only \
+    --hard-dev $WORK/dpt/data/v2/rl_dev_hard.jsonl --out rl_v2_seed1.json     # on the cluster, then copy it
+python scripts/talk/rl_compare.py                                              # → docs/talk/data/rl_runs_compared.json
+python scripts/readme_figures.py rl_runs_compared
+```
+
 ---
 
 ## 9. Systems: a month on a shared supercomputer
@@ -1569,7 +1665,7 @@ qwen-seis-posttrain/
 ## 14. Regenerate figures
 
 ```bash
-python scripts/readme_figures.py                     # all 17 figures, English and Chinese → assets/
+python scripts/readme_figures.py                     # all 18 figures, English and Chinese → assets/
 python scripts/readme_figures.py rl_steps            # one figure
 python scripts/talk/collect.py                       # on the cluster: refresh docs/talk/data/run.json from the run
 ```
