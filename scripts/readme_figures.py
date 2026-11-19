@@ -123,6 +123,12 @@ label_text = {
         "gold_mark": {"yes": "met", "partly": "partly met", "no": "not met"},
         "judged_met_share": "judged met (% of criteria)", "judged_met": "met", "judged_partial": "partial",
         "run": {"run1": "run 1", "rl_v2_seed1": "RL v2"}, "lr_sum": "learning-rate sum (×10⁻⁶)",
+        "curve_run": {"run1": "run 1", "rl_v2_seed1": "RL v2 seed 1", "rl_v2_seed2": "RL v2 seed 2"},
+        "curve_panel": {"t1_num_reward": "numeric reward", "t2_code_reward": "code reward",
+                        "t3_report_reward": "report reward", "t4_general_reward": "general reward",
+                        "t1_num_entropy": "numeric entropy", "t2_code_entropy": "code entropy",
+                        "drift_kl": "KL, stale samples", "mismatch_kl": "KL, fresh samples"},
+        "entropy_unit": "nats / token", "kl_unit": "KL (k3)", "reward_unit": "mean reward",
         "numeric_grad_share": "gradient from numeric (%)",
         "numeric_groups_with_gradient": "numeric groups with gradient (%)",
         "right_answer_length": "right numeric answers (tokens)",
@@ -173,6 +179,11 @@ label_text = {
         "gold_mark": {"yes": "满足", "partly": "部分满足", "no": "不满足"},
         "judged_met_share": "判为满足（占标准的 %）", "judged_met": "满足", "judged_partial": "部分满足",
         "run": {"run1": "第 1 次运行", "rl_v2_seed1": "RL v2"}, "lr_sum": "学习率之和（×10⁻⁶）",
+        "curve_run": {"run1": "第 1 次运行", "rl_v2_seed1": "RL v2 种子 1", "rl_v2_seed2": "RL v2 种子 2"},
+        "curve_panel": {"t1_num_reward": "数值题奖励", "t2_code_reward": "代码奖励", "t3_report_reward": "报告奖励",
+                        "t4_general_reward": "通用奖励", "t1_num_entropy": "数值题熵", "t2_code_entropy": "代码熵",
+                        "drift_kl": "KL，旧样本", "mismatch_kl": "KL，新样本"},
+        "entropy_unit": "nats / token", "kl_unit": "KL（k3）", "reward_unit": "平均奖励",
         "numeric_grad_share": "来自数值题的梯度（%）", "numeric_groups_with_gradient": "带有梯度的数值题组（%）",
         "right_answer_length": "数值题正确回答（token）",
         "stage_title": {"base": "基座  ·  Qwen3.5-9B", "sft": "SFT", "rl_seed1": "第 1 次 RL  ·  第 20 步",
@@ -1118,6 +1129,55 @@ def draw_rl_runs_compared(results: dict, language: str) -> None:
     save_figure(figure, "rl_runs_compared", language)
 
 
+def draw_rl_training_curves(results: dict, language: str) -> None:
+    """Reward per task, entropy per token and the train/rollout KL for run 1 and RL v2's seeds, against the sum of the
+    learning rates so far (as rl_runs_compared). 5-step centered means; the dotted line is run 1's collapse. There is
+    no reference model, so no KL to SFT: "stale samples" are the ones drawn up to 3 steps before (policy change plus
+    engine), "fresh samples" the ones drawn by the current weights (engine only)."""
+    text = label_text[language]
+    compared = results["rl_runs_compared"]
+    runs = [run for run in ("run1", "rl_v2_seed1", "rl_v2_seed2") if run in compared["per_step"]]
+    style = {"run1": (run_color["run1"], "-"), "rl_v2_seed1": (run_color["rl_v2_seed1"], "-"),
+             "rl_v2_seed2": (run_color["rl_v2_seed1"], "--")}
+    panels = ["t1_num_reward", "t2_code_reward", "t3_report_reward", "t4_general_reward",
+              "t1_num_entropy", "t2_code_entropy", "drift_kl", "mismatch_kl"]
+    figure, axes_grid = plt.subplots(2, 4, figsize=(16.5, 7.2), gridspec_kw={"wspace": 0.28, "hspace": 0.18},
+                                     sharex=True)
+    for axes, key in zip(axes_grid.flat, panels):
+        for run in runs:
+            rows = compared["per_step"][run]
+            values = rolling_mean([r.get(key) for r in rows])
+            points = [(r["lr_sum"], v) for r, v in zip(rows, values) if v is not None and (v > 0 or "kl" not in key)]
+            if points:
+                color, dash = style[run]
+                axes.plot([x for x, _ in points], [y for _, y in points], color=color, linestyle=dash, linewidth=1.8,
+                          label=text["curve_run"][run], zorder=3)
+        axes.axvline(compared["run1_collapse"]["lr_sum"], color=muted_ink_color, linewidth=1.0, linestyle=":",
+                     zorder=1)
+        # reward curves run near 1, so their names go to the empty lower left
+        label_y, label_va = (0.04, "bottom") if key.endswith("_reward") else (0.96, "top")
+        axes.text(0.03, label_y, text["curve_panel"][key], transform=axes.transAxes, ha="left", va=label_va,
+                  fontsize=12, fontweight="bold", color=ink_color)
+        if key.endswith("_reward"):
+            axes.set_ylim(0, 1.08)
+        elif key.endswith("_entropy"):
+            axes.set_ylim(0, 1.0)
+        else:                                  # one range for both KLs, so a flat one looks flat beside a rising one
+            axes.set_yscale("log")
+            axes.set_ylim(1.5e-4, 2e-2)
+        axes.set_xlim(0, 125)
+        add_horizontal_grid(axes)
+    axes_grid[0, 0].set_ylabel(text["reward_unit"])
+    axes_grid[1, 0].set_ylabel(text["entropy_unit"])
+    axes_grid[1, 2].set_ylabel(text["kl_unit"])
+    for axes in axes_grid[1]:
+        axes.set_xlabel(text["lr_sum"])
+    handles, labels = axes_grid[0, 0].get_legend_handles_labels()
+    figure.legend(handles, labels, ncol=len(runs), loc="lower left", bbox_to_anchor=(0.12, 0.92), frameon=False,
+                  handlelength=2.2, columnspacing=1.6)
+    save_figure(figure, "rl_training_curves", language)
+
+
 # ---------------------------------------------------------------------------
 # 18. one question, every stage
 # ---------------------------------------------------------------------------
@@ -1233,6 +1293,7 @@ figure_drawers = {
     "value_positions": draw_value_positions,
     "pilot_families": draw_pilot_families,
     "rl_runs_compared": draw_rl_runs_compared,
+    "rl_training_curves": draw_rl_training_curves,
     "stage_outputs": draw_stage_outputs,
 }
 

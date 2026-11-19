@@ -40,7 +40,14 @@ def per_step(metrics: list[dict]) -> list[dict]:
             "t1_groups_with_gradient": None if zero_adv is None else 1.0 - zero_adv,
             "t1_len_right": r.get("task/t1_num/len_correct"), "t1_acc": r.get("task/t1_num/acc"),
             "t1_truncation": r.get("task/t1_num/truncation_rate"), "len_mean": r.get("response_length/mean"),
-            "t1_len_gap_finished": r.get("task/t1_num/len_gap_within_finished")})
+            "t1_len_gap_finished": r.get("task/t1_num/len_gap_within_finished"),
+            # the training curves (2026-11-19): reward and entropy per task, and three KL estimates (k3). There is no
+            # reference model, so no KL to SFT: ppo_kl is each update's own step, mismatch the trainer against the
+            # rollout engine on fresh samples, drift the same on samples from up to 3 steps before (policy change too)
+            **{f"{t}_reward": r.get(f"task/{t}/reward_mean") for t in TASKS},
+            **{f"{t}_entropy": r.get(f"task/{t}/entropy") for t in TASKS},      # per token (actor/entropy is a sum)
+            "ppo_kl": r.get("actor/ppo_kl"),
+            "mismatch_kl": r.get("mismatch/kl_k3"), "drift_kl": r.get("drift/kl_k3")})
     return rows
 
 
@@ -72,6 +79,8 @@ def main() -> None:
     run1 = json.loads((DATA / "rl.json").read_text())
     v2 = json.loads((DATA / "rl_v2_seed1.json").read_text())
     rows1, rows2 = per_step(run1["metrics"]), per_step(v2["metrics"])
+    seed2_file = DATA / "rl_v2_seed2.json"            # seed 2's training curves, when collected
+    rows_seed2 = per_step(json.loads(seed2_file.read_text())["metrics"]) if seed2_file.exists() else []
     collapse_lr_sum = next(r["lr_sum"] for r in rows1 if r["step"] == COLLAPSE_STEP_RUN1)
     targets = [10, 20, 40, 60, 80, 100]
     replay = json.loads((DATA / "run1_step0_replay_1116.json").read_text())
@@ -113,7 +122,7 @@ def main() -> None:
                 "unfinished": change(hard0, hard_last, "unfinished", 100),
                 "right": change(hard0, hard_last, "right", 100),
                 "wrong_value": change(hard0, hard_last, "wrong_value", 100)}},
-        "per_step": {"run1": rows1, "rl_v2_seed1": rows2},
+        "per_step": {"run1": rows1, "rl_v2_seed1": rows2, **({"rl_v2_seed2": rows_seed2} if rows_seed2 else {})},
     }
     (DATA / "rl_runs_compared.json").write_text(json.dumps(out, indent=1))
     print(json.dumps({k: v for k, v in out.items() if k != "per_step"}, indent=1))

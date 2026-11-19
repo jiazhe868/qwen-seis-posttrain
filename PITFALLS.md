@@ -8,8 +8,8 @@ Every entry is a mistake actually made here, on the Qwen3.5-9B SFT and multi-tas
 Slurm cluster (8 nodes × 3 A100-40GB) in October and November 2026: caught by a measurement, corrected, and
 given a test or a guard. Nothing below is a generic best-practice list.
 
-**The organising observation: most of the expensive failures here were silent.** In twenty-two of the
-twenty-nine entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
+**The organising observation: most of the expensive failures here were silent.** In twenty-three of the
+thirty entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
 check that checked the other forward pass, a patch that patched nothing, a sandbox that failed closed
 without an alert, framework defaults that overrode the config, a hang that no timeout noticed, a judge that
 graded its own students, verifiers that all agreed with the wrong formula they were given. The loud failures (a crash, an out-of-memory error) cost minutes; the silent ones
@@ -40,6 +40,7 @@ Companion document: [README.md](README.md) explains how the pipeline works and w
 | C5 | A GPU embedder beside the servers | environment | a failed data job and its 4.5-day queue place | loud |
 | C6 | A login node's thread limit that followed the job | environment | 8 of an RL job's 47 hours; with no fix, no RL | silent |
 | C7 | A folder 24 ranks create at once on a shared file system | environment | the last 10 steps of an RL run | loud |
+| C8 | A sandbox that failed on one node, with a warning at every dev pass | environment | a code reward broken for a whole run; code scores of 0 | silent |
 | D1 | "T4 taught brevity": a story the per-step metrics did not support | analysis | a wrong fix for RL v2 | silent |
 | D2 | One model as reward judge, data filter and evaluator | measurement | "reports improved by 36 points" | silent |
 | D3 | A difficulty filter run with the wrong model | measurement | RL with no gradient on most groups | silent |
@@ -516,6 +517,37 @@ its last saved checkpoint.
 
 **Generalisable lesson.** A lock that lives on one node does not serialize the others. On a shared file system, code
 that several nodes run at once has to tolerate the other nodes' half-finished work.
+
+## C8 — A sandbox that failed on one node, with a warning at every dev pass
+
+**Symptom.** RL v2's second seed had a code reward near 0.85 from its first step, while seed 1's was 0.97. Its
+evaluation, in the same job, then gave D-Code and LiveCodeBench exactly 0.0.
+
+**The false story.** "Seed 2 drew a harder set of code problems." The seeds draw the bank in different orders, so a
+gap of 12 points in a training reward could come from the draw. The evaluation's zero could not.
+
+**Root cause.** On one of the job's 8 nodes, the code sandbox's container probe failed; the cause was not found
+before the nodes were released. The sandbox kept a failed probe for its process's life, so every code answer graded
+on that node failed closed and scored 0 for the whole run: 10-17% of the code answers at each dev pass. The
+`sandbox_infra` alert warned at every one of those passes, but it pauses only above 20%, and nobody read the warning.
+In the evaluation the same node was the head node. Its sandbox failed the probe at start-up, the evaluation went on
+without checking, and every code answer scored 0.
+
+**Fix.** A failed probe is tried again after 60 seconds, and a passed one is kept (`CONTAINER_RETRY_S` in
+`dpt.rewards.code_sandbox`). The evaluation waits for the sandbox to report itself warm and starts it once more if it
+does not. A code set with more than 5% sandbox infrastructure errors gets no score instead of a low one. The run's
+watcher reports alerts.
+
+**Permanent regression test.** `test_a_failed_container_probe_is_tried_again` (`tests/rewards/test_code_sandbox.py`),
+`test_a_set_the_sandbox_could_not_run_gets_no_score` (`tests/eval/test_harness.py`) and
+`test_final_eval_restarts_a_cold_sandbox_and_a_failed_report_does_not_stop_it` (`tests/slurm/test_job_scripts.py`).
+
+**Invalidated artifacts.** Seed 2's code-task signal: about one code answer in eight scored 0 whatever it was, so its
+code results (D-Code 90.8 and LiveCodeBench 56.1, graded again on the workstation) may understate the recipe. Its
+numeric reward does not use the sandbox, and the numeric test is unaffected.
+
+**Generalisable lesson.** A warning that fires at every check and stops nothing is still a failure. Either someone
+reads it, or it pauses the run.
 
 ---
 

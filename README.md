@@ -197,7 +197,8 @@ either, and D-Report under the second judge is 58.0, which is still inside the n
 A second seed lands close by on every set. It is evaluated at step 100, its last saved checkpoint (§8.3): D-Num-hard
 83.4, D-Fresh 87.3, D-Num 95.0, D-Code 90.8, GPQA 77.9, LiveCodeBench 56.1, D-Report 62.5, refusals 49.0%
 (`docs/talk/data/run.json`; its code sets were graded again on the workstation, because the cluster's sandbox failed
-its start-up check and failed closed on every answer).
+its start-up check and failed closed on every answer). Its code results may understate the recipe: during training,
+about one code answer in eight was scored 0 by a broken sandbox ([PITFALLS](PITFALLS.md) C8).
 
 Of the eight ship gates fixed before RL (§3.5), RL v2's two seeds pass five and six: D-Code, D-Fresh, general
 capability, cost and reproducibility (their D-Num scores are 0.7 apart, inside the 2-point limit), and D-Report for
@@ -1290,7 +1291,8 @@ for them until its timeout ([PITFALLS](PITFALLS.md) E4). The evaluation went bac
 its own, and while it waited every set ran on a workstation (§1.2). Seed 2 started at 04:50 the same morning and
 trained all 110 steps, but its step-110 checkpoint was never written: 24 ranks created the same folder at once on the
 shared file system, and one of them failed ([PITFALLS](PITFALLS.md) C7). Its last saved checkpoint, step 100, is the
-one evaluated. In seed 1's run, steps 100 and 110 were within noise of each other on both dev splits. Seed 3 waits
+one evaluated. Its code reward was also partly broken for the whole run: one node's sandbox failed its container
+check and scored about one code answer in eight 0 ([PITFALLS](PITFALLS.md) C8). In seed 1's run, steps 100 and 110 were within noise of each other on both dev splits. Seed 3 waits
 behind it, with the fix.
 
 ```bash
@@ -1515,6 +1517,30 @@ Both runs against the sum of their learning rates so far: the share of the gradi
 problems, the share of numeric groups whose answers differ, and the length of right numeric answers (log scale).
 5-step means; the dotted line is run 1's collapse at step 40 (`docs/talk/data/rl_runs_compared.json`,
 `scripts/talk/rl_compare.py`).
+
+**The training curves.** Rewards, entropy and the train/rollout KL tell the same story from the trainer's side.
+
+<p align="center"><img src="assets/rl_training_curves_en.png" width="92%"></p>
+
+Reward per task, entropy per token and the KL between the trainer and the rollout engine (the k3 estimate), against
+the sum of the learning rates, for run 1 and RL v2's two seeds. 5-step means; the dotted line is run 1's collapse.
+There is no reference model, so there is no KL to SFT. "Stale samples" were drawn up to three steps earlier, so
+their KL includes the policy's change since then; "fresh samples" were drawn by the current weights, so theirs is
+the two engines' mismatch alone (`docs/talk/data/rl_runs_compared.json`).
+
+Run 1's rewards start near 1 on every task, because its bank was easy for the SFT model, and fall to 0 after the
+collapse. RL v2's numeric reward starts at 0.55 on the harder bank and climbs to 0.98. The entropy showed the trouble
+early: run 1's numeric answers lost more than half of their entropy per token, from about 0.5 to about 0.2, while
+their reward still looked fine, and RL v2's stayed near 0.5. So did the stale-sample KL. Run 1's rose from about
+0.4×10⁻³ in its first 20 steps to 1.0×10⁻³ at step 35 and 1.6×10⁻³ at step 39, before the dev pass at step 40 showed
+the collapse, and RL v2's stayed flat. The fresh-sample KL is flat for all three runs, so the engines agreed
+throughout and the rise came from the policy itself. The PPO step's own KL stays below 10⁻⁵ for RL v2; run 1's
+reached 0.08 at its last step.
+
+Seed 2's code reward sits near 0.85 from the first step, against seed 1's 0.97. That gap is not the model. About one
+code answer in eight was graded on a node whose sandbox had failed its container check, and the sandbox kept that
+failure for the whole run, so those answers scored 0 ([PITFALLS](PITFALLS.md) C8). Its numeric reward, graded
+without the sandbox, follows seed 1's.
 
 **What each run learned from.** The gradient of a GRPO step comes only from groups whose answers got different
 rewards (§8.3), and every task contributes its own share:
@@ -1788,7 +1814,7 @@ qwen-seis-posttrain/
 ## 14. Regenerate figures
 
 ```bash
-python scripts/readme_figures.py                     # all 19 figures, English and Chinese → assets/
+python scripts/readme_figures.py                     # all 20 figures, English and Chinese → assets/
 python scripts/readme_figures.py rl_steps            # one figure
 python scripts/talk/collect.py                       # on the cluster: refresh docs/talk/data/run.json from the run
 ```

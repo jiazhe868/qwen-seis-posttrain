@@ -223,7 +223,7 @@ def _unshare_available() -> bool:
     return _UNSHARE_OK
 
 
-_CONTAINER_OK: dict[tuple, bool] = {}
+_CONTAINER_OK: dict[tuple, Any] = {}   # True, or (False, when probed)
 
 
 def container_command(runtime: str, image: str, *, root: str, workdir: str, python_prefix: str,
@@ -261,28 +261,39 @@ def bwrap_command(runtime: str, *, root: str, workdir: str, python_prefix: str, 
     return cmd
 
 
-def container_available(runtime: str, image: str, network: str = "none", *, runner=subprocess.run) -> bool:
-    """Probe once whether the container runs here (with the requested network mode). Bubblewrap needs no image."""
+CONTAINER_RETRY_S = 60.0   # a failed probe is tried again after this long; a passed one is kept
+
+
+def container_available(runtime: str, image: str, network: str = "none", *, runner=subprocess.run,
+                        clock=time.monotonic) -> bool:
+    """Whether the container runs here (with the requested network mode). Bubblewrap needs no image.
+
+    A pass is kept for the process's life. A failure is probed again after ``CONTAINER_RETRY_S``: until 2026-11-19 it
+    was kept too, so one failed probe on one of RL v2 seed 2's nodes failed every code answer graded there for the
+    whole run (about one in eight; the alert warned at each dev pass, below its pause line), and in the same seed's
+    evaluation it failed every answer of D-Code and LiveCodeBench."""
     key = (runtime, image, network)
-    if key not in _CONTAINER_OK:
-        exe = shutil.which(runtime)
-        ok = False
-        if exe and Path(exe).name == "bwrap":
-            probe = bwrap_command(exe, root="/tmp", workdir="/tmp", python_prefix="/usr", env={})
-            try:
-                ok = network == "none" and runner(probe + ["true"], capture_output=True, timeout=60).returncode == 0
-            except Exception:
-                ok = False
-        elif exe and Path(image).exists():
-            probe = [exe, "exec", "--containall", "--no-home"]
-            if network == "none":
-                probe += ["--net", "--network", "none"]
-            try:
-                ok = runner(probe + [image, "true"], capture_output=True, timeout=60).returncode == 0
-            except Exception:
-                ok = False
-        _CONTAINER_OK[key] = ok
-    return _CONTAINER_OK[key]
+    cached = _CONTAINER_OK.get(key)
+    if cached is True or (cached is not None and clock() - cached[1] < CONTAINER_RETRY_S):
+        return cached is True
+    exe = shutil.which(runtime)
+    ok = False
+    if exe and Path(exe).name == "bwrap":
+        probe = bwrap_command(exe, root="/tmp", workdir="/tmp", python_prefix="/usr", env={})
+        try:
+            ok = network == "none" and runner(probe + ["true"], capture_output=True, timeout=60).returncode == 0
+        except Exception:
+            ok = False
+    elif exe and Path(image).exists():
+        probe = [exe, "exec", "--containall", "--no-home"]
+        if network == "none":
+            probe += ["--net", "--network", "none"]
+        try:
+            ok = runner(probe + [image, "true"], capture_output=True, timeout=60).returncode == 0
+        except Exception:
+            ok = False
+    _CONTAINER_OK[key] = True if ok else (False, clock())
+    return ok
 
 
 def count_tests(test_src: str) -> int:

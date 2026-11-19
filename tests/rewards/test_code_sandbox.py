@@ -294,3 +294,28 @@ def test_broken_bwrap_fails_closed_never_runs_on_host(store, tmp_path):
     r = sb.run(SandboxRequest(code=f"open({str(marker)!r}, 'w').write('x')\n" + GOOD, hidden_tests_id="tt_001",
                               timeout_s=10))
     assert r.status == "infra_error" and "container unavailable" in r.detail and not marker.exists()
+
+
+def test_a_failed_container_probe_is_tried_again(tmp_path):
+    """2026-11-19 (RL v2 seed 2): one failed probe was kept for the process's life, so every code answer graded on that
+    node failed closed for the whole run. A failure is probed again after CONTAINER_RETRY_S; a pass is kept."""
+    import sys
+    import types
+
+    import dpt.rewards.code_sandbox as cs
+
+    image = tmp_path / "sbx.sif"
+    image.write_text("")
+    codes, calls, now = iter([1, 0]), [], [1000.0]
+
+    def runner(cmd, **kw):
+        calls.append(cmd)
+        return types.SimpleNamespace(returncode=next(codes))
+
+    def check():
+        return cs.container_available(sys.executable, str(image), runner=runner, clock=lambda: now[0])
+
+    cs._CONTAINER_OK.clear()
+    assert not check() and not check() and len(calls) == 1          # within the retry window: no new probe
+    now[0] += cs.CONTAINER_RETRY_S + 1
+    assert check() and check() and len(calls) == 2                  # probed again, passed, and kept
