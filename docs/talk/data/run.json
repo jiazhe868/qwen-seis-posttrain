@@ -307,6 +307,45 @@
     }
    }
   },
+  "d_num_hard__rl_v2_seed2": {
+   "max_tokens": 32768,
+   "model_name": "rl_v2_seed2",
+   "run": "d_num_hard/rl_v2_seed2",
+   "seed": 0,
+   "sets": {
+    "d_num_hard": {
+     "budgets": [
+      2048,
+      4096,
+      8192,
+      12288,
+      16384,
+      20480,
+      24576,
+      28672,
+      32768
+     ],
+     "correct_within": [
+      35,
+      234,
+      653,
+      837,
+      919,
+      959,
+      999,
+      1038,
+      1067
+     ],
+     "max_tokens": 32768,
+     "n_correct": 1067,
+     "n_samples": 1280,
+     "tokens_correct_p50": 6788,
+     "tokens_correct_p90": 20841,
+     "tokens_total": 15185098,
+     "tokens_wrong_p50": 32764
+    }
+   }
+  },
   "d_num_hard__sft": {
    "max_tokens": 32768,
    "model_name": "sft",
@@ -845,6 +884,76 @@
     }
    }
   },
+  "rl_v2_seed2": {
+   "max_tokens": 32768,
+   "model_name": "rl_v2_seed2",
+   "run": "rl_v2_seed2",
+   "seed": 0,
+   "sets": {
+    "d_fresh": {
+     "budgets": [
+      2048,
+      4096,
+      8192,
+      12288,
+      16384,
+      20480,
+      24576,
+      28672,
+      32768
+     ],
+     "correct_within": [
+      142,
+      260,
+      357,
+      399,
+      411,
+      415,
+      417,
+      418,
+      419
+     ],
+     "max_tokens": 32768,
+     "n_correct": 419,
+     "n_samples": 480,
+     "tokens_correct_p50": 2926,
+     "tokens_correct_p90": 9390,
+     "tokens_total": 2423400,
+     "tokens_wrong_p50": 6121
+    },
+    "d_num": {
+     "budgets": [
+      2048,
+      4096,
+      8192,
+      12288,
+      16384,
+      20480,
+      24576,
+      28672,
+      32768
+     ],
+     "correct_within": [
+      956,
+      1584,
+      1999,
+      2175,
+      2223,
+      2248,
+      2262,
+      2275,
+      2279
+     ],
+     "max_tokens": 32768,
+     "n_correct": 2279,
+     "n_samples": 2400,
+     "tokens_correct_p50": 2497,
+     "tokens_correct_p90": 9162,
+     "tokens_total": 10716280,
+     "tokens_wrong_p50": 8941
+    }
+   }
+  },
   "sft": {
    "max_tokens": 32768,
    "model_name": "sft",
@@ -964,10 +1073,10 @@
    "sft_eval": "2026-10-29T21:16"
   }
  },
- "collected_at": "2026-11-19T03:10",
+ "collected_at": "2026-11-19T09:17",
  "compute": {
   "balance": {
-   "available_su": 3678,
+   "available_su": 3150,
    "expires": "2026-11-30"
   },
   "jobs": [

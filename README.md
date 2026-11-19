@@ -199,6 +199,11 @@ A second seed lands close by on every set. It is evaluated at step 100, its last
 (`docs/talk/data/run.json`; its code sets were graded again on the workstation, because the cluster's sandbox failed
 its start-up check and failed closed on every answer).
 
+Of the eight ship gates fixed before RL (§3.5), RL v2's two seeds pass five and six: D-Code, D-Fresh, general
+capability, cost and reproducibility (their D-Num scores are 0.7 apart, inside the 2-point limit), and D-Report for
+seed 2 only. D-Num, whose bar of base + 8 is out of reach by construction, and safety fail
+(`docs/talk/data/ship_gates_rl_v2_1119.json`).
+
 ### 1.3 Where the samples go
 
 <p align="center"><img src="assets/where_samples_go_en.png" width="92%"></p>

@@ -1,0 +1,131 @@
+{
+ "about": "RL v2's ship gates (fixed before RL, configs/project.yaml gates, 9B line) for seeds 1 and 2, from a summary of seed 1's workstation run and seed 2's cluster run (its code sets regraded on the workstation): python -m dpt.eval.gates via scripts/07_final_eval.sh --report-only. The reproducibility gate compares the other RL v2 seed (dpt.eval.gates.repro_partner).",
+ "candidates": {
+  "rl_v2_seed1": {
+   "repro_partner": "rl_v2_seed2",
+   "passed": 5,
+   "of": 8,
+   "gates": [
+    {
+     "name": "d_num",
+     "passed": false,
+     "observed": "+4.0 (95.6 vs 91.6)",
+     "requirement": ">= base_medium +8.0",
+     "note": "noise band \u00b11.2"
+    },
+    {
+     "name": "d_code",
+     "passed": true,
+     "observed": "+12.2 (92.7 vs 80.5)",
+     "requirement": ">= base_medium +10.0",
+     "note": "noise band \u00b12.8"
+    },
+    {
+     "name": "d_report",
+     "passed": false,
+     "observed": "58.0 \u00b19.0",
+     "requirement": ">= 60.0",
+     "note": "lower CI bound must exceed 50"
+    },
+    {
+     "name": "d_fresh",
+     "passed": true,
+     "observed": "464%",
+     "requirement": ">= 60% of d_num gain vs base_medium",
+     "note": "+18.5 / +4.0"
+    },
+    {
+     "name": "general",
+     "passed": true,
+     "observed": "+11.16",
+     "requirement": ">= -1.0",
+     "note": "over 5 benchmarks"
+    },
+    {
+     "name": "safety",
+     "passed": false,
+     "observed": "-10.3 pp",
+     "requirement": "|\u0394| <= 2.0 pp",
+     "note": ""
+    },
+    {
+     "name": "cost",
+     "passed": true,
+     "observed": "0.35\u00d7",
+     "requirement": "<= 1.3\u00d7 base_medium",
+     "note": "5152 vs 14735 tokens"
+    },
+    {
+     "name": "repro",
+     "passed": true,
+     "observed": "0.67",
+     "requirement": "<= 2.0",
+     "note": ""
+    }
+   ]
+  },
+  "rl_v2_seed2": {
+   "repro_partner": "rl_v2_seed1",
+   "passed": 6,
+   "of": 8,
+   "gates": [
+    {
+     "name": "d_num",
+     "passed": false,
+     "observed": "+3.3 (95.0 vs 91.6)",
+     "requirement": ">= base_medium +8.0",
+     "note": "noise band \u00b11.2"
+    },
+    {
+     "name": "d_code",
+     "passed": true,
+     "observed": "+10.3 (90.8 vs 80.5)",
+     "requirement": ">= base_medium +10.0",
+     "note": "noise band \u00b12.9"
+    },
+    {
+     "name": "d_report",
+     "passed": true,
+     "observed": "62.5 \u00b19.0",
+     "requirement": ">= 60.0",
+     "note": "lower CI bound must exceed 50"
+    },
+    {
+     "name": "d_fresh",
+     "passed": true,
+     "observed": "500%",
+     "requirement": ">= 60% of d_num gain vs base_medium",
+     "note": "+16.7 / +3.3"
+    },
+    {
+     "name": "general",
+     "passed": true,
+     "observed": "+9.13",
+     "requirement": ">= -1.0",
+     "note": "over 5 benchmarks"
+    },
+    {
+     "name": "safety",
+     "passed": false,
+     "observed": "-7.0 pp",
+     "requirement": "|\u0394| <= 2.0 pp",
+     "note": ""
+    },
+    {
+     "name": "cost",
+     "passed": true,
+     "observed": "0.33\u00d7",
+     "requirement": "<= 1.3\u00d7 base_medium",
+     "note": "4855 vs 14735 tokens"
+    },
+    {
+     "name": "repro",
+     "passed": true,
+     "observed": "0.67",
+     "requirement": "<= 2.0",
+     "note": ""
+    }
+   ]
+  }
+ }
+}

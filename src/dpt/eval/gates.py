@@ -53,6 +53,19 @@ class MissingInput(KeyError):
     pass
 
 
+def repro_partner(rows: dict[str, Any], candidate: str) -> str | None:
+    """Another seed of the candidate's recipe with a D-Num score, for the reproducibility gate: rl_seed1 → rl_seed2,
+    rl_v2_seed2 → rl_v2_seed1. None when the candidate has no seed in its name or no other seed has been scored.
+
+    2026-11-19: the report always passed run 1's ``rl_seed2``, which never ran, so RL v2's gate read "missing"."""
+    recipe, sep, _ = candidate.rpartition("_seed")
+    if not sep:
+        return None
+    others = sorted(name for name, row in rows.items() if name != candidate
+                    and name.rpartition("_seed")[0] == recipe and isinstance(row.get("d_num"), dict))
+    return others[0] if others else None
+
+
 def _score(rows: dict[str, Any], row: str, key: str) -> tuple[float, float]:
     try:
         r = rows[row][key]
@@ -279,7 +292,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Evaluate ship gates / RL-entry gate")
     ap.add_argument("--summary", required=True, help="summary.json from dpt.eval.report")
     ap.add_argument("--candidate", required=True)
-    ap.add_argument("--seed2", default=None)
+    ap.add_argument("--seed2", default=None, help="default: another seed of the candidate's recipe (repro_partner)")
     ap.add_argument("--entry", action="store_true", help="evaluate the RL-entry gate instead of ship gates")
     args = ap.parse_args(argv)
 
@@ -290,10 +303,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.candidate not in summary["rows"]:
         print(f"candidate row {args.candidate!r} not in summary")
         return 2
+    seed2 = args.seed2 or repro_partner(summary["rows"], args.candidate)
+    if not args.entry:
+        print(f"reproducibility: {args.candidate} against {seed2 or 'no other seed of its recipe'}", flush=True)
     res = (
         evaluate_entry_gate(summary, project["rl_entry_gate"], args.candidate)
         if args.entry
-        else evaluate_ship_gates(summary, project["gates"], args.candidate, args.seed2)
+        else evaluate_ship_gates(summary, project["gates"], args.candidate, seed2)
     )
     print(format_table(res), flush=True)        # flushed: campaign.sh tees it, and a hold may follow
     n_fail = sum(not r.passed for r in res)

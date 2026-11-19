@@ -110,6 +110,8 @@ RL v2 是第二种 RL 设计（§8.3），也是第一个让 D-Num-hard 大幅�
 
 第二个种子在每个测试集上都与之相近。它用最后保存下来的检查点（第 100 步，§8.3）评测：D-Num-hard 83.4，D-Fresh 87.3，D-Num 95.0，D-Code 90.8，GPQA 77.9，LiveCodeBench 56.1，D-Report 62.5，拒答率 49.0%（`docs/talk/data/run.json`；它的代码测试集在工作站上重新判分，因为集群上的沙箱没有通过启动检查，对每个回答都按失败处理）。
 
+在 RL 之前定下的八道发布门槛（§3.5）中，RL v2 的两个种子分别通过五道和六道：D-Code、D-Fresh、通用能力、成本和可复现性（两个种子的 D-Num 相差 0.7，在 2 个点的限度以内），D-Report 只有种子 2 通过。D-Num（门槛为基座 + 8，从设定上就不可能达到）和安全没有通过（`docs/talk/data/ship_gates_rl_v2_1119.json`）。
+
 ### 1.3 样本的去向
 
 <p align="center"><img src="assets/where_samples_go_zh.png" width="92%"></p>

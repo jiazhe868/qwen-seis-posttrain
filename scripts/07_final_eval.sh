@@ -56,6 +56,8 @@ for row in "${REPORT_ROWS[@]}"; do [[ -f "${R}/${row}/results.json" ]] && ARGS+=
 # DPT_FINAL_CANDIDATE: the row the ship gates judge (default rl_seed1; RL v2: rl_v2_seed1).
 CAND="${DPT_FINAL_CANDIDATE:-rl_seed1}"
 if [[ -f "${R}/${CAND}/results.json" ]]; then
-  "${PY}" -m dpt.eval.gates --summary "${R}/summary.json" --candidate "${CAND}" --seed2 rl_seed2
+  # the reproducibility gate compares another seed of the candidate's recipe (dpt.eval.gates.repro_partner);
+  # DPT_FINAL_SEED2 names one by hand
+  "${PY}" -m dpt.eval.gates --summary "${R}/summary.json" --candidate "${CAND}" ${DPT_FINAL_SEED2:+--seed2 "${DPT_FINAL_SEED2}"}
 fi
 log "report → ${R}/report.md"

@@ -91,6 +91,32 @@ def test_missing_seed2_fails_repro_gate(summary, project):
     assert not res["repro"].passed and res["repro"].observed == "missing"
 
 
+def test_repro_partner_is_another_seed_of_the_same_recipe(summary):
+    """2026-11-19: RL v2's reproducibility gate read "missing" because the report always asked for run 1's rl_seed2."""
+    rows = copy.deepcopy(summary["rows"])
+    rows["rl_v2_seed1"] = copy.deepcopy(rows["rl_seed1"])
+    rows["rl_v2_seed2"] = copy.deepcopy(rows["rl_seed2"])
+    rows["rl_v2_seed3"] = {"d_fresh": rows["rl_seed1"]["d_fresh"]}            # scored on D-Fresh only: skipped
+    assert gates.repro_partner(rows, "rl_v2_seed2") == "rl_v2_seed1"
+    assert gates.repro_partner(rows, "rl_v2_seed1") == "rl_v2_seed2"
+    assert gates.repro_partner(rows, "rl_seed1") == "rl_seed2"                 # run 1's pair, as before
+    assert gates.repro_partner(rows, "sft") is None
+    assert gates.repro_partner({"rl_v2_seed2": rows["rl_v2_seed2"], "rl_v2_seed3": rows["rl_v2_seed3"]},
+                               "rl_v2_seed2") is None
+
+
+def test_the_gate_command_finds_the_partner_itself(summary, tmp_path, capsys):
+    s = copy.deepcopy(summary)
+    s["rows"]["rl_v2_seed1"] = copy.deepcopy(s["rows"]["rl_seed1"])
+    s["rows"]["rl_v2_seed2"] = copy.deepcopy(s["rows"]["rl_seed2"])
+    write_json(tmp_path / "summary.json", s)
+    gates.main(["--summary", str(tmp_path / "summary.json"), "--candidate", "rl_v2_seed2"])
+    out = capsys.readouterr().out
+    assert "rl_v2_seed2 against rl_v2_seed1" in out
+    repro = [line for line in out.splitlines() if line.startswith("| repro")][0]
+    assert "missing" not in repro and "1.30" in repro
+
+
 def test_winrate_gate_requires_lower_bound_above_50(summary, project):
     s = copy.deepcopy(summary)
     s["rows"]["rl_seed1"]["d_report"].update(score=61.0, ci_halfwidth=12.0)
