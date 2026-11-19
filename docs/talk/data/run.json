@@ -964,7 +964,7 @@
    "sft_eval": "2026-10-29T21:16"
   }
  },
- "collected_at": "2026-11-18T12:17",
+ "collected_at": "2026-11-19T00:17",
  "compute": {
   "balance": {
    "available_su": 3678,
@@ -1728,7 +1728,7 @@
     "submit": "2026-11-11T23:46:44"
    },
    {
-    "elapsed_s": 26781,
+    "elapsed_s": 69994,
     "end": "Unknown",
     "id": "3576469",
     "name": "dpt-sftv2",
@@ -1736,7 +1736,7 @@
     "partition": "gpu-a100",
     "start": "2026-11-18T04:50:48",
     "state": "RUNNING",
-    "su": 178.54,
+    "su": 466.63,
     "submit": "2026-11-12T00:14:31"
    },
    {

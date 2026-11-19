@@ -222,3 +222,75 @@ def test_numpy_solutions_import_under_the_memory_limit(tmp_path):
     r = LocalSubprocessSandbox(network_isolation="none", mem_mb=2048).run(
         SandboxRequest(code=code, tests=test, timeout_s=30))
     assert (r.status, r.passed, r.total) == ("ok", 1, 1), r.detail
+
+
+def _bwrap_works() -> bool:
+    import shutil
+    import subprocess
+
+    from dpt.rewards.code_sandbox import bwrap_command
+
+    exe = shutil.which("bwrap")
+    if not exe:
+        return False
+    probe = bwrap_command(exe, root="/tmp", workdir="/tmp", python_prefix="/usr", env={}) + ["true"]
+    return subprocess.run(probe, capture_output=True, timeout=60).returncode == 0
+
+
+def test_bwrap_command_shows_only_the_system_the_python_and_the_sandbox():
+    from dpt.rewards.code_sandbox import bwrap_command
+
+    cmd = bwrap_command("/usr/bin/bwrap", root="/tmp/dpt_sbx_x", workdir="/tmp/dpt_sbx_x/work",
+                        python_prefix="/w/envs/sbx", env={"HOME": "/tmp/dpt_sbx_x/work"})
+    assert cmd[:5] == ["/usr/bin/bwrap", "--unshare-all", "--die-with-parent", "--new-session", "--clearenv"]
+    ro = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--ro-bind"]
+    rw = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--bind"]
+    assert ro == ["/usr", "/w/envs/sbx"] and rw == ["/tmp/dpt_sbx_x"]
+    assert cmd.index("--tmpfs") < cmd.index("--bind")        # the sandbox dir under /tmp stays visible
+    assert ["--setenv", "HOME", "/tmp/dpt_sbx_x/work"] == cmd[-3:]
+
+
+@pytest.mark.skipif(not _bwrap_works(), reason="bubblewrap unavailable or user namespaces not allowed")
+def test_bwrap_sandbox_hides_host_files_and_the_network(tmp_path):
+    """2026-11-18: the workstation has no Apptainer, so D-Code ran under bubblewrap. The solution must not see a host
+    file, /etc, the user's home or the network, and the tests must still run."""
+    import os
+    import sys
+
+    canary = tmp_path / "canary.txt"
+    canary.write_text("secret")
+    home_ssh = os.path.expanduser("~/.ssh")
+    code = (
+        "import os, socket\n"
+        "def reads(path):\n    try:\n        open(path).read()\n        return True\n"
+        "    except OSError:\n        return False\n"
+        "def connects():\n    try:\n        socket.create_connection(('1.1.1.1', 53), timeout=3).close()\n"
+        "        return True\n    except OSError:\n        return False\n"
+        "def travel_time(d, v):\n    return d / v\n"
+    )
+    tests = (
+        "import os\nfrom solution import reads, connects, travel_time\n"
+        f"def test_host_file_hidden():\n    assert not reads({str(canary)!r})\n"
+        "def test_etc_hidden():\n    assert not reads('/etc/passwd')\n"
+        f"def test_home_hidden():\n    assert not os.path.exists({home_ssh!r})\n"
+        "def test_no_network():\n    assert not connects()\n"
+        "def test_runs():\n    assert travel_time(120, 6) == 20\n"
+    )
+    sb = LocalSubprocessSandbox(container_runtime="bwrap", python=sys.executable, mem_mb=2048)
+    r = sb.run(SandboxRequest(code=code, tests=tests, timeout_s=30))
+    assert (r.status, r.passed, r.total) == ("ok", 5, 5), r.detail
+
+
+def test_broken_bwrap_fails_closed_never_runs_on_host(store, tmp_path):
+    import dpt.rewards.code_sandbox as cs
+
+    fake = tmp_path / "bin" / "bwrap"
+    fake.parent.mkdir()
+    fake.write_text("#!/bin/sh\nexit 1\n")
+    fake.chmod(0o755)
+    marker = tmp_path / "ran_on_host"
+    cs._CONTAINER_OK.clear()
+    sb = LocalSubprocessSandbox(hidden_store=store, container_runtime=str(fake))
+    r = sb.run(SandboxRequest(code=f"open({str(marker)!r}, 'w').write('x')\n" + GOOD, hidden_tests_id="tt_001",
+                              timeout_s=10))
+    assert r.status == "infra_error" and "container unavailable" in r.detail and not marker.exists()

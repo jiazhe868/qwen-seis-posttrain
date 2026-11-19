@@ -94,8 +94,9 @@ above SFT on D-Num-hard [+14.4, +22.4], at 86.5, and 10.4 points above on D-Fres
 that now finish. At 32K only 6% of its D-Num-hard answers run out of tokens, against SFT's 28%, and its wrong values
 rise only from 4% to 7%, where run 1's rose to 13%. Late in training only one numeric group in nine still carried
 gradient, as few as in run 1's first steps, and the run stayed stable, so a scarce signal alone did not cause run 1's
-collapse (§8.6). These two sets ran on a workstation while the cluster's final evaluation waited in the queue; RL v2's
-other sets, and seeds 2 and 3, are still to come.
+collapse (§8.6). The other sets moved too: D-Num 95.6, the first stage above the base, D-Code 92.7, GPQA 77.5 and
+LiveCodeBench 63.2, with the shortest answers of any stage. Refusals stayed at run 1's level. All of it ran on a
+workstation while the cluster's final evaluation waited in the queue, and seeds 2 and 3 are still to come.
 
 Most of the month went to systems. The one 8-node job ran 71.9 hours: 28.7 of them ran the planned stages,
 and 43.2 went to incidents, waits and holds, 35.1 of those before SFT could start (§9.2). A 9B model on
@@ -147,27 +148,27 @@ catch them.
 
 | set (metric, items) | base | SFT | RL step 20 | RL v2, seed 1, step 110 |
 |---|---|---|---|---|
-| D-Num (avg@8, 300) | **91.6** ± 1.0 | 89.4 ± 0.9 | 89.2 ± 1.0 | … |
+| D-Num (avg@8, 300) | 91.6 ± 1.0 | 89.4 ± 0.9 | 89.2 ± 1.0 | **95.6** ± 0.7 |
 | D-Num-hard (avg@8, 160) | 62.0 ± 1.6 | 68.1 ± 1.4 | 70.1 ± 1.7 | **86.5** ± 1.5 |
 | D-Fresh (avg@8, 60) | 70.6 ± 2.6 | 78.8 ± 2.3 | 83.3 ± 2.6 | **89.2** ± 1.9 |
-| D-Code (pass@1, 150) | 80.5 ± 2.3 | **86.3** ± 2.0 | 85.2 ± 2.2 | … |
-| D-Report (win rate vs base, lower of two judges, 100) | 50 | 49.0 ± 9.0 | 49.0 ± 8.5 | … |
-| GPQA Diamond (198) | 56.6 ± 1.6 | 71.3 ± 1.6 | **74.2** ± 1.8 | … |
-| MMLU-Pro, 2K subset (change only) | 74.8 | 77.3 | 78.3 | … |
-| IFEval (377) | 93.1 | 93.1 | 93.9 | … |
-| LiveCodeBench after 2025-01 (70, change only) | 38.2 | **52.5** | 50.0 | … |
-| tool calling (188) | 83.0 | 88.8 | 86.7 | … |
-| refusal of should-refuse prompts, % (300) | **56.0** | 51.3 | 45.7 | … |
-| over-refusal of benign prompts, % (350) | 3.4 | 4.0 | 2.6 | … |
-| mean output tokens | 14,735 | 9,517 | **5,637** | … |
+| D-Code (pass@1, 150) | 80.5 ± 2.3 | 86.3 ± 2.0 | 85.2 ± 2.2 | **92.7** ± 1.5 |
+| D-Report (win rate vs base, lower of two judges, 100) | 50 | 49.0 ± 9.0 | 49.0 ± 8.5 | 58.0 ± 9.0 |
+| GPQA Diamond (198) | 56.6 ± 1.6 | 71.3 ± 1.6 | 74.2 ± 1.8 | **77.5** ± 1.5 |
+| MMLU-Pro, 2K subset (change only) | 74.8 | 77.3 | 78.3 | 79.2 |
+| IFEval (377) | 93.1 | 93.1 | 93.9 | 93.6 |
+| LiveCodeBench after 2025-01 (70, change only) | 38.2 | 52.5 | 50.0 | **63.2** |
+| tool calling (188) | 83.0 | 88.8 | 86.7 | 87.8 |
+| refusal of should-refuse prompts, % (300) | **56.0** | 51.3 | 45.7 | 45.7 |
+| over-refusal of benign prompts, % (350) | 3.4 | 4.0 | 2.6 | 2.9 |
+| mean output tokens | 14,735 | 9,517 | 5,637 | **5,152** |
 
 ± is the 95% interval of the sampling noise. Every model, the base included, was re-run in the same harness
 with the same prompts and settings (§3.2); no number is copied from elsewhere. The figure leaves out
 D-Report, which gets its own figure (§6.5). Source: `docs/talk/data/run.json`. RL v2's final evaluation on the
-cluster was still waiting in the queue when its training ended, so I ran its two headline sets on a workstation's
-four A100s with the same harness, prompts, settings and grader
-(`docs/talk/data/rl_v2_seed1_local_1118.json`). Its other sets (…) come with that evaluation, and so does the
-figure above.
+cluster was still waiting in the queue when its training ended, so I ran every set on a workstation's A100s with
+the same harness, prompts, settings and graders (`docs/talk/data/rl_v2_seed1_local_1118.json`). The code tests ran
+in a bubblewrap sandbox, which gave SFT's cluster answers exactly their cluster scores (86.3 and 52.5), and
+D-Report's second judge ran from the cluster's login node. The cluster re-runs D-Num-hard and D-Fresh as a check.
 
 SFT changed the most. It shortened the answers by a third and lifted every set where the base had run
 out of tokens. The share of GPQA answers cut off at 32K fell from 38% to 17%, and for LiveCodeBench from
@@ -186,6 +187,11 @@ RL v2, the second RL design (§8.3), is the first stage that moves D-Num-hard by
 86.5, which is 18.4 points above SFT [+14.4, +22.4] in a paired comparison over the 160 problems, and D-Fresh rises
 by 10.4 [+5.2, +16.2]. Both pass the test fixed before it ran (§8.3). It gets there by finishing its answers: at 32K
 only 6% of its D-Num-hard answers run out of tokens, against SFT's 28%.
+
+The gain is not confined to those two sets. D-Num rises to 95.6, the first stage above the base (91.6), and D-Code
+to 92.7, GPQA to 77.5 and LiveCodeBench to 63.2, all above SFT by more than their intervals. Answers are the shortest of any stage
+(5,152 tokens on average). Two things did not move. Refusals stay at run 1's 45.7%, since RL v2 had no safety data
+either, and D-Report under the second judge is 58.0, which is still inside the noise of SFT's 49.0.
 
 ### 1.3 Where the samples go
 
@@ -1267,7 +1273,11 @@ nodes per user, so the three 8-node jobs run one after another anyway.
 Seed 1 stopped for time after step 110, at 02:19 on November 18, and its dev passes chose step 110. The final
 evaluation that came next in the same job did not run: five of its servers never started, and the launcher waited
 for them until its timeout ([PITFALLS](PITFALLS.md) E4). The evaluation went back into the queue as a 4-node job of
-its own. Seed 2 started at 04:50 the same morning and stops after step 110; seed 3 waits behind it.
+its own, and while it waited every set ran on a workstation (§1.2). Seed 2 started at 04:50 the same morning and
+trained all 110 steps, but its step-110 checkpoint was never written: 24 ranks created the same folder at once on the
+shared file system, and one of them failed ([PITFALLS](PITFALLS.md) C7). Its last saved checkpoint, step 100, is the
+one evaluated. In seed 1's run, steps 100 and 110 were within noise of each other on both dev splits. Seed 3 waits
+behind it, with the fix.
 
 ```bash
 scripts/slurm/submit_window.sh rl-build-queue      # seed 1: bank v2 if missing → 24K test → RL v2 → final evaluation
@@ -1662,7 +1672,8 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
 - **RL v2.** A bank re-graded with the SFT model, cut-off answers counted as wrong and half the learning rate: the
   first seed trained 110 steps without collapsing and passes the test fixed before it ran. At 32K it is 18.4 points
   above SFT on D-Num-hard (86.5) and 10.4 on D-Fresh, both beyond the noise, mostly by finishing the answers SFT
-  ran out of tokens on (§8.3, §8.6).
+  ran out of tokens on (§8.3, §8.6). D-Num (95.6), D-Code (92.7), GPQA (77.5) and LiveCodeBench (63.2) rose too;
+  refusals did not recover (45.7%), and D-Report under the second judge (58.0) is inside the noise (§1.2).
 - **Rewards.** The programmatic rewards agree with the evaluation grader on 99.3–100% of answers. The judged
   report reward is lenient (precision 7% with an independent judge as the reference, at a pass mark of 70),
   and its rubrics are compound (91% of criteria join several claims). There is no judge drift (§6.5).
@@ -1689,7 +1700,7 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
     RL steps;
   - the 27 unclear refusal answers;
   - the cause of run 1's collapse;
-  - RL v2's other sets (D-Num, code, reports, general benchmarks, refusals), which come with its final evaluation.
+  - RL v2's seeds 2 and 3, and the three seeds pooled (§8.3).
 
 ---
 

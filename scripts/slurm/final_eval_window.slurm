@@ -27,7 +27,8 @@
 # DPT_FINAL_ROW (default rl_v2_seed1), DPT_FINAL_RUN (its RL run directory) and DPT_FINAL_EXPORT (default
 # <run>/hf_export) name another model: job 2 evaluates SFT v2 (phases main,hard,budgets on its export) and RL v3.
 # DPT_FINAL_PHASES (default select,export,main,hard,budgets,report); DPT_FINAL_STEP=<n> skips the dev selection;
-# DPT_CANCEL_JOB=<id> cancels that job first (the RL run's judge server, no longer needed).
+# DPT_CANCEL_JOB=<id> cancels that job first (the RL run's judge server, no longer needed). When it is done, the job
+# evaluates the next model listed in $WORK/dpt/final_eval_next.txt on the same nodes (section 8).
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 source scripts/slurm/env.sh
@@ -37,7 +38,7 @@ PHASES="${DPT_FINAL_PHASES:-select,export,main,hard,budgets,report}"
 mapfile -t NODES < <(job_nodes)
 (( ${#NODES[@]} >= 2 )) || tdie "this job needs the RL nodes (8), it has ${#NODES[@]}"
 HEAD="${NODES[0]}"; WORKERS=("${NODES[@]:1}")
-LOGS="${WORK}/dpt/logs/finaleval_${SLURM_JOB_ID:-local}"; PIDS="${LOGS}/pids"
+LOGS="${WORK}/dpt/logs/finaleval_${SLURM_JOB_ID:-local}${DPT_FINAL_LOG_TAG:-}"; PIDS="${LOGS}/pids"
 mkdir -p "${LOGS}" "${PIDS}"
 read -r R CK JUDGE_ID TAG BASE SECURE <<< "$(python - <<'PY'
 from dpt.common.config import load_config
@@ -181,7 +182,7 @@ if want main || want hard || want k64; then
   wait_backends "http://${HEAD}:8100" "http://${HEAD}:8000"; wait_sandbox
   if want main; then
     phase "${ROW}: every set at medium"
-    harness --model-name "${ROW}" --served-model "${ROW}" --sets d_num,d_code,d_report,d_fresh,general,refusal \
+    harness --model-name "${ROW}" --served-model "${ROW}" --sets "${DPT_FINAL_SETS:-d_num,d_code,d_report,d_fresh,general,refusal}" \
       --effort medium --reference-run "${R}/base_medium" --out "${R}/${ROW}" 2>&1 | tee "${LOGS}/main.log"
   fi
   if want hard; then
@@ -230,3 +231,37 @@ if want report; then
   run env DPT_FINAL_CANDIDATE="${ROW}" bash scripts/07_final_eval.sh --report-only 2>&1 | tee "${LOGS}/report.log"
 fi
 phase "done (${PHASES})"
+
+# ---- 8: the next model on the same nodes -------------------------------------------------------------------------
+# 2026-11-18: seed 1's own final evaluation died (PITFALLS E4), and its re-run as a 4-node job waited in the queue with
+# no start estimate. So the job that evaluates seed 2 evaluates seed 1 next, on the same nodes. Each line of
+# $WORK/dpt/final_eval_next.txt reads "<row> <run dir> <step> <phases> [<queued job that would do it> [<main sets>]]",
+# the sets for phase main (default every set; seed 1's other sets ran on the workstation, so its line asks for
+# d_fresh only, with hard and budgets, as a check that the workstation's numbers reproduce). The first line
+# is taken off before it runs, so a rerun never repeats it, and the run it starts does not read the file again. It is
+# skipped when that queued job has started or the row already has results, and left in place when under 7 h remain.
+# The queued job is cancelled when this one takes over; until then it stays in the queue as the fallback.
+NEXT="${WORK}/dpt/final_eval_next.txt"
+if [[ -z "${DPT_FINAL_NESTED:-}" && -s "${NEXT}" ]]; then
+  read -r N_ROW N_RUN N_STEP N_PHASES N_JOB N_SETS < "${NEXT}" || true
+  if dry; then N_LEFT=86400; else
+    N_LEFT="$(python -c 'from dpt.launch.walltime import slurm_time_left; print(slurm_time_left())')"
+  fi
+  if (( N_LEFT < 7 * 3600 )); then
+    tlog "next: ${N_ROW} stays in ${NEXT}: only $(( N_LEFT / 60 )) min left in this job"
+  else
+    sed -i 1d "${NEXT}"
+    N_STATE="$(squeue -h -j "${N_JOB:-0}" -o %T 2>/dev/null || true)"
+    if [[ "${N_STATE}" == RUNNING || -f "${R}/${N_ROW}/results.json" ]]; then
+      tlog "next: ${N_ROW} skipped: job ${N_JOB:-?} is ${N_STATE:-gone}, or ${R}/${N_ROW}/results.json exists"
+    else
+      [[ -z "${N_JOB:-}" ]] || run scancel "${N_JOB}" || true
+      tlog "next: ${N_ROW} on the same nodes (${N_RUN}, step ${N_STEP}, phases ${N_PHASES})"
+      stop_all; gpus_free
+      trap - EXIT
+      exec env DPT_FINAL_NESTED=1 DPT_FINAL_ROW="${N_ROW}" DPT_FINAL_RUN="${N_RUN}" DPT_FINAL_STEP="${N_STEP}" \
+        DPT_FINAL_PHASES="${N_PHASES}" DPT_FINAL_LOG_TAG="_${N_ROW}" \
+        DPT_FINAL_SETS="${N_SETS:-d_num,d_code,d_report,d_fresh,general,refusal}" bash scripts/slurm/final_eval_window.slurm
+    fi
+  fi
+fi

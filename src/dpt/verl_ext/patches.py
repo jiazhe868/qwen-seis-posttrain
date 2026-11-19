@@ -66,11 +66,23 @@ Fix 3: FP32 copy of the logits in Megatron's ``Float16Module`` (found by the 8-n
     (``fp32_output=False``), the BF16 values the copy would have held. Fix 2's kernel computes in FP32 from
     them; entropy, Σπ² and distillation get FP32 copies (chunk by chunk for chunked entropy), and another
     temperature runs verl's code on an FP32 copy, so none of their values change.
+
+Fix 4: a checkpoint folder that 24 ranks create at once on Lustre (RL v2 seed 2, 2026-11-19).
+
+    ``verl.utils.fs.local_mkdir_safe`` serializes ``os.makedirs(path, exist_ok=True)`` with a lock file in each
+    node's own /tmp, so ranks on different nodes still race. At seed 2's step-110 save, ``makedirs`` raised
+    ``FileExistsError`` for ``global_step_110/actor/model/dist_ckpt`` itself, twice: the entry existed but did
+    not yet look like a directory to that client. The save failed, the run exited with no clean stop, and steps
+    101-110 were lost (the 20 saves before it had worked).
+
+    Fix: on ``FileExistsError`` the call is retried with a short wait until the path is a directory, five
+    times at most; then the error stands. Installed where verl imports the helper by name.
 """
 
 from __future__ import annotations
 
 import contextvars
+import importlib
 import importlib.abc
 import importlib.machinery
 import sys
@@ -242,6 +254,45 @@ def _fix_float16_output(module: Any) -> None:
 
 
 _FIXES["megatron.core.transformer.module"] = _fix_float16_output
+
+
+def retry_mkdir(make: Callable[[str], Any], *, attempts: int = 5, wait_s: float = 1.0,
+                sleep: Callable[[float], None] | None = None) -> Callable[[str], Any]:
+    """``make`` (verl's ``local_mkdir_safe``) retried on ``FileExistsError`` until the path is a directory."""
+    import os
+    import time
+
+    sleep = sleep or time.sleep
+
+    def local_mkdir_safe(path):
+        for attempt in range(attempts):
+            try:
+                return make(path)
+            except FileExistsError:
+                full = path if os.path.isabs(path) else os.path.join(os.getcwd(), path)
+                if os.path.isdir(full):
+                    return full
+                if attempt == attempts - 1:
+                    raise
+                sleep(wait_s * (attempt + 1))
+
+    local_mkdir_safe._dpt_fixed = True
+    local_mkdir_safe.__wrapped__ = make
+    return local_mkdir_safe
+
+
+def _fix_mkdir(module: Any) -> None:
+    """verl.utils.fs, and the modules that imported ``local_mkdir_safe`` from it by name."""
+    fs = module if module.__name__ == "verl.utils.fs" else importlib.import_module("verl.utils.fs")
+    if not getattr(fs.local_mkdir_safe, "_dpt_fixed", False):
+        fs.local_mkdir_safe = retry_mkdir(fs.local_mkdir_safe)
+    if getattr(module, "local_mkdir_safe", None) is not None:
+        module.local_mkdir_safe = fs.local_mkdir_safe
+
+
+for _name in ("verl.utils.fs", "verl.utils.megatron_utils", "verl.utils.checkpoint.megatron_checkpoint_manager",
+              "verl.utils.checkpoint.fsdp_checkpoint_manager"):
+    _FIXES[_name] = _fix_mkdir
 
 
 class _PostImportPatcher(importlib.abc.MetaPathFinder):

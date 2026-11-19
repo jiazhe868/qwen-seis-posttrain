@@ -153,13 +153,39 @@ def test_fixes_reach_the_installed_stack():
     ti = importlib.import_module("verl.workers.engine.megatron.transformer_impl")
     f16 = importlib.import_module("megatron.core.transformer.module").Float16Module
     eng = ti.MegatronEngineWithLMHead
+    mu = importlib.import_module("verl.utils.megatron_utils")
+    mcm = importlib.import_module("verl.utils.checkpoint.megatron_checkpoint_manager")
+    fs = importlib.import_module("verl.utils.fs")
     for f in (vars(eng)["_lm_head_logits_processor"], vars(eng)["forward_step"],
-              ti.vocab_parallel_log_probs_from_logits, vars(f16)["forward"]):
+              ti.vocab_parallel_log_probs_from_logits, vars(f16)["forward"],
+              fs.local_mkdir_safe, mu.local_mkdir_safe, mcm.local_mkdir_safe):
         assert getattr(f, "_dpt_fixed", False), f
     # the body fix 2 mirrors still takes verl 0.9.1's options; the wrapper still has fp32_output
     params = inspect.signature(vars(eng)["_lm_head_logits_processor"].__wrapped__).parameters
     assert [n for n, p in params.items() if p.kind is p.KEYWORD_ONLY] == list(_OPTS)
     assert "fp32_output" in inspect.signature(vars(f16)["forward"].__wrapped__).parameters
+
+
+def test_mkdir_retries_while_another_node_creates_the_folder(tmp_path):
+    """Fix 4 (RL v2 seed 2's lost step-110 save): FileExistsError while the folder is not yet a directory is retried,
+    a folder that has appeared is returned, and an error that persists still raises."""
+    target = tmp_path / "global_step_110" / "actor" / "model" / "dist_ckpt"
+    calls, waits = [], []
+
+    def racing_make(path):
+        calls.append(path)
+        if len(calls) < 3:                 # the other node's mkdir is still in flight
+            raise FileExistsError(17, "File exists", path)
+        target.mkdir(parents=True)
+        return path
+
+    fixed = patches.retry_mkdir(racing_make, sleep=waits.append)
+    assert fixed(str(target)) == str(target) and len(calls) == 3 and waits == [1.0, 2.0]
+    assert fixed(str(target)) == str(target)                       # now a directory: returned at once
+    always = patches.retry_mkdir(lambda path: (_ for _ in ()).throw(FileExistsError(17, "File exists", path)),
+                                 sleep=lambda s: None)
+    with pytest.raises(FileExistsError):
+        always(str(tmp_path / "never"))
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="TE's cross entropy is a GPU kernel")

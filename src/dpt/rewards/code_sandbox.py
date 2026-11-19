@@ -242,13 +242,38 @@ def container_command(runtime: str, image: str, *, root: str, workdir: str, pyth
     return cmd + [image]
 
 
+def bwrap_command(runtime: str, *, root: str, workdir: str, python_prefix: str, env: dict[str, str]) -> list[str]:
+    """Bubblewrap prefix with the view Apptainer's --containall gives, for a machine without Apptainer (2026-11-18:
+    the workstation, so that D-Code and LiveCodeBench could be graded there while the cluster's queue was full).
+
+    The solution sees the system's programs and libraries and the solver's Python read-only, its own sandbox dir
+    read-write and an empty /tmp. There is no home folder and no other user file, no network, its own PID, IPC and UTS
+    namespaces, a clean environment, and it dies with its parent. Bubblewrap runs without root where unprivileged user
+    namespaces are allowed.
+    """
+    cmd = [runtime, "--unshare-all", "--die-with-parent", "--new-session", "--clearenv",
+           "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib",
+           "--symlink", "usr/lib64", "/lib64", "--symlink", "usr/sbin", "/sbin",
+           "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",   # before the binds: a later mount hides earlier
+           "--ro-bind", python_prefix, python_prefix, "--bind", root, root, "--chdir", workdir]
+    for k, v in sorted(env.items()):
+        cmd += ["--setenv", k, v]
+    return cmd
+
+
 def container_available(runtime: str, image: str, network: str = "none", *, runner=subprocess.run) -> bool:
-    """Probe once whether the container runs here (with the requested network mode)."""
+    """Probe once whether the container runs here (with the requested network mode). Bubblewrap needs no image."""
     key = (runtime, image, network)
     if key not in _CONTAINER_OK:
         exe = shutil.which(runtime)
         ok = False
-        if exe and Path(image).exists():
+        if exe and Path(exe).name == "bwrap":
+            probe = bwrap_command(exe, root="/tmp", workdir="/tmp", python_prefix="/usr", env={})
+            try:
+                ok = network == "none" and runner(probe + ["true"], capture_output=True, timeout=60).returncode == 0
+            except Exception:
+                ok = False
+        elif exe and Path(image).exists():
             probe = [exe, "exec", "--containall", "--no-home"]
             if network == "none":
                 probe += ["--net", "--network", "none"]
@@ -289,7 +314,7 @@ class LocalSubprocessSandbox:
         python: str = sys.executable,
         network_isolation: str = "auto",  # "auto" | "unshare" | "none"
         container_image: str | None = None,   # Apptainer .sif → filesystem isolation (5b)
-        container_runtime: str = "apptainer",
+        container_runtime: str = "apptainer",  # or "bwrap": the same isolation without an image (bwrap_command)
         container_network: str = "none",      # "none" (--net --network none) | "host"
     ):
         self.hidden_store = hidden_store
@@ -371,20 +396,26 @@ class LocalSubprocessSandbox:
             "MKL_NUM_THREADS": "1",
             "NUMEXPR_NUM_THREADS": "1",
         }
-        if self.container_image:
+        use_bwrap = Path(self.container_runtime).name == "bwrap"
+        if self.container_image or use_bwrap:
             # Fail closed: a configured but broken container must never fall back to running the
             # model's code directly on the host.
-            if not container_available(self.container_runtime, self.container_image, self.container_network):
+            if not container_available(self.container_runtime, self.container_image or "", self.container_network):
                 shutil.rmtree(root, ignore_errors=True)
                 return SandboxResult(status="infra_error",
                                      detail=f"sandbox container unavailable: {self.container_runtime} "
                                             f"{self.container_image} (network={self.container_network})")
-            prefix = str(Path(self.python).resolve().parents[1])
+            python = Path(self.python).resolve()
+            prefix = str(python.parents[1])
             # Absolute path: the child's scrubbed PATH (/usr/bin:/bin) would not find a module-installed runtime.
             runtime = shutil.which(self.container_runtime) or self.container_runtime
-            cmd = container_command(runtime, self.container_image, root=str(root),
-                                    workdir=str(work), python_prefix=prefix, env=env,
-                                    network=self.container_network) + cmd
+            if use_bwrap:   # only the resolved prefix is visible inside, so the interpreter is named by that path
+                cmd = bwrap_command(runtime, root=str(root), workdir=str(work), python_prefix=prefix,
+                                    env=env) + [str(python), *cmd[1:]]
+            else:
+                cmd = container_command(runtime, self.container_image, root=str(root),
+                                        workdir=str(work), python_prefix=prefix, env=env,
+                                        network=self.container_network) + cmd
         elif self.network_isolation == "unshare" or (self.network_isolation == "auto" and _unshare_available()):
             if _unshare_available():
                 cmd = ["unshare", "-rn", *cmd]

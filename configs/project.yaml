@@ -64,7 +64,7 @@ project:
     eval_root: ${oc.env:DPT_EVAL_ROOT,${oc.env:DPT_REPO,.}/eval_results}
     # Eval sets are stored separately with restricted read permission; training
     # processes run as a user that cannot read this directory (report §数据).
-    eval_secure_root: /secure/eval_sets
+    eval_secure_root: ${oc.env:DPT_EVAL_SECURE_ROOT,/secure/eval_sets}   # a copy elsewhere: DPT_EVAL_SECURE_ROOT
 
   # ---------------------------------------------------------------------------
   # Ship gates: fixed before the project starts; each must clear the noise floor.

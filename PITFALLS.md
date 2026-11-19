@@ -9,7 +9,7 @@ Slurm cluster (8 nodes × 3 A100-40GB) in October and November 2026: caught by a
 given a test or a guard. Nothing below is a generic best-practice list.
 
 **The organising observation: most of the expensive failures here were silent.** In twenty-two of the
-twenty-eight entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
+twenty-nine entries, a component reported success, or reported nothing, while it did the wrong thing: a parity
 check that checked the other forward pass, a patch that patched nothing, a sandbox that failed closed
 without an alert, framework defaults that overrode the config, a hang that no timeout noticed, a judge that
 graded its own students, verifiers that all agreed with the wrong formula they were given. The loud failures (a crash, an out-of-memory error) cost minutes; the silent ones
@@ -39,6 +39,7 @@ Companion document: [README.md](README.md) explains how the pipeline works and w
 | C4 | A file lock on NFS: a hang costs more than a crash | environment | 9.6 hours of 8 idle nodes | silent |
 | C5 | A GPU embedder beside the servers | environment | a failed data job and its 4.5-day queue place | loud |
 | C6 | A login node's thread limit that followed the job | environment | 8 of an RL job's 47 hours; with no fix, no RL | silent |
+| C7 | A folder 24 ranks create at once on a shared file system | environment | the last 10 steps of an RL run | loud |
 | D1 | "T4 taught brevity": a story the per-step metrics did not support | analysis | a wrong fix for RL v2 | silent |
 | D2 | One model as reward judge, data filter and evaluator | measurement | "reports improved by 36 points" | silent |
 | D3 | A difficulty filter run with the wrong model | measurement | RL with no gradient on most groups | silent |
@@ -487,6 +488,34 @@ Permanent: the window script gives the two embedding clients `OMP_NUM_THREADS=48
 
 **Generalisable lesson.** A setting meant for the login node travels with every job submitted from it. Set what a
 job needs inside the job.
+
+## C7 — A folder 24 ranks create at once on a shared file system
+
+**Symptom.** RL v2's second seed trained its 110th step and then exited with "training exited with code 1 without a
+clean stop". The folder of the step-110 checkpoint held 184 KB, and the last saved checkpoint was step 100.
+
+**The false story.** "The stop at step 110 saved the checkpoint a second time." Seed 2 was the first run to stop at a
+set step, the one copied from seed 1, and step 110 is also a regular save step, so a double save looked likely. But
+the stop path checks whether its step has been saved already, and the traceback put the failing save in verl's own
+training loop.
+
+**Root cause.** verl creates checkpoint folders with `local_mkdir_safe`, which serializes `os.makedirs(path,
+exist_ok=True)` with a lock file in each node's own /tmp. Ranks on different nodes therefore still race on the
+shared Lustre file system. At step 110 one rank's `makedirs` raised `FileExistsError` for
+`global_step_110/actor/model/dist_ckpt` itself, twice: the entry existed but did not yet look like a directory to
+that client. The save failed and the run ended. The 20 saves before it had worked.
+
+**Fix.** Fix 4 in `dpt.verl_ext.patches`: on `FileExistsError` the call is retried with a short wait until the path is
+a directory, five times at most, and then the error stands. It is installed wherever verl imports the helper by name.
+
+**Permanent regression test.** `test_mkdir_retries_while_another_node_creates_the_folder` and
+`test_fixes_reach_the_installed_stack` (`tests/verl_ext/test_patches.py`).
+
+**Invalidated artifacts.** Seed 2's steps 101-110: their weights were never saved, so seed 2 is evaluated at step 100,
+its last saved checkpoint.
+
+**Generalisable lesson.** A lock that lives on one node does not serialize the others. On a shared file system, code
+that several nodes run at once has to tolerate the other nodes' half-finished work.
 
 ---
 

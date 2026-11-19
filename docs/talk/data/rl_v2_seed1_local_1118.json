@@ -75,11 +75,42 @@
      "tokens_correct_p90": 11135,
      "tokens_total": 2764468,
      "tokens_wrong_p50": 6350
+    },
+    "d_num": {
+     "budgets": [
+      2048,
+      4096,
+      8192,
+      12288,
+      16384,
+      20480,
+      24576,
+      28672,
+      32768
+     ],
+     "correct_within": [
+      908,
+      1502,
+      1993,
+      2157,
+      2222,
+      2258,
+      2275,
+      2290,
+      2295
+     ],
+     "max_tokens": 32768,
+     "n_correct": 2295,
+     "n_samples": 2400,
+     "tokens_correct_p50": 2785,
+     "tokens_correct_p90": 9329,
+     "tokens_total": 11319187,
+     "tokens_wrong_p50": 12389
     }
    }
   }
  },
- "collected_at": "2026-11-18T13:45",
+ "collected_at": "2026-11-19T00:31",
  "eval": {
   "runs": {
    "d_num_hard/rl_v2_seed1": {
@@ -121,12 +152,97 @@
    },
    "rl_v2_seed1": {
     "effort": "medium",
-    "general": {},
+    "general": {
+     "gpqa_diamond": {
+      "ci": {
+       "halfwidth": 1.4520202020202007,
+       "hi": 79.04040404040404,
+       "level": 0.95,
+       "lo": 76.13636363636364,
+       "point": 77.52525252525253
+      },
+      "metric": "avg@4",
+      "relative_only": false,
+      "score": 77.52525252525253
+     },
+     "ifeval": {
+      "ci": {
+       "halfwidth": 2.5198938992042343,
+       "hi": 96.02122015915118,
+       "level": 0.95,
+       "lo": 90.98143236074272,
+       "point": 93.63395225464191
+      },
+      "metric": "avg@1",
+      "relative_only": false,
+      "score": 93.63395225464191
+     },
+     "livecodebench_post_2025_01": {
+      "ci": {
+       "halfwidth": 3.75,
+       "hi": 67.14285714285714,
+       "level": 0.95,
+       "lo": 59.64285714285714,
+       "point": 63.21428571428571
+      },
+      "metric": "avg@4",
+      "relative_only": true,
+      "score": 63.21428571428571
+     },
+     "mmlu_pro_2k": {
+      "ci": {
+       "halfwidth": 1.8250000000000028,
+       "hi": 81.10000000000001,
+       "level": 0.95,
+       "lo": 77.45,
+       "point": 79.25
+      },
+      "metric": "avg@1",
+      "relative_only": true,
+      "score": 79.25
+     },
+     "tool_calling": {
+      "ci": {
+       "halfwidth": 4.5212765957446805,
+       "hi": 92.02127659574468,
+       "level": 0.95,
+       "lo": 82.97872340425532,
+       "point": 87.7659574468085
+      },
+      "metric": "avg@1",
+      "relative_only": false,
+      "score": 87.7659574468085
+     }
+    },
     "max_tokens": 32768,
-    "mean_output_tokens": 5759.308333333333,
+    "mean_output_tokens": 5151.524301675978,
     "model_name": "rl_v2_seed1",
     "seed": 0,
     "sets": {
+     "d_code": {
+      "ci": {
+       "halfwidth": 1.500000000000007,
+       "hi": 94.16666666666667,
+       "level": 0.95,
+       "lo": 91.16666666666666,
+       "point": 92.66666666666666
+      },
+      "mean_output_tokens": 6408.636666666666,
+      "metric": "pass@1",
+      "pass_at_k": {
+       "1": 92.66666666666666,
+       "2": 97.22222222222223,
+       "4": 99.33333333333333
+      },
+      "reasons": {
+       "no_think_end": 14,
+       "ok": 556,
+       "runner_error": 4,
+       "tests_failed": 26
+      },
+      "score": 92.66666666666666,
+      "truncation_rate": 0.023333333333333334
+     },
      "d_fresh": {
       "ci": {
        "halfwidth": 1.875,
@@ -152,9 +268,130 @@
       },
       "score": 89.16666666666667,
       "truncation_rate": 0.0125
+     },
+     "d_num": {
+      "ci": {
+       "halfwidth": 0.7291666666666714,
+       "hi": 96.33333333333334,
+       "level": 0.95,
+       "lo": 94.875,
+       "point": 95.625
+      },
+      "mean_output_tokens": 4716.327916666667,
+      "metric": "avg@8",
+      "pass_at_k": {
+       "1": 95.625,
+       "2": 99.11904761904763,
+       "4": 99.9095238095238,
+       "8": 100.0
+      },
+      "reasons": {
+       "no_think_end": 11,
+       "ok": 2295,
+       "unit_parse_error": 1,
+       "wrong_value": 93
+      },
+      "score": 95.625,
+      "truncation_rate": 0.004583333333333333
+     },
+     "d_report": {
+      "by_judge": {
+       "primary": {
+        "ci": {
+         "halfwidth": 5.75,
+         "hi": 94.5,
+         "level": 0.95,
+         "lo": 83.0,
+         "point": 89.0
+        },
+        "judge_calls": {
+         "cached": 200,
+         "calls": 200,
+         "unparsed": 0,
+         "unparsed_rate": 0.0
+        },
+        "length_matched": {
+         "n": 21,
+         "score": 90.47619047619048
+        },
+        "outcomes": {
+         "loss": 8,
+         "tie": 6,
+         "win": 86
+        },
+        "score": 89.0,
+        "served_models": [
+         "judge"
+        ],
+        "status": "ok"
+       },
+       "second": {
+        "ci": {
+         "halfwidth": 9.0,
+         "hi": 67.0,
+         "level": 0.95,
+         "lo": 49.0,
+         "point": 57.99999999999999
+        },
+        "judge_calls": {
+         "cached": 200,
+         "calls": 200,
+         "unparsed": 1,
+         "unparsed_rate": 0.005
+        },
+        "length_matched": {
+         "n": 21,
+         "score": 61.904761904761905
+        },
+        "outcomes": {
+         "loss": 36,
+         "tie": 12,
+         "win": 52
+        },
+        "score": 58.0,
+        "served_models": [
+         "gpt-6-luna"
+        ],
+        "status": "ok"
+       }
+      },
+      "ci": {
+       "halfwidth": 9.0,
+       "hi": 67.0,
+       "level": 0.95,
+       "lo": 49.0,
+       "point": 57.99999999999999
+      },
+      "gate_judge": "min",
+      "length_matched": {
+       "n": 21,
+       "score": 61.904761904761905
+      },
+      "mean_output_tokens": 5136.2,
+      "metric": "winrate_vs_base",
+      "outcomes": {
+       "loss": 36,
+       "tie": 12,
+       "win": 52
+      },
+      "score": 58.0,
+      "truncation_rate": 0.0
+     },
+     "refusal": {
+      "ci": {
+       "halfwidth": 5.601162619128001,
+       "hi": 51.322615494434366,
+       "level": 0.95,
+       "lo": 40.120290256178365,
+       "point": 45.666666666666664
+      },
+      "metric": "refusal_rate",
+      "over_refusal_rate": 2.857142857142857,
+      "refusal_rate": 45.666666666666664,
+      "score": 45.666666666666664
      }
     },
-    "written": "2026-11-18T11:57"
+    "written": "2026-11-19T00:30"
    }
   }
  }

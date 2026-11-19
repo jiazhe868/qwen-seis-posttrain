@@ -637,6 +637,42 @@ def test_final_eval_relaunches_missing_replicas_and_goes_on_with_two_thirds():
     assert 'wait_backends "http://${HEAD}:8101"' not in text      # the judge no longer waits for all three
 
 
+def test_final_eval_runs_the_next_listed_model_on_the_same_nodes(tmp_path):
+    """2026-11-18: seed 1's re-run waited in the queue, so seed 2's job evaluates seed 1 after itself. The first line of
+    $WORK/dpt/final_eval_next.txt is taken off, the queued job that would do it is cancelled, and a fresh run of the
+    script evaluates that model with its own phases and logs; the fresh run does not read the list again."""
+    nodes = " ".join(f"node01-00{i}" for i in range(1, 9))
+    (tmp_path / "sbx.sif").write_text("")
+    listing = tmp_path / "work" / "dpt" / "final_eval_next.txt"
+    listing.parent.mkdir(parents=True, exist_ok=True)
+    seed1 = str(tmp_path / "scratch" / "rl9b_v2_seed1")
+    listing.write_text(f"rl_v2_seed1 {seed1} 110 main,hard,budgets 3592027 d_fresh\n")
+    r = _run("final_eval_window.slurm", [], tmp_path, DPT_SLURM_NODES=nodes, DPT_FINAL_ROW="rl_v2_seed2",
+             DPT_FINAL_RUN=str(tmp_path / "scratch" / "rl9b_v2_seed2"))
+    assert r.returncode == 0, r.stderr
+    out = r.stdout
+    assert "next: rl_v2_seed1 on the same nodes" in r.stderr                  # tlog writes to stderr
+    first, _, second = out.partition("scancel 3592027")
+    assert second, out[-2000:]
+    assert "DPT_FINAL_CANDIDATE=rl_v2_seed2" in first and "DPT_FINAL_CANDIDATE=rl_v2_seed2" not in second
+    assert len(_model_servers(second, "rl_v2_seed1", 40960)) == 21 and f"{seed1}/hf_export" in second
+    assert "export_hf.sh" not in second and "--sets d_num_hard" in second    # step 110 given: no selection, no export
+    assert "--sets d_fresh " in second and "d_code" not in second             # main limited to the listed sets
+    assert "dpt.eval.budget continue --set d_num_hard --row rl_v2_seed1" in second
+    assert "DPT_FINAL_CANDIDATE=rl_v2_seed1" not in second and "finaleval_4242_rl_v2_seed1" in second   # no report
+    assert "--sets d_num\\,d_code\\,d_report\\,d_fresh\\,general\\,refusal" in first   # seed 2: every set
+    assert listing.read_text() == ""                                          # taken off before it ran, run once
+    # a row that already has results is not evaluated again
+    listing.write_text(f"rl_v2_seed1 {seed1} 110 main,report 3592027\n")
+    (tmp_path / "work" / "dpt" / "eval_results" / "rl_v2_seed1").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "work" / "dpt" / "eval_results" / "rl_v2_seed1" / "results.json").write_text("{}")
+    r = _run("final_eval_window.slurm", [], tmp_path, DPT_SLURM_NODES=nodes, DPT_FINAL_ROW="rl_v2_seed2",
+             DPT_FINAL_RUN=str(tmp_path / "scratch" / "rl9b_v2_seed2"), DPT_EVAL_ROOT=str(tmp_path / "work" / "dpt" /
+             "eval_results"))
+    assert r.returncode == 0, r.stderr
+    assert "next: rl_v2_seed1 skipped" in r.stderr and "scancel 3592027" not in r.stdout
+
+
 def test_rl_v2_queue_waits_for_the_go_ahead_and_then_runs_the_job_script(tmp_path):
     """The batch script is frozen at submission, so it only hands over to rl_v2_job.sh, read when the job starts."""
     text = (REPO / "scripts" / "slurm" / "rl_v2_queue.slurm").read_text()

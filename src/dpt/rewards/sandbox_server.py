@@ -139,6 +139,8 @@ def main() -> None:
     ap.add_argument("--container-image", default=os.environ.get("DPT_SANDBOX_SIF"),
                     help="Apptainer image: solutions see only their sandbox dir (default $DPT_SANDBOX_SIF)")
     ap.add_argument("--container-network", default="none", choices=["none", "host"])
+    ap.add_argument("--container-runtime", default=os.environ.get("DPT_SANDBOX_RUNTIME", "apptainer"),
+                    choices=["apptainer", "bwrap"], help="bwrap: the same isolation without an image")
     args = ap.parse_args()
 
     sandbox = LocalSubprocessSandbox(
@@ -149,6 +151,7 @@ def main() -> None:
         network_isolation=args.network_isolation,
         python=args.python,
         container_image=args.container_image,
+        container_runtime=args.container_runtime,
         container_network=args.container_network,
     )
     token = os.environ.get(args.token_env) if args.token_env else None

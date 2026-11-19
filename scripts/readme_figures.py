@@ -466,6 +466,7 @@ def draw_test_time_compute(results: dict, language: str) -> None:
         "base_medium": ["base_medium", "base_medium_k64"] + [f"noise__base_medium_s{seed}" for seed in range(10)],
         "sft": ["sft", "sft_k64"],
         "rl_seed1": ["rl_seed1", "rl_seed1_k64"],
+        "rl_v2_seed1": ["rl_v2_seed1"],
     }
     figure, (d_num_axes, hard_axes, vote_axes) = plt.subplots(
         1, 3, figsize=(14.5, 4.1), gridspec_kw={"width_ratios": [1, 1, 1], "wspace": 0.22})
