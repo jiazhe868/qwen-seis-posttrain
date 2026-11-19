@@ -324,8 +324,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", default=str(WORK / "dpt" / "talk" / "data.json"))
     # 2026-11-18: RL v2 seed 1's final evaluation waited in the queue, so its two headline sets ran on the workstation.
-    # This writes only those runs, from a folder laid out like the cluster's (WORK=<folder> holding dpt/eval_results
-    # and dpt/talk/budget), and the figures read them until the cluster's own results replace them.
+    # This writes only those runs, from a folder laid out like the cluster's (WORK=<folder> holding dpt/eval_results,
+    # dpt/eval_secure and dpt/talk/budget), and the figures read them until the cluster's own results replace them.
     ap.add_argument("--eval-only", metavar="NAME", default=None,
                     help="write only the eval runs and budget counts whose name contains NAME")
     args = ap.parse_args()
@@ -333,7 +333,8 @@ def main() -> None:
         runs = eval_results()["runs"]
         data = {"collected_at": dt.datetime.now().isoformat(timespec="minutes"),
                 "eval": {"runs": {k: v for k, v in runs.items() if args.eval_only in k}},
-                "budget": {k: v for k, v in budget().items() if args.eval_only in k}}
+                "budget": {k: v for k, v in budget().items() if args.eval_only in k},
+                "family_scores": {k: v for k, v in family_scores().items() if args.eval_only in k}}
         Path(args.out).write_text(json.dumps(data, indent=1, sort_keys=True))
         print(f"wrote {args.out}: {sorted(data['eval']['runs'])}, {sorted(data['budget'])}")
         return

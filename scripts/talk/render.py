@@ -53,6 +53,22 @@ plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 11, "text.color"
                      "xtick.color": MUTED, "ytick.color": MUTED, "svg.fonttype": "none", "pdf.fonttype": 42})
 
 
+def load_results() -> dict[str, Any]:
+    """docs/talk/data/run.json, with the runs that ran on the workstation filled in where the cluster has none yet.
+
+    RL v2 seed 1's final evaluation waited in the cluster's queue, so every set ran on the workstation
+    (rl_v2_seed1_local_1118.json, scripts/talk/collect.py --eval-only). Its runs, budget counts and family scores
+    fill in only what run.json lacks, so the cluster's own results replace them once they are collected."""
+    cluster = json.loads((TALK / "data" / "run.json").read_text())
+    workstation = json.loads((TALK / "data" / "rl_v2_seed1_local_1118.json").read_text())
+    for name, run in workstation["eval"]["runs"].items():
+        cluster["eval"]["runs"].setdefault(name, run)
+    for key in ("budget", "family_scores"):
+        for name, entry in workstation.get(key, {}).items():
+            cluster.setdefault(key, {}).setdefault(name, entry)
+    return cluster
+
+
 # ---- chart chrome -----------------------------------------------------------------------------------------
 def figure(w: float = 10.0, h: float = 5.6):
     return plt.figure(figsize=(w, h), dpi=DPI, facecolor=SURFACE)

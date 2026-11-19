@@ -110,7 +110,7 @@
    }
   }
  },
- "collected_at": "2026-11-19T00:31",
+ "collected_at": "2026-11-19T11:17",
  "eval": {
   "runs": {
    "d_num_hard/rl_v2_seed1": {
@@ -392,6 +392,106 @@
      }
     },
     "written": "2026-11-19T00:30"
+   }
+  }
+ },
+ "family_scores": {
+  "d_num_hard/rl_v2_seed1": {
+   "d_num_hard": {
+    "coulomb_stress_change": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 99.375
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 46.875
+    },
+    "gmpe_distance_for_pga": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 98.125
+    },
+    "gradient_ray_range": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 97.5
+    },
+    "gradient_ray_travel_time": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 92.5
+    },
+    "moho_depth_from_ps_delay": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 68.75
+    },
+    "mw_from_spectral_plateau": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 91.25
+    },
+    "rupture_length_from_directivity": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 97.5
+    }
+   }
+  },
+  "rl_v2_seed1": {
+   "d_num": {
+    "brune_corner_frequency": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 97.5
+    },
+    "dix_interval_velocity": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 68.75
+    },
+    "exceedance_probability": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 98.33333333333333
+    },
+    "fresnel_zone_radius": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 100.0
+    },
+    "ground_strain_from_velocity": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 98.33333333333333
+    },
+    "omori_aftershock_count": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 99.16666666666667
+    },
+    "recurrence_from_slip_rate": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 98.75
+    },
+    "surface_wave_magnitude": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 98.75
+    },
+    "tsunami_travel_time": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 99.58333333333333
+    },
+    "youngs_modulus_from_velocities": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 97.08333333333333
+    }
    }
   }
  }

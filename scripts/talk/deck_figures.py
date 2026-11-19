@@ -8,7 +8,8 @@ judges, family scores) and docs/talk/data/rl.json (scripts/talk/collect_rl.py: R
 the SFT steps, host and GPU memory) and docs/talk/data/judge_drift.json (scripts/talk/judge_drift_ci.py: both
 judges' scores of the T3 dev answers) and docs/talk/data/refusal.json (scripts/talk/refusal_breakdown.py). Aggregates
 only. Colours follow scripts/talk/render.py: one colour per task,
-one per model (base grey, SFT blue, RL orange), failure reasons in render's slots 5–7.
+one per model (base grey, SFT blue, RL run 1 orange, RL v2 purple as in the README), failure reasons in render's
+slots 5–7. RL v2 seed 1's sets ran on the workstation; render.load_results() fills them in.
 """
 from __future__ import annotations
 
@@ -34,8 +35,9 @@ REPORT_FIGS = ("rl_collapse", "rl_signal", "judge_drift", "eval_failures", "fron
 QUIET_KEYS = ("selected", "t3_joins", "paused", "cap", "ev_resume", "ev_mtpoff", "ev_save", "ev_pause", "kill",
               "drift_gap", "t3_train", "drift_gemma_end", "drift_luna_end")
 PAGE = "#ffffff"
-MODELS = ["base_medium", "sft", "rl_seed1"]
-MODEL_COLOR = {"base_medium": R.INK2, "sft": R.BLUE, "rl_seed1": R.ORANGE}
+MODELS = ["base_medium", "sft", "rl_seed1", "rl_v2_seed1"]
+K64_MODELS = MODELS[:3]                    # pass@64 ran for these three only
+MODEL_COLOR = {"base_medium": R.INK2, "sft": R.BLUE, "rl_seed1": R.ORANGE, "rl_v2_seed1": "#6250d6"}
 STEP_COLOR = {"0": P.LIGHT, "20": P.MID, "40": P.DEEP}          # ordered: a light-to-dark blue ramp
 WIN, TIE, LOSS = "#184f95", "#d9d7cf", "#c2410c"
 PLANNED, INCIDENT, IDLE = R.BLUE, "#e87ba4", "#c3c2b7"
@@ -44,7 +46,7 @@ FS, FS_SMALL = 16, 14                      # the figures show at ~80% on a slide
 
 L = {
     "en": {
-        "model": {"base_medium": "base", "sft": "SFT", "rl_seed1": "RL step 20"},
+        "model": {"base_medium": "base", "sft": "SFT", "rl_seed1": "RL run 1", "rl_v2_seed1": "RL v2"},
         "task": {"t1_num": "T1 numeric", "t2_code": "T2 code", "t3_report": "T3 report", "t4_general": "T4 general"},
         "set": {"d_num": "D-Num", "d_fresh": "D-Fresh", "d_code": "D-Code", "d_num_hard": "D-Num-hard"},
         "fail": FAIL_KEYS + ["other"],
@@ -59,7 +61,8 @@ L = {
         "fails_of": "failed samples (% of all)", "dev_t1": "T1 dev failures (% of 512 samples)",
         "t1_len": "T1 dev answer length (share of samples)", "tokens": "tokens", "step_n": "step {s}",
         "median": "median {v}", "budget": "token budget", "right_within": "right within the budget",
-        "rl_cap": "RL cap", "mean_tokens": "mean output tokens", "score": "score",
+        "rl_cap": "RL cap", "cap_run1": "run 1", "cap_v2": "RL v2", "mean_tokens": "mean output tokens",
+        "score": "score",
         "pass_k": "pass@k (D-Num, 64 samples)", "k": "k samples", "win": "win", "tie": "tie", "loss": "loss",
         "judge": {"primary": "Gemma 4 (primary)", "second": "GPT-6 Luna (second)"},
         "winrate": "win rate {v:.1f}", "lm": "length-matched pairs: {n}",
@@ -79,7 +82,7 @@ L = {
         "sft_loss": "SFT loss", "mtp_loss": "MTP head loss", "sft_step": "SFT step",
     },
     "zh": {
-        "model": {"base_medium": "基座", "sft": "SFT", "rl_seed1": "RL 第 20 步"},
+        "model": {"base_medium": "基座", "sft": "SFT", "rl_seed1": "第 1 次 RL", "rl_v2_seed1": "RL v2"},
         "task": {"t1_num": "T1 数值", "t2_code": "T2 代码", "t3_report": "T3 报告", "t4_general": "T4 通用"},
         "set": {"d_num": "D-Num", "d_fresh": "D-Fresh", "d_code": "D-Code", "d_num_hard": "D-Num-hard"},
         "fail": ["思考未闭合", "答案格式", "答错", "其他"],
@@ -94,7 +97,8 @@ L = {
         "fails_of": "失败样本（占全部的 %）", "dev_t1": "T1 开发集失败（占 512 个样本的 %）",
         "t1_len": "T1 开发集回答长度（样本占比）", "tokens": "token", "step_n": "第 {s} 步",
         "median": "中位数 {v}", "budget": "token 预算", "right_within": "预算内答对",
-        "rl_cap": "RL 上限", "mean_tokens": "平均输出 token", "score": "得分",
+        "rl_cap": "RL 上限", "cap_run1": "第 1 次", "cap_v2": "RL v2", "mean_tokens": "平均输出 token",
+        "score": "得分",
         "pass_k": "pass@k（D-Num，64 个样本）", "k": "样本数 k", "win": "胜", "tie": "平", "loss": "负",
         "judge": {"primary": "Gemma 4（主评审）", "second": "GPT-6 Luna（第二评审）"},
         "winrate": "胜率 {v:.1f}", "lm": "长度相近的样本对：{n}",
@@ -401,9 +405,11 @@ def budget3(d, t):
         ax.set_ylim(0, 100)
         ax.set_xticks([4, 8, 16, 24, 32], ["4K", "8K", "16K", "24K", "32K"])
         ax.yaxis.set_major_formatter(lambda v, _: f"{v:.0f}%")
-        ax.axvline(16, color=R.AXIS, lw=1.2 * R.PT, ls=(0, (3, 3)), zorder=1)
+        for cap in (16, 24):                       # run 1 trained at 16K, RL v2 at 24K
+            ax.axvline(cap, color=R.AXIS, lw=1.2 * R.PT, ls=(0, (3, 3)), zorder=1)
         if i == 0:
-            ax.text(16.5, 4, t["rl_cap"], fontsize=FS_SMALL, color=R.MUTED)
+            ax.text(16.6, 3, t["cap_run1"], fontsize=FS_SMALL, color=R.MUTED)   # each line's training cap,
+            ax.text(24.6, 3, t["cap_v2"], fontsize=FS_SMALL, color=R.MUTED)     # right of it, under the curves
         for m in MODELS:
             p = pb.get((s, m))
             if not p:
@@ -425,13 +431,14 @@ def frontier(d, t):
     f = fig(8.4, 5.4)
     ax = axes(f, (0.11, 0.13, 0.84, 0.8), grid="both")
     ax.set_xlim(0, 31)
-    ax.set_ylim(55, 95)
+    ax.set_ylim(55, 99)
     for s in ("d_num", "d_code", "d_fresh", "d_num_hard"):
         pts = []
         for m in MODELS:
             v = runs[f"d_num_hard/{m}" if s == "d_num_hard" else m]["sets"][s]
             pts.append((v["mean_output_tokens"] / 1000, v["score"], m))
-        ax.plot([p[0] for p in pts], [p[1] for p in pts], color=R.AXIS, lw=1.6 * R.PT, zorder=2)
+        for a, b in ((0, 1), (1, 2), (1, 3)):          # base → SFT, then SFT → each RL run (both start from SFT)
+            ax.plot([pts[a][0], pts[b][0]], [pts[a][1], pts[b][1]], color=R.AXIS, lw=1.6 * R.PT, zorder=2)
         for x, y, m in pts:
             ax.plot(x, y, "o", ms=11 * R.PT, color=MODEL_COLOR[m], mec=PAGE, mew=2 * R.PT, zorder=3)
         x0, y0, _ = pts[0]
@@ -464,7 +471,7 @@ def families3(d, t, code):
         for m, v in zip(MODELS, vals):
             if v is not None:
                 ax.plot(v, i, "o", ms=10 * R.PT, color=MODEL_COLOR[m], mec=PAGE, mew=1.6 * R.PT, zorder=3)
-    legend(f, [(t["model"][m], MODEL_COLOR[m], "dot") for m in MODELS], 0.43, 0.995)
+    legend(f, [(t["model"][m], MODEL_COLOR[m], "dot") for m in MODELS], 0.25, 0.995)
     return f
 
 
@@ -493,7 +500,7 @@ def passk3(d, t):
     ax = axes(f, (0.16, 0.13, 0.8, 0.72), grid="both")
     ax.set_xscale("log", base=2)
     ks = [1, 2, 4, 8, 16]
-    for m in MODELS:
+    for m in K64_MODELS:
         pk = runs[f"{m}_k64"]["sets"]["d_num"]["pass_at_k"]
         ys = [pk[str(k)] for k in ks]
         line(ax, ks, ys, MODEL_COLOR[m], lw=2.4)
@@ -504,7 +511,8 @@ def passk3(d, t):
     ax.yaxis.set_major_formatter(lambda v, _: f"{v:.0f}%")
     ax.set_xlabel(t["k"], fontsize=FS_SMALL, color=R.MUTED)
     label(ax, t["pass_k"], y=1.04)
-    ax.legend([Line2D([0], [0], color=MODEL_COLOR[m], lw=2.4 * R.PT) for m in MODELS], [t["model"][m] for m in MODELS],
+    ax.legend([Line2D([0], [0], color=MODEL_COLOR[m], lw=2.4 * R.PT) for m in K64_MODELS],
+              [t["model"][m] for m in K64_MODELS],
               loc="lower right", frameon=False, fontsize=FS_SMALL, labelcolor=R.INK2)
     return f
 
@@ -512,15 +520,15 @@ def passk3(d, t):
 def judges(d, t):
     runs = d["eval"]["runs"]
     rows = []
-    for m in ("sft", "rl_seed1"):
+    for m in ("sft", "rl_seed1", "rl_v2_seed1"):
         bj = runs[m]["sets"]["d_report"]["by_judge"]
         for j in ("primary", "second"):
             o = bj[j]["outcomes"]
             n = sum(o.values())
             rows.append((f"{t['model'][m]} · {t['judge'][j]}", [100 * o["win"] / n, 100 * o["tie"] / n,
                                                                   100 * o["loss"] / n], bj[j]["score"]))
-    f = fig(12.4, 3.9)
-    ax = axes(f, (0.35, 0.1, 0.52, 0.68), grid=None)
+    f = fig(12.4, 5.0)
+    ax = axes(f, (0.35, 0.06, 0.52, 0.78), grid=None)
     ax.spines["bottom"].set_visible(False)
     ax.tick_params(labelbottom=False)
     ax.set_xlim(0, 100)
@@ -589,9 +597,9 @@ def refusal_breakdown(rf, t):
         return tuple(0.3 * x + 0.7 for x in to_rgb(c))
 
     g = rf["groups"]
-    f = fig(8.4, 4.6)
+    f = fig(8.4, 5.6)
     for i, (src, title) in enumerate((("jbb", t["ref_jbb"]), ("xstest", t["ref_xs"]))):
-        ax = axes(f, (0.17, 0.56 - i * 0.44, 0.74, 0.25), grid="x")
+        ax = axes(f, (0.17, 0.53 - i * 0.45, 0.74, 0.3), grid="x")
         ax.set_xlim(0, 100)
         ax.xaxis.set_major_formatter(lambda v, _: f"{v:.0f}%")
         ax.set_ylim(len(MODELS) - 0.45, -0.55)
@@ -746,7 +754,7 @@ def base_figures(d) -> None:
 
 
 def main() -> None:
-    d = json.loads((DATA / "run.json").read_text())
+    d = R.load_results()
     rl = json.loads((DATA / "rl.json").read_text())
     jd = json.loads((DATA / "judge_drift.json").read_text())
     rf = json.loads((DATA / "refusal.json").read_text())

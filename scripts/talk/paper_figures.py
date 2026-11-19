@@ -9,8 +9,10 @@ quotes, so the two languages cannot drift apart. Colours follow scripts/talk/ren
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -347,9 +349,9 @@ def signed(x: float, fmt: str = "{:+.1f}") -> str:
 
 
 def trained_numbers(d, rl=None, jd=None, rf=None) -> dict[str, str]:
-    """Macros for the trained models (prefix S = SFT, R = RL step 20), the RL dynamics (rl.json), the judge-drift
-    audit (judge_drift.json) and the refusal breakdown (refusal.json). Macro names are letters only, so the prefixes
-    stand in for the model."""
+    """Macros for the trained models (prefix S = SFT, R = RL run 1 at step 20, V = RL v2 seed 1 at step 110, W = RL v2
+    seed 2 at step 100), the RL dynamics (rl.json), the judge-drift audit (judge_drift.json) and the refusal
+    breakdown (refusal.json). Macro names are letters only, so the prefixes stand in for the model."""
     runs = d["eval"]["runs"]
     fam = d.get("family_scores") or {}
     v: dict[str, str] = {}
@@ -358,7 +360,7 @@ def trained_numbers(d, rl=None, jd=None, rf=None) -> dict[str, str]:
         g = r.get("general") or {}
         return sum(x["score"] for x in g.values()) / len(g)
 
-    for m, k in (("base_medium", "B"), ("sft", "S"), ("rl_seed1", "R")):
+    for m, k in (("base_medium", "B"), ("sft", "S"), ("rl_seed1", "R"), ("rl_v2_seed1", "V"), ("rl_v2_seed2", "W")):
         r, S, G = runs[m], runs[m]["sets"], runs[m]["general"]
         hard = runs[f"d_num_hard/{m}"]["sets"]["d_num_hard"]
         hf = fam.get(f"d_num_hard/{m}", {}).get("d_num_hard", {})
@@ -395,6 +397,16 @@ def trained_numbers(d, rl=None, jd=None, rf=None) -> dict[str, str]:
     v["TokenCutBase"] = f"{100 * (1 - r['mean_output_tokens'] / b['mean_output_tokens']):.0f}"
     v["DNumGateDelta"] = signed(r["sets"]["d_num"]["score"] - b["sets"]["d_num"]["score"])
     v["DCodeGateDelta"] = signed(r["sets"]["d_code"]["score"] - b["sets"]["d_code"]["score"])
+    for m, k in (("rl_v2_seed1", "V"), ("rl_v2_seed2", "W")):        # the same gate quantities for RL v2's seeds
+        x = runs[m]
+        v[f"{k}GeneralDelta"] = signed(general(x) - general(b))
+        v[f"{k}RefusalDelta"] = signed(x["sets"]["refusal"]["refusal_rate"] - b["sets"]["refusal"]["refusal_rate"])
+        v[f"{k}TokenRatio"] = f"{x['mean_output_tokens'] / b['mean_output_tokens']:.2f}"
+        v[f"{k}DNumGateDelta"] = signed(x["sets"]["d_num"]["score"] - b["sets"]["d_num"]["score"])
+        v[f"{k}DCodeGateDelta"] = signed(x["sets"]["d_code"]["score"] - b["sets"]["d_code"]["score"])
+        v[f"{k}TokenCutSFT"] = f"{100 * (1 - x['mean_output_tokens'] / sf['mean_output_tokens']):.0f}"
+    seed_scores = [runs[m]["sets"]["d_num"]["score"] for m in ("rl_v2_seed1", "rl_v2_seed2")]
+    v["ReproGap"] = f"{abs(seed_scores[0] - seed_scores[1]):.1f}"            # the reproducibility gate's D-Num gap
     if rl:
         m = rl["metrics"]
         dev = rl["dev"]["steps"]
@@ -458,7 +470,83 @@ def trained_numbers(d, rl=None, jd=None, rf=None) -> dict[str, str]:
     return v
 
 
-def numbers(d, rl=None, jd=None, rf=None) -> str:
+def rl_v2_numbers(d, bud, gates, cmp) -> dict[str, str]:
+    """Macros for RL v2: the paired three-budget test against SFT (budgets_rl_v2_seeds12_1119.json; S = SFT, R = run 1,
+    V and W = seeds 1 and 2, P = the two seeds pooled per item), the ship gates (ship_gates_rl_v2_1119.json), its
+    training against run 1's (rl_runs_compared.json), its bank (bank_v2) and its two 8-node jobs (compute)."""
+    v: dict[str, str] = {}
+    pct = lambda x: f"{100 * x:.0f}"                                       # noqa: E731
+    models = {"sft": "S", "rl_seed1": "R", "rl_v2_seed1": "V", "rl_v2_seed2": "W", "rl_v2": "P"}
+    budgets = {16: "Sixteen", 32: "ThirtyTwo", 64: "SixtyFour"}
+    for set_name, s in (("d_num_hard", "Hard"), ("d_fresh", "Fresh")):
+        for model, m in models.items():
+            row = bud["sets"][set_name][model]
+            for b, name in budgets.items():
+                at = row[f"at_{b}k"]
+                v[f"Bud{s}{m}{name}"] = f"{at['score']:.1f}"
+                if at.get("vs_baseline"):                                 # paired over the items, against SFT
+                    vs = at["vs_baseline"]
+                    v[f"Bud{s}{m}{name}Diff"] = signed(vs["diff"])
+                    v[f"Bud{s}{m}{name}Abs"] = f"{abs(vs['diff']):.1f}"    # for sentences that say above or below
+                    v[f"Bud{s}{m}{name}Lo"] = signed(vs["low"])
+                    v[f"Bud{s}{m}{name}Hi"] = signed(vs["high"])
+            out, sft = row["at_32k"]["outcomes_pct"], bud["sets"][set_name]["sft"]["at_32k"]["outcomes_pct"]
+            v[f"{s}Unf{m}"] = f"{out['unfinished']:.1f}"
+            v[f"{s}Wrong{m}"] = f"{out['wrong_value']:.1f}"
+            if model != "sft":                              # how each outcome's share moved from SFT, at 32K
+                for key, name in (("unfinished", "Unf"), ("right", "Right"), ("wrong_value", "Wrong")):
+                    v[f"{s}{name}Change{m}"] = signed(out[key] - sft[key])
+                    v[f"{s}{name}ChangeAbs{m}"] = f"{abs(out[key] - sft[key]):.1f}"
+    for cand, m in (("rl_v2_seed1", "V"), ("rl_v2_seed2", "W")):
+        v[f"{m}Gates"] = str(gates["candidates"][cand]["passed"])
+    v["GatesOf"] = str(gates["candidates"]["rl_v2_seed1"]["of"])
+
+    # medians over step windows: Early, Mid, Late for run 1 (1-20, 21-40, 41-56); RL v2 adds Main (41-90), Late 91-110
+    windows = {"run1": ("R", {"1-20": "Early", "21-40": "Mid", "41-56": "Late"}),
+               "rl_v2_seed1": ("V", {"1-20": "Early", "21-40": "Mid", "41-90": "Main", "91-110": "Late"})}
+    keys = {"t1_num_grad_share": "ShareNum", "t4_general_grad_share": "ShareGen", "t3_report_grad_share": "ShareRep",
+            "t1_groups_with_gradient": "Groups", "t1_acc": "Acc"}
+    for run, (m, names) in windows.items():
+        for window, wname in names.items():
+            row = cmp["windows"][run][window]
+            for key, kname in keys.items():
+                v[f"{m}{kname}{wname}"] = pct(row[key]) if isinstance(row.get(key), (int, float)) else "–"
+            v[f"{m}LenRight{wname}"] = f"{row['t1_len_right']:,.0f}"
+    steps = cmp["per_step"]
+    collapse = cmp["run1_collapse"]["lr_sum"]
+    v["CollapseLR"] = f"{collapse:.0f}"
+    v["VPassStep"] = str(next(r["step"] for r in steps["rl_v2_seed1"] if r["lr_sum"] >= collapse))
+    v["VEndLR"] = f"{steps['rl_v2_seed1'][-1]['lr_sum']:.0f}"
+    v["REndLR"] = f"{steps['run1'][-1]['lr_sum']:.0f}"
+    first = cmp["run1_first_step"]
+    v["LenOnlyGroups"] = pct(first["length_only_groups"])
+    v["LenOnlyAdv"] = pct(first["length_only_advantage_share"])
+    v["RightWrongGroups"] = pct(first["right_and_wrong_groups"])
+    gap = cmp["rl_v2_len_gap_finished"]
+    v["LenGapPos"], v["LenGapSteps"], v["LenGapMedian"] = str(gap["positive"]), str(gap["steps"]), f"{gap['median']:,}"
+    for key, name in (("10", "Ten"), ("40", "Forty"), ("60", "Sixty"), ("80", "Eighty"), ("100", "Hundred")):
+        for run, m in (("run1", "R"), ("rl_v2_seed1", "V")):
+            x = cmp["at_lr_sum"][key][run]["t1_len_right"]
+            v[f"{m}LenAt{name}"] = f"{x:,.0f}" if x else "–"
+    dev = cmp["unfinished_answers"]["rl_v2_hard_dev_24k"]
+    v["VDevUnf"], v["VDevRight"], v["VDevWrong"] = (signed(dev[k]) for k in ("unfinished", "right", "wrong_value"))
+
+    trained = d["bank_v2"]["trained"]                       # what RL v2 drew from: the main split and the hard split
+    num = trained["main"]["t1_num"] + trained["hard"]["t1_num"]
+    gen = trained["main"]["t4_general"] + trained["hard"]["t4_general"]
+    code = trained["main"]["t2_code"]
+    v.update({"BankTwo": f"{num + code + gen:,}", "BankTwoNum": f"{num:,}", "BankTwoCode": f"{code:,}",
+              "BankTwoGen": f"{gen:,}"})
+    # seed 1 ran in the job named for RL v2; seed 2 in the 8-node job first planned for SFT v2, which was dropped
+    for name, m in (("dpt-rlv2", "V"), ("dpt-sftv2", "W")):
+        job = next(j for j in d["compute"]["jobs"] if j["name"] == name and (j["su"] or 0) > 0)
+        hours = (dt.datetime.fromisoformat(job["end"]) - dt.datetime.fromisoformat(job["start"])).total_seconds() / 3600
+        v[f"{m}JobHours"], v[f"{m}JobSU"] = f"{hours:.1f}", f"{job['su']:,.0f}"
+        v[f"{m}JobNodeHours"] = f"{hours * job['nodes']:,.0f}"
+    return v
+
+
+def numbers(d, rl=None, jd=None, rf=None, v2=None) -> str:
     m = main_runs(d)["base_medium"]
     S, G = m["sets"], m["general"]
     pb = pooled(d)
@@ -525,14 +613,20 @@ def numbers(d, rl=None, jd=None, rf=None) -> str:
         "Published_main": f"{sum(pub['rl_main'].values()):,}",
     }
     v.update(trained_numbers(d, rl, jd, rf))
-    lines = ["% Generated by scripts/talk/paper_figures.py from docs/talk/data/run.json; do not edit.",
+    if v2:
+        v.update(rl_v2_numbers(d, *v2))
+    lines = ["% Generated by scripts/talk/paper_figures.py from docs/talk/data/ (run.json and the files it names); "
+             "do not edit.",
              f"% Collected on the cluster {d['collected_at']}."]
     lines += [f"\\newcommand{{\\N{key.replace('_', '')}}}{{{val}}}" for key, val in v.items()]
     return "\n".join(lines) + "\n"
 
 
+README_FIGS = ("rl_training_curves", "rl_runs_compared")    # README figures (scripts/readme_figures.py) the report uses
+
+
 def main() -> None:
-    d = json.loads((R.TALK / "data" / "run.json").read_text())
+    d = R.load_results()
     lang("en")
     for g in (budget, scorecard, seeds, cliff, receiver, noise, compute):
         g(d)
@@ -543,10 +637,16 @@ def main() -> None:
         families(d, code)
     OUT.mkdir(parents=True, exist_ok=True)
     extra = {}
-    for name in ("rl", "judge_drift", "refusal"):
+    for name in ("rl", "judge_drift", "refusal", "budgets_rl_v2_seeds12_1119", "ship_gates_rl_v2_1119",
+                 "rl_runs_compared"):
         f = R.TALK / "data" / f"{name}.json"
         extra[name] = json.loads(f.read_text()) if f.exists() else None
-    (OUT / "numbers.tex").write_text(numbers(d, extra["rl"], extra["judge_drift"], extra["refusal"]))
+    v2 = (extra["budgets_rl_v2_seeds12_1119"], extra["ship_gates_rl_v2_1119"], extra["rl_runs_compared"])
+    (OUT / "numbers.tex").write_text(numbers(d, extra["rl"], extra["judge_drift"], extra["refusal"],
+                                             v2 if all(v2) else None))
+    for name in README_FIGS:
+        for code in ("en", "zh"):
+            shutil.copyfile(R.ROOT / "assets" / f"{name}_{code}.pdf", FIG / f"{name}_{code}.pdf")
     print(f"wrote {FIG} and {OUT / 'numbers.tex'}")
 
 
