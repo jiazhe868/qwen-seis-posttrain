@@ -122,6 +122,32 @@ def test_run_suite_scores_truncation_and_resume(tmp_path):
     assert len(calls) == n_first
 
 
+def test_a_set_the_sandbox_could_not_run_gets_no_score(tmp_path, monkeypatch):
+    """2026-11-19: RL v2 seed 2's sandbox failed its container probe, failed closed on every answer, and D-Code was
+    written down as 0.0. Above a few such answers the set gets no score and says why."""
+    import dpt.eval.harness as h
+
+    cfg, calls = _cfg(tmp_path), []
+
+    def broken_sandbox(ss, items, gens, **kw):
+        n = len(items) * ss.samples
+        return {"score": 0.0, "metric": "pass@1", "reasons": {"runner_infra_error": n - 1, "no_think_end": 1}}
+
+    monkeypatch.setattr(h, "score_set", broken_sandbox)
+
+    async def go():
+        be = _backend(calls)
+        try:
+            return await run_suite(cfg, ["d_num"], generate=be.generate, model_name="m", out_dir=tmp_path / "run",
+                                   spec=SamplingSpec(effort="medium", max_tokens=64), mode="completions",
+                                   verify_manifests=False)
+        finally:
+            await be.aclose()
+
+    res = asyncio.run(go())["sets"]["d_num"]
+    assert res["score"] is None and "sandbox infra errors" in res["invalid"]
+
+
 def test_per_item_seeds_are_deterministic_and_distinct(tmp_path):
     cfg, calls = _cfg(tmp_path), []
 

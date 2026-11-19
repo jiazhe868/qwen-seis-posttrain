@@ -47,7 +47,11 @@ for row in sft rl_seed1 rl_seed2 rl_v2_seed1; do
 done
 ARGS=(--row base_medium="${R}/base_medium")
 [[ -f "${R}/base_xhigh/results.json" ]] && ARGS+=(--row base_xhigh="${R}/base_xhigh")   # 27B line only
-for row in sft rl_seed1 rl_seed2 rl_v2_seed1; do [[ -f "${R}/${row}/results.json" ]] && ARGS+=(--row "${row}=${R}/${row}"); done
+# the RL v2 seeds too, and the candidate whatever its name (2026-11-19: seed 2's report stopped at "candidate row
+# 'rl_v2_seed2' not in summary")
+REPORT_ROWS=(sft rl_seed1 rl_seed2 rl_v2_seed1 rl_v2_seed2 rl_v2_seed3)
+[[ " ${REPORT_ROWS[*]} " == *" ${DPT_FINAL_CANDIDATE:-rl_seed1} "* ]] || REPORT_ROWS+=("${DPT_FINAL_CANDIDATE}")
+for row in "${REPORT_ROWS[@]}"; do [[ -f "${R}/${row}/results.json" ]] && ARGS+=(--row "${row}=${R}/${row}"); done
 "${PY}" -m dpt.eval.report "${ARGS[@]}" --summary-out "${R}/summary.json" --markdown-out "${R}/report.md"
 # DPT_FINAL_CANDIDATE: the row the ship gates judge (default rl_seed1; RL v2: rl_v2_seed1).
 CAND="${DPT_FINAL_CANDIDATE:-rl_seed1}"

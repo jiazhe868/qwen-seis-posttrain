@@ -34,6 +34,11 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 source scripts/slurm/env.sh
 source scripts/slurm/lib.sh
 export HF_HUB_OFFLINE=1
+# A job that waits in the queue reads its settings when it starts: $WORK/dpt/final_eval_env/<job id>.env, if present,
+# can set DPT_FINAL_PHASES, DPT_FINAL_SETS and the like (2026-11-19: job 3592027 was submitted for every set of seed 1,
+# then only a cross-check of it was wanted).
+JOB_ENV="${WORK}/dpt/final_eval_env/${SLURM_JOB_ID:-local}.env"
+if [[ -f "${JOB_ENV}" ]]; then set -a; source "${JOB_ENV}"; set +a; fi
 PHASES="${DPT_FINAL_PHASES:-select,export,main,hard,budgets,report}"
 mapfile -t NODES < <(job_nodes)
 (( ${#NODES[@]} >= 2 )) || tdie "this job needs the RL nodes (8), it has ${#NODES[@]}"
@@ -101,12 +106,18 @@ start_here() {       # start_here <pid name> <command…>: in its own process gr
   echo $! > "${PIDS}/${HEAD}_${name}"
 }
 wait_backends() { local u; for u in "$@"; do wait_url "${u}" 3600 || tdie "${u} did not come up (logs ${LOGS})"; done; }
-wait_sandbox() {     # the sandbox answers /health, not /v1/models
+wait_sandbox() {     # the sandbox answers /health, not /v1/models; "warm": false = its container probe failed
   dry && return 0
-  local i=0
-  until curl -sf --max-time 10 http://127.0.0.1:8080/health >/dev/null; do
+  local i=0 health=""
+  until health="$(curl -sf --max-time 10 http://127.0.0.1:8080/health)"; do
     sleep 5; i=$((i + 5)); (( i < 600 )) || tdie "sandbox :8080 not up after 600 s (${LOGS}/sandbox.log)"
   done
+  [[ "${health}" == *'"warm": true'* ]]
+}
+start_sandbox() {    # a sandbox that failed its warm-up remembers that, so it is started once more (2026-11-19)
+  start_here sandbox python -m dpt.rewards.sandbox_server --host 127.0.0.1 --port 8080 \
+    --hidden-tests-dir "${SECURE}/hidden_tests" --max-concurrency 32 --python "${DPT_SANDBOX_PYTHON}" \
+    --container-image "${DPT_SANDBOX_SIF}"
 }
 stop_all() {
   local f host
@@ -165,9 +176,7 @@ fi
 if want main || want hard || want k64; then
   dry || [[ -f "${EXPORT}/config.json" ]] || tdie "no HF export at ${EXPORT}"
   sandbox_image || tdie "no sandbox image (check_node.slurm pulls it)"
-  start_here sandbox python -m dpt.rewards.sandbox_server --host 127.0.0.1 --port 8080 \
-    --hidden-tests-dir "${SECURE}/hidden_tests" --max-concurrency 32 --python "${DPT_SANDBOX_PYTHON}" \
-    --container-image "${DPT_SANDBOX_SIF}"
+  start_sandbox
   start_replicas "${HEAD}" "${JUDGE_ID}" judge 8101
   urls=(); for h in "${WORKERS[@]}"; do start_replicas "${h}" "${EXPORT}" "${ROW}" 8001 DPT_GDN_MODEL=1; done
   relaunch_missing "${EXPORT}" "${ROW}" 8001 DPT_GDN_MODEL=1 "" "${WORKERS[@]}"
@@ -179,7 +188,13 @@ if want main || want hard || want k64; then
   wait_some 3600 "${urls[@]}"; urls=("${UP_URLS[@]}")
   args=(); for u in "${urls[@]}"; do args+=(--backend "${u}"); done
   start_here 8000 python scripts/rr_proxy.py --port 8000 "${args[@]}"
-  wait_backends "http://${HEAD}:8100" "http://${HEAD}:8000"; wait_sandbox
+  wait_backends "http://${HEAD}:8100" "http://${HEAD}:8000"
+  if ! wait_sandbox; then
+    tlog "WARN the sandbox failed its warm-up (${LOGS}/sandbox.log); starting it once more"
+    on_node "${HEAD}" bash -c "kill -TERM -- -$(cat "${PIDS}/${HEAD}_sandbox") 2>/dev/null; true" || true
+    sleep 5; start_sandbox
+    wait_sandbox || tlog "WARN the sandbox is still not warm: the code sets will have no score"
+  fi
   if want main; then
     phase "${ROW}: every set at medium"
     harness --model-name "${ROW}" --served-model "${ROW}" --sets "${DPT_FINAL_SETS:-d_num,d_code,d_report,d_fresh,general,refusal}" \
@@ -228,7 +243,9 @@ fi
 # ---- 7: report and ship gates ------------------------------------------------------------------------------------
 if want report; then
   phase "report and ship gates (${ROW})"
-  run env DPT_FINAL_CANDIDATE="${ROW}" bash scripts/07_final_eval.sh --report-only 2>&1 | tee "${LOGS}/report.log"
+  # a failed gate or report must not stop the next model (section 8): seed 2's report did, on 2026-11-19
+  run env DPT_FINAL_CANDIDATE="${ROW}" bash scripts/07_final_eval.sh --report-only 2>&1 | tee "${LOGS}/report.log" \
+    || tlog "WARN report and gates exited non-zero (${LOGS}/report.log)"
 fi
 phase "done (${PHASES})"
 

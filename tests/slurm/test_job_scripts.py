@@ -673,6 +673,32 @@ def test_final_eval_runs_the_next_listed_model_on_the_same_nodes(tmp_path):
     assert "next: rl_v2_seed1 skipped" in r.stderr and "scancel 3592027" not in r.stdout
 
 
+def test_a_queued_final_eval_reads_its_settings_when_it_starts(tmp_path):
+    """2026-11-19: job 3592027 was queued for every set of seed 1, then only a cross-check was wanted. A file named after
+    the job, read when it starts, sets its phases and sets."""
+    nodes = " ".join(f"node01-00{i}" for i in range(1, 5))
+    (tmp_path / "sbx.sif").write_text("")
+    settings = tmp_path / "work" / "dpt" / "final_eval_env" / "4242.env"
+    settings.parent.mkdir(parents=True)
+    settings.write_text("DPT_FINAL_PHASES=main,hard,budgets\nDPT_FINAL_SETS=d_fresh\nDPT_FINAL_STEP=110\n")
+    r = _run("final_eval_window.slurm", [], tmp_path, DPT_SLURM_NODES=nodes)
+    assert r.returncode == 0, r.stderr
+    out = r.stdout
+    assert "--sets d_fresh " in out and "--sets d_num_hard" in out and "budget continue --set d_fresh" in out
+    assert "export_hf.sh" not in out and "07_final_eval.sh" not in out and "d_code" not in out
+
+
+def test_final_eval_restarts_a_cold_sandbox_and_a_failed_report_does_not_stop_it():
+    """2026-11-19: seed 2's sandbox failed its warm-up and graded D-Code 0.0, and its report stopped at a row it did
+    not know, before the next model. The sandbox must report warm (it is started once more if not), the report's
+    exit status must not end the script, and the report lists the RL v2 rows and the candidate."""
+    text = (REPO / "scripts" / "slurm" / "final_eval_window.slurm").read_text()
+    assert '"warm": true' in text and text.count("start_sandbox") >= 3
+    assert '|| tlog "WARN report and gates exited non-zero' in text
+    report = (REPO / "scripts" / "07_final_eval.sh").read_text()
+    assert "rl_v2_seed2 rl_v2_seed3" in report and 'REPORT_ROWS+=("${DPT_FINAL_CANDIDATE}")' in report
+
+
 def test_rl_v2_queue_waits_for_the_go_ahead_and_then_runs_the_job_script(tmp_path):
     """The batch script is frozen at submission, so it only hands over to rl_v2_job.sh, read when the job starts."""
     text = (REPO / "scripts" / "slurm" / "rl_v2_queue.slurm").read_text()

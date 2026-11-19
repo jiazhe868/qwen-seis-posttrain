@@ -57,6 +57,9 @@ from dpt.eval.graders import GradeResult
 
 log = get_logger(__name__)
 
+# above this share of answers the sandbox could not run, a code set gets no score (see run_suite)
+MAX_SANDBOX_INFRA_SHARE = 0.05
+
 Messages = list[dict[str, Any]]
 Renderer = Callable[[Messages, str], str]  # (messages, effort) -> prompt text
 TokenCounter = Callable[[str], int]
@@ -110,6 +113,7 @@ class SetSpec:
 
 
 # --------------------------------------------------------------------------- prompts
+
 def build_messages(item: EvalItem) -> Messages:
     """Prompt for an item via the shared prompt builder (same builder RL uses, so formats match).
 
@@ -695,6 +699,14 @@ async def run_suite(
             res = score_refusal(ss, items, gens)
         else:
             res = score_set(ss, items, gens, n_boot=n_boot, seed=boot_seed)
+            # 2026-11-19: RL v2 seed 2's sandbox failed its container probe at start-up and failed closed on every
+            # answer, and D-Code and LiveCodeBench were written down as 0.0. An answer the sandbox could not run says
+            # nothing about the model, so above a few of them the set gets no score, with the reason.
+            infra = (res.get("reasons") or {}).get("runner_infra_error", 0)
+            if infra > MAX_SANDBOX_INFRA_SHARE * len(items) * ss.samples:
+                log.error("%s: the sandbox failed on %d of %d answers; no score (regrade with a working sandbox)",
+                          ss.name, infra, len(items) * ss.samples)
+                res = {**res, "score": None, "invalid": f"sandbox infra errors on {infra} answers"}
         bucket = "general" if ss.name in cfg.get("general", {}) else "sets"
         results[bucket][ss.name] = res
         log.info("%s: score=%.2f", ss.name, res.get("score") or float("nan"))

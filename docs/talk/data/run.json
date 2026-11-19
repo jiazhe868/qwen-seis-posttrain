@@ -964,7 +964,7 @@
    "sft_eval": "2026-10-29T21:16"
   }
  },
- "collected_at": "2026-11-19T00:17",
+ "collected_at": "2026-11-19T03:10",
  "compute": {
   "balance": {
    "available_su": 3678,
@@ -1728,15 +1728,15 @@
     "submit": "2026-11-11T23:46:44"
    },
    {
-    "elapsed_s": 69994,
-    "end": "Unknown",
+    "elapsed_s": 79237,
+    "end": "2026-11-19T02:51:25",
     "id": "3576469",
     "name": "dpt-sftv2",
     "nodes": 8,
     "partition": "gpu-a100",
     "start": "2026-11-18T04:50:48",
-    "state": "RUNNING",
-    "su": 466.63,
+    "state": "FAILED",
+    "su": 528.25,
     "submit": "2026-11-12T00:14:31"
    },
    {
@@ -2895,6 +2895,43 @@
     },
     "written": "2026-10-30T05:47"
    },
+   "d_num_hard/rl_v2_seed2": {
+    "effort": "medium",
+    "general": {},
+    "max_tokens": 32768,
+    "mean_output_tokens": null,
+    "model_name": "rl_v2_seed2",
+    "seed": 0,
+    "sets": {
+     "d_num_hard": {
+      "ci": {
+       "halfwidth": 1.447265624999993,
+       "hi": 84.76757812499999,
+       "level": 0.95,
+       "lo": 81.873046875,
+       "point": 83.359375
+      },
+      "mean_output_tokens": 11863.3578125,
+      "metric": "avg@8",
+      "pass_at_k": {
+       "1": 83.359375,
+       "2": 91.62946428571426,
+       "4": 96.93750000000001,
+       "8": 99.375
+      },
+      "reasons": {
+       "no_answer": 4,
+       "no_think_end": 108,
+       "ok": 1067,
+       "unit_parse_error": 1,
+       "wrong_value": 100
+      },
+      "score": 83.359375,
+      "truncation_rate": 0.0875
+     }
+    },
+    "written": "2026-11-19T02:17"
+   },
    "d_num_hard/sft": {
     "effort": "medium",
     "general": {},
@@ -3598,6 +3635,250 @@
     },
     "written": "2026-10-30T06:57"
    },
+   "rl_v2_seed2": {
+    "effort": "medium",
+    "general": {
+     "gpqa_diamond": {
+      "ci": {
+       "halfwidth": 1.4535984848484844,
+       "hi": 79.29292929292929,
+       "level": 0.95,
+       "lo": 76.38573232323232,
+       "point": 77.90404040404042
+      },
+      "metric": "avg@4",
+      "relative_only": false,
+      "score": 77.90404040404042
+     },
+     "ifeval": {
+      "ci": {
+       "halfwidth": 2.7851458885941653,
+       "hi": 95.22546419098144,
+       "level": 0.95,
+       "lo": 89.65517241379311,
+       "point": 92.57294429708223
+      },
+      "metric": "avg@1",
+      "relative_only": false,
+      "score": 92.57294429708223
+     },
+     "livecodebench_post_2025_01": {
+      "ci": {
+       "halfwidth": 3.9330357142857046,
+       "hi": 60.0,
+       "level": 0.95,
+       "lo": 52.13392857142859,
+       "point": 56.07142857142857
+      },
+      "metric": "avg@4",
+      "relative_only": true,
+      "score": 56.07142857142857
+     },
+     "mmlu_pro_2k": {
+      "ci": {
+       "halfwidth": 1.8249999999999957,
+       "hi": 80.35,
+       "level": 0.95,
+       "lo": 76.7,
+       "point": 78.55
+      },
+      "metric": "avg@1",
+      "relative_only": true,
+      "score": 78.55
+     },
+     "tool_calling": {
+      "ci": {
+       "halfwidth": 5.0531914893617085,
+       "hi": 90.95744680851064,
+       "level": 0.95,
+       "lo": 80.85106382978722,
+       "point": 86.17021276595744
+      },
+      "metric": "avg@1",
+      "relative_only": false,
+      "score": 86.17021276595744
+     }
+    },
+    "max_tokens": 32768,
+    "mean_output_tokens": 4854.875139664805,
+    "model_name": "rl_v2_seed2",
+    "seed": 0,
+    "sets": {
+     "d_code": {
+      "ci": {
+       "halfwidth": 1.75,
+       "hi": 92.5,
+       "level": 0.95,
+       "lo": 89.0,
+       "point": 90.83333333333333
+      },
+      "mean_output_tokens": 6292.443333333334,
+      "metric": "pass@1",
+      "pass_at_k": {
+       "1": 90.83333333333333,
+       "2": 97.0,
+       "4": 99.33333333333333
+      },
+      "reasons": {
+       "no_think_end": 11,
+       "ok": 545,
+       "runner_error": 6,
+       "tests_failed": 38
+      },
+      "score": 90.83333333333333,
+      "truncation_rate": 0.018333333333333333
+     },
+     "d_fresh": {
+      "ci": {
+       "halfwidth": 1.9791666666666714,
+       "hi": 89.16666666666667,
+       "level": 0.95,
+       "lo": 85.20833333333333,
+       "point": 87.29166666666667
+      },
+      "mean_output_tokens": 5048.75,
+      "metric": "avg@8",
+      "pass_at_k": {
+       "1": 87.29166666666667,
+       "2": 93.45238095238096,
+       "4": 95.69047619047618,
+       "8": 96.66666666666667
+      },
+      "reasons": {
+       "missing_unit": 9,
+       "no_think_end": 4,
+       "ok": 419,
+       "unit_parse_error": 11,
+       "wrong_value": 37
+      },
+      "score": 87.29166666666667,
+      "truncation_rate": 0.008333333333333333
+     },
+     "d_num": {
+      "ci": {
+       "halfwidth": 0.7499999999999929,
+       "hi": 95.70833333333333,
+       "level": 0.95,
+       "lo": 94.20833333333334,
+       "point": 94.95833333333333
+      },
+      "mean_output_tokens": 4465.116666666667,
+      "metric": "avg@8",
+      "pass_at_k": {
+       "1": 94.95833333333333,
+       "2": 98.83333333333333,
+       "4": 99.85714285714286,
+       "8": 100.0
+      },
+      "reasons": {
+       "missing_unit": 1,
+       "no_answer": 1,
+       "no_think_end": 19,
+       "ok": 2279,
+       "wrong_value": 100
+      },
+      "score": 94.95833333333333,
+      "truncation_rate": 0.008333333333333333
+     },
+     "d_report": {
+      "by_judge": {
+       "primary": {
+        "ci": {
+         "halfwidth": 3.75,
+         "hi": 98.5,
+         "level": 0.95,
+         "lo": 91.0,
+         "point": 95.0
+        },
+        "judge_calls": {
+         "cached": 0,
+         "calls": 200,
+         "unparsed": 0,
+         "unparsed_rate": 0.0
+        },
+        "length_matched": {
+         "n": 14,
+         "score": 96.42857142857143
+        },
+        "outcomes": {
+         "loss": 3,
+         "tie": 4,
+         "win": 93
+        },
+        "score": 95.0,
+        "served_models": [
+         "judge"
+        ],
+        "status": "ok"
+       },
+       "second": {
+        "ci": {
+         "halfwidth": 9.0,
+         "hi": 71.5,
+         "level": 0.95,
+         "lo": 53.5,
+         "point": 62.5
+        },
+        "judge_calls": {
+         "cached": 0,
+         "calls": 200,
+         "unparsed": 0,
+         "unparsed_rate": 0.0
+        },
+        "length_matched": {
+         "n": 14,
+         "score": 60.714285714285715
+        },
+        "outcomes": {
+         "loss": 31,
+         "tie": 13,
+         "win": 56
+        },
+        "score": 62.5,
+        "served_models": [
+         "gpt-6-luna"
+        ],
+        "status": "ok"
+       }
+      },
+      "ci": {
+       "halfwidth": 9.0,
+       "hi": 71.5,
+       "level": 0.95,
+       "lo": 53.5,
+       "point": 62.5
+      },
+      "gate_judge": "min",
+      "length_matched": {
+       "n": 14,
+       "score": 60.714285714285715
+      },
+      "mean_output_tokens": 4653.07,
+      "metric": "winrate_vs_base",
+      "outcomes": {
+       "loss": 31,
+       "tie": 13,
+       "win": 56
+      },
+      "score": 62.5,
+      "truncation_rate": 0.0
+     },
+     "refusal": {
+      "ci": {
+       "halfwidth": 5.6209380831727636,
+       "hi": 54.633581054397304,
+       "level": 0.95,
+       "lo": 43.39170488805178,
+       "point": 49.0
+      },
+      "metric": "refusal_rate",
+      "over_refusal_rate": 4.0,
+      "refusal_rate": 49.0,
+      "score": 49.0
+     }
+    },
+    "written": "2026-11-19T03:05"
+   },
    "sft": {
     "effort": "medium",
     "general": {
@@ -4126,6 +4407,50 @@
      "items": 20,
      "never_solved": 0,
      "score": 86.875
+    }
+   }
+  },
+  "d_num_hard/rl_v2_seed2": {
+   "d_num_hard": {
+    "coulomb_stress_change": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 98.75
+    },
+    "crustal_vpvs_from_ps_and_ppps": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 39.375
+    },
+    "gmpe_distance_for_pga": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 99.375
+    },
+    "gradient_ray_range": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 98.75
+    },
+    "gradient_ray_travel_time": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 95.0
+    },
+    "moho_depth_from_ps_delay": {
+     "items": 20,
+     "never_solved": 1,
+     "score": 46.25
+    },
+    "mw_from_spectral_plateau": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 95.0
+    },
+    "rupture_length_from_directivity": {
+     "items": 20,
+     "never_solved": 0,
+     "score": 94.375
     }
    }
   },
@@ -4818,6 +5143,60 @@
      "items": 30,
      "never_solved": 0,
      "score": 87.60416666666667
+    }
+   }
+  },
+  "rl_v2_seed2": {
+   "d_num": {
+    "brune_corner_frequency": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 97.91666666666667
+    },
+    "dix_interval_velocity": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 67.5
+    },
+    "exceedance_probability": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 98.33333333333333
+    },
+    "fresnel_zone_radius": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 99.58333333333333
+    },
+    "ground_strain_from_velocity": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 98.75
+    },
+    "omori_aftershock_count": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 97.91666666666667
+    },
+    "recurrence_from_slip_rate": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 93.75
+    },
+    "surface_wave_magnitude": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 98.75
+    },
+    "tsunami_travel_time": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 100.0
+    },
+    "youngs_modulus_from_velocities": {
+     "items": 30,
+     "never_solved": 0,
+     "score": 97.08333333333333
     }
    }
   },

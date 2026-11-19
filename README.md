@@ -96,7 +96,8 @@ rise only from 4% to 7%, where run 1's rose to 13%. Late in training only one nu
 gradient, as few as in run 1's first steps, and the run stayed stable, so a scarce signal alone did not cause run 1's
 collapse (§8.6). The other sets moved too: D-Num 95.6, the first stage above the base, D-Code 92.7, GPQA 77.5 and
 LiveCodeBench 63.2, with the shortest answers of any stage. Refusals stayed at run 1's level. All of it ran on a
-workstation while the cluster's final evaluation waited in the queue, and seeds 2 and 3 are still to come.
+workstation while the cluster's final evaluation waited in the queue. A second seed passes too (+15.2 on D-Num-hard
+and +8.5 on D-Fresh at 32K), and seed 3 is queued.
 
 Most of the month went to systems. The one 8-node job ran 71.9 hours: 28.7 of them ran the planned stages,
 and 43.2 went to incidents, waits and holds, 35.1 of those before SFT could start (§9.2). A 9B model on
@@ -192,6 +193,11 @@ The gain is not confined to those two sets. D-Num rises to 95.6, the first stage
 to 92.7, GPQA to 77.5 and LiveCodeBench to 63.2, all above SFT by more than their intervals. Answers are the shortest of any stage
 (5,152 tokens on average). Two things did not move. Refusals stay at run 1's 45.7%, since RL v2 had no safety data
 either, and D-Report under the second judge is 58.0, which is still inside the noise of SFT's 49.0.
+
+A second seed lands close by on every set. It is evaluated at step 100, its last saved checkpoint (§8.3): D-Num-hard
+83.4, D-Fresh 87.3, D-Num 95.0, D-Code 90.8, GPQA 77.9, LiveCodeBench 56.1, D-Report 62.5, refusals 49.0%
+(`docs/talk/data/run.json`; its code sets were graded again on the workstation, because the cluster's sandbox failed
+its start-up check and failed closed on every answer).
 
 ### 1.3 Where the samples go
 
@@ -971,25 +977,28 @@ the continuations of SFT's 41 and run 1's 12 cut-off answers ran together with R
 
 Run 1 passes at 16K and fails at 32K. It made the model faster and did not make it more reliable.
 
-**RL v2's first seed passes.** Step 110 of seed 1 on the same test:
+**RL v2 passes, with two seeds.** Seed 1 at step 110 and seed 2 at step 100 (its last saved checkpoint, see "How it
+runs" below) on the same test:
 
-| set (items) | budget | SFT | RL v2, seed 1 | RL v2 − SFT [95%] |
-|---|---|---|---|---|
-| D-Num-hard (160) | 16K | 47.8 | 67.1 | **+19.3** [+16.2, +22.3] |
-| | 32K | 68.1 | 86.5 | **+18.4** [+14.4, +22.4] |
-| | 64K | 83.9 | 90.2 | **+6.3** [+3.7, +9.1] |
-| D-Fresh (60) | 16K | 66.9 | 85.6 | **+18.8** [+12.1, +26.0] |
-| | 32K | 78.8 | 89.2 | **+10.4** [+5.2, +16.2] |
-| | 64K | 84.0 | 89.8 | **+5.8** [+1.7, +10.4] |
+| set (items) | budget | SFT | seed 1 | seed 2 | seed 1 − SFT [95%] | seed 2 − SFT [95%] | both seeds − SFT [95%] |
+|---|---|---|---|---|---|---|---|
+| D-Num-hard (160) | 16K | 47.8 | 67.1 | 71.8 | **+19.3** [+16.2, +22.3] | **+24.0** [+20.0, +28.1] | **+21.6** [+18.3, +25.0] |
+| | 32K | 68.1 | 86.5 | 83.4 | **+18.4** [+14.4, +22.4] | **+15.2** [+11.9, +18.7] | **+16.8** [+13.4, +20.3] |
+| | 64K | 83.9 | 90.2 | 88.2 | **+6.3** [+3.7, +9.1] | **+4.3** [+1.6, +7.1] | **+5.3** [+2.9, +7.8] |
+| D-Fresh (60) | 16K | 66.9 | 85.6 | 85.6 | **+18.8** [+12.1, +26.0] | **+18.8** [+11.9, +26.2] | **+18.8** [+12.1, +26.1] |
+| | 32K | 78.8 | 89.2 | 87.3 | **+10.4** [+5.2, +16.2] | **+8.5** [+3.5, +14.0] | **+9.5** [+4.4, +15.0] |
+| | 64K | 84.0 | 89.8 | 87.9 | **+5.8** [+1.7, +10.4] | +4.0 [−0.4, +8.8] | **+4.9** [+0.8, +9.5] |
 
-Source: `docs/talk/data/budgets_rl_v2_seed1_1118.json` (`python -m dpt.eval.budget compare`, then `table`). Its final
-evaluation on the cluster was still waiting in the queue, so these two sets ran on a workstation's four A100s with the
-same harness, prompts, settings and grader, and the 64K continuations with the same prompt and sampling.
+Source: `docs/talk/data/budgets_rl_v2_seeds12_1119.json` (`python -m dpt.eval.budget compare --pool
+rl_v2=rl_v2_seed1,rl_v2_seed2`, then `table`); "both seeds" averages each item's score over the two. Seed 1's final
+evaluation on the cluster was still waiting in the queue, so its sets ran on a workstation's A100s with the same
+harness, prompts, settings and grader, and the 64K continuations with the same prompt and sampling. Seed 2's ran on
+the cluster in its own job.
 
-At 32K both sets are above SFT by more than the noise, so the first seed passes. It is above SFT at the other two
-budgets as well. Run 1 was faster than SFT and fell behind it at 64K, where every model has room to finish. RL v2 is
-faster too, and it stays ahead at 64K. So it made the model more reliable as well as faster. Seeds 2 and 3 will show
-whether another seed does the same.
+At 32K both seeds are above SFT by more than the noise on both sets, so RL v2 passes. They are above SFT at 16K as
+well, and at 64K, where every model has room to finish, both are ahead on D-Num-hard and the pool is ahead on
+D-Fresh. Run 1 was faster than SFT and fell behind it at 64K. RL v2 is faster too, and it stays ahead at 64K. So it
+made the model more reliable as well as faster. Seed 3, which trains at 16K, is still queued.
 
 **The changes, each with the evidence behind it:**
 
@@ -1673,7 +1682,8 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   first seed trained 110 steps without collapsing and passes the test fixed before it ran. At 32K it is 18.4 points
   above SFT on D-Num-hard (86.5) and 10.4 on D-Fresh, both beyond the noise, mostly by finishing the answers SFT
   ran out of tokens on (§8.3, §8.6). D-Num (95.6), D-Code (92.7), GPQA (77.5) and LiveCodeBench (63.2) rose too;
-  refusals did not recover (45.7%), and D-Report under the second judge (58.0) is inside the noise (§1.2).
+  refusals did not recover (45.7%), and D-Report under the second judge (58.0) is inside the noise (§1.2). A second
+  seed passes as well; the two pooled are +16.8 [+13.4, +20.3] on D-Num-hard and +9.5 [+4.4, +15.0] on D-Fresh (§8.3).
 - **Rewards.** The programmatic rewards agree with the evaluation grader on 99.3–100% of answers. The judged
   report reward is lenient (precision 7% with an independent judge as the reference, at a pass mark of 70),
   and its rubrics are compound (91% of criteria join several claims). There is no judge drift (§6.5).
@@ -1696,11 +1706,10 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   RL step 20 a 60.0% win rate against the base, between Gemma (86.7%) and Luna (45.0%) on the same pairs (§8.5).
 - **Not measured yet:**
   - human gold labels for any reward or test (a model review stood in, §8.5);
-  - a second seed (RL v2's seed 2 is training and seed 3 is queued), and any scaling curve in data, model size or
-    RL steps;
+  - a third seed (RL v2's seed 3, at 16K, is queued), and any scaling curve in data, model size or RL steps;
   - the 27 unclear refusal answers;
   - the cause of run 1's collapse;
-  - RL v2's seeds 2 and 3, and the three seeds pooled (§8.3).
+  - RL v2's seed 3, and the three seeds pooled (§8.3).
 
 ---
 
