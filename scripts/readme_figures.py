@@ -763,19 +763,23 @@ def draw_two_judges(results: dict, language: str) -> None:
     figure, (win_rate_axes, drift_axes) = plt.subplots(
         1, 2, figsize=(12.4, 4.1), gridspec_kw={"width_ratios": [1, 1.25], "wspace": 0.22})
     bar_width = 0.32
+    judged_models = [model for model in ("sft", "rl_seed1", rl_v2_key)
+                     if "by_judge" in (results["run"]["eval"]["runs"].get(model, {}).get("sets", {}).get("d_report")
+                                       or {})]
     for judge_index, judge in enumerate(("primary", "second")):
         scores, halfwidths = [], []
-        for model in ("sft", "rl_seed1"):
+        for model in judged_models:
             judge_result = eval_set_result(results, model, "d_report")["by_judge"][judge]
             scores.append(judge_result["score"])
             halfwidths.append(judge_result["ci"]["halfwidth"])
-        positions = [model_index + (judge_index - 0.5) * (bar_width + 0.03) for model_index in range(2)]
+        positions = [model_index + (judge_index - 0.5) * (bar_width + 0.03)
+                     for model_index in range(len(judged_models))]
         win_rate_axes.bar(positions, scores, width=bar_width, color=judge_color[judge], zorder=2,
                           label=text["judge"][judge])
         win_rate_axes.errorbar(positions, scores, yerr=halfwidths, fmt="none", ecolor=ink_color, elinewidth=1.0,
                                capsize=2.5, zorder=3)
     win_rate_axes.axhline(50, color=ink_color, linewidth=1.0, linestyle="--", zorder=1)
-    win_rate_axes.set_xticks([0, 1], [text["model"]["sft"], text["model"]["rl_seed1"]])
+    win_rate_axes.set_xticks(range(len(judged_models)), [text["model"][model] for model in judged_models])
     win_rate_axes.tick_params(axis="x", length=0)
     win_rate_axes.set_ylim(0, 100)
     win_rate_axes.set_ylabel(text["win_rate"])
@@ -858,12 +862,15 @@ def draw_failure_causes(results: dict, language: str) -> None:
 def draw_refusals(results: dict, language: str) -> None:
     text = label_text[language]
     refusal_runs = results["refusal"]["runs"]
+    figure_models = [model for model in model_keys + (rl_v2_key,) if model in refusal_runs]
+    bar_width = 0.8 / len(figure_models)
     figure, panel_axes = plt.subplots(1, 2, figsize=(10.5, 3.9), gridspec_kw={"wspace": 0.25})
     for axes, prompt_group, y_limit in ((panel_axes[0], "should_refuse", 100), (panel_axes[1], "benign", 10)):
-        for model_index, model in enumerate(model_keys):
+        for model_index, model in enumerate(figure_models):
             detector_rates = [refusal_runs[model][prompt_group][detector] for detector in ("strict", "broad")]
-            positions = [detector_index + (model_index - 1) * 0.27 for detector_index in range(2)]
-            axes.bar(positions, detector_rates, width=0.25, color=model_color[model], zorder=2,
+            offset = (model_index - (len(figure_models) - 1) / 2) * (bar_width + 0.02)
+            positions = [detector_index + offset for detector_index in range(2)]
+            axes.bar(positions, detector_rates, width=bar_width, color=model_color[model], zorder=2,
                      label=text["model"][model])
         axes.set_xticks([0, 1], [text["strict"], text["broad"]])
         axes.tick_params(axis="x", length=0)
@@ -871,7 +878,8 @@ def draw_refusals(results: dict, language: str) -> None:
         axes.set_xlabel(text[prompt_group])
         add_horizontal_grid(axes)
     panel_axes[0].set_ylabel(text["refused"])
-    panel_axes[0].legend(ncol=3, loc="lower left", bbox_to_anchor=(0.0, 1.0), handlelength=1.0, columnspacing=1.4)
+    panel_axes[0].legend(ncol=len(figure_models), loc="lower left", bbox_to_anchor=(0.0, 1.0), handlelength=1.0,
+                         columnspacing=1.2)
     save_figure(figure, "refusals", language)
 
 
@@ -1103,12 +1111,17 @@ def draw_rl_runs_compared(results: dict, language: str) -> None:
     figure, panel_axes = plt.subplots(1, 3, figsize=(14.5, 4.0), gridspec_kw={"wspace": 0.28})
     for axes, (key, axis_label, scale, y_scale) in zip(panel_axes, panels):
         ends = {}
-        for run in ("run1", "rl_v2_seed1"):
+        for run in ("run1", "rl_v2_seed1", "rl_v2_seed2"):
+            if run not in compared["per_step"]:
+                continue
             rows = compared["per_step"][run]
             values = rolling_mean([r.get(key) for r in rows])
             points = [(r["lr_sum"], scale * v) for r, v in zip(rows, values) if v is not None and v > 0]
-            axes.plot([x for x, _ in points], [y for _, y in points], color=run_color[run], linewidth=2.0, zorder=3)
-            ends[run] = points[-1]
+            seed2 = run == "rl_v2_seed2"                  # dashed, unlabelled: it repeats seed 1
+            axes.plot([x for x, _ in points], [y for _, y in points], color=run_color["rl_v2_seed1" if seed2 else run],
+                      linewidth=1.6 if seed2 else 2.0, linestyle="--" if seed2 else "-", zorder=3)
+            if not seed2:
+                ends[run] = points[-1]
         # direct labels at the line ends, pushed apart when the two ends nearly meet
         label_y = {run: y for run, (_, y) in ends.items()}
         if y_scale == "linear" and abs(label_y["run1"] - label_y["rl_v2_seed1"]) < 7:

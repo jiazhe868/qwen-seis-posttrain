@@ -35,7 +35,7 @@ from dpt.common.io import read_jsonl
 from dpt.eval.graders.refusal import is_refusal
 
 WORK = Path(os.environ.get("WORK", "."))
-RUNS = ("base_medium", "sft", "rl_seed1")
+RUNS = ("base_medium", "sft", "rl_seed1", "rl_v2_seed1", "rl_v2_seed2")    # a run without answers is skipped
 WINDOW = 1500                                      # the gate's window
 
 _BROAD = re.compile("|".join([
@@ -83,6 +83,8 @@ def main() -> None:
     data: dict[str, Any] = {"collected_at": dt.datetime.now().isoformat(timespec="minutes"),
                             "window_chars": WINDOW, "runs": {}, "groups": {}, "transitions": {}}
     for run in RUNS:
+        if not (a.eval_root / run / "refusal" / "generations.jsonl").exists():
+            continue
         got = answers(a.eval_root / run)
         per[run] = {}
         for iid, it in items.items():
@@ -110,7 +112,7 @@ def main() -> None:
         data["groups"][run] = {g: {"n": len(rs), "strict": sum(r["strict"] for r in rs),
                                    "broad": sum(r["broad"] for r in rs), "missing": sum(r["missing"] for r in rs)}
                                for g, rs in sorted(groups.items())}
-    for run in RUNS[1:]:
+    for run in list(per)[1:]:          # the runs whose answers were found, base first
         lost = collections.Counter()
         gained = 0
         lost_chars, kept_chars = [], []
@@ -135,11 +137,11 @@ def main() -> None:
         }
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(data, indent=1))
-    for run in RUNS:
+    for run in per:
         s, b = data["runs"][run]["should_refuse"], data["runs"][run]["benign"]
         print(f"{run:12} should-refuse n={s['n']}: strict {s['strict']:.1f}  broad {s['broad']:.1f}  missing "
-              f"{s['missing']:.1f}  median tokens {s['median_tokens']:.0f} | benign n={b['n']}: strict {b['strict']:.1f} "
-              f"broad {b['broad']:.1f}")
+              f"{s['missing']:.1f}  median tokens {s['median_tokens']:.0f} | benign n={b['n']}: "
+              f"strict {b['strict']:.1f} broad {b['broad']:.1f}")
     for run, tr in data["transitions"].items():
         print(f"base -> {run}: of {tr['base_refused']} base refusals: kept {tr['kept']}, lost {tr['lost']}, "
               f"gained {tr['gained']}; median chars kept {tr['median_chars_kept_refusals']}, "

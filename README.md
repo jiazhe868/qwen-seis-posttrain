@@ -101,8 +101,9 @@ and +8.5 on D-Fresh at 32K), and seed 3 is queued.
 
 Most of the month went to systems. The one 8-node job ran 71.9 hours: 28.7 of them ran the planned stages,
 and 43.2 went to incidents, waits and holds, 35.1 of those before SFT could start (§9.2). A 9B model on
-40 GB GPUs leaves no slack: the last pipeline stage peaked at 40,366 of 40,437 MiB (§5.3). Each incident
-left a test or a guard; the ones worth learning from are in [PITFALLS.md](PITFALLS.md).
+40 GB GPUs leaves no slack: the last pipeline stage peaked at 40,366 of 40,437 MiB (§5.3). RL v2 ran as two more
+8-node jobs of 43 and 22 hours, and its incidents cost seed 1's in-job evaluation and seed 2's last ten steps (§9).
+Each incident left a test or a guard; the ones worth learning from are in [PITFALLS.md](PITFALLS.md).
 
 ## Contents
 
@@ -136,11 +137,11 @@ catch them.
 | Teacher | Qwen3.8-27B (FP8): writes the SFT solutions and reports and votes in problem verification |
 | Reward judge | Gemma 4 26B-A4B (FP8) on one A100: the T3 report reward, verification votes, data checks |
 | Second judge | GPT-6 Luna (API), evaluation only: D-Report's second judge, the judge-drift audit, the failure labels. Its outputs never enter training data |
-| RL bank | 36,884 problems kept of 57,037 generated (§4): 25,588 numeric (T1), 2,495 code (T2), 1,193 report (T3), 7,608 general (T4) |
+| RL bank | run 1: 36,884 problems kept of 57,037 generated (§4): 25,588 numeric (T1), 2,495 code (T2), 1,193 report (T3), 7,608 general (T4). RL v2: 13,075 problems graded by the SFT model: 7,433 numeric, 2,442 code, 3,200 general (§8.3) |
 | SFT mix | 13,095 conversations, 44.1M tokens: 8,776 numeric solutions, 1,301 tool-use trajectories, 554 reports, 2,464 general answers written by the base model itself (§4.5) |
-| RL | group-mean advantages over 8 samples, 126 prompts per step, PPO clip 0.2 / 0.28, no KL term, 16K-token responses; 56 of 120 planned steps ran, step 20 kept (§6) |
+| RL | run 1: group-mean advantages over 8 samples, 126 prompts per step, PPO clip 0.2 / 0.28, no KL term, 16K-token responses; 56 of 120 planned steps ran, step 20 kept (§6). RL v2: the same algorithm at half the learning rate, 24K-token responses, a cut-off answer counted wrong; two seeds of 110 steps, seed 2 evaluated at step 100 (§8.3) |
 | Hardware | 8 nodes of 3 × A100-PCIe-40GB each, no NVLink, InfiniBand between nodes, Slurm. Training TP1 × PP8 × DP3 on 8 nodes; rollout on 24 one-GPU vLLM replicas on the same GPUs |
-| Compute | ~756 node-hours from 2026-10-13 to 11-11; 575 of them in one 71.9-hour 8-node job (§9.2) |
+| Compute | ~1,290 node-hours from 2026-10-13 to 11-19: 575 in run 1's 71.9-hour 8-node job and 521 in RL v2's two 8-node jobs (§9.2) |
 | Evaluation | 5 domain sets frozen before training (770 items), 5 general benchmarks, a 650-prompt refusal set; 95% intervals, a 10-seed noise floor (§3) |
 
 ### 1.2 Results by stage
@@ -375,9 +376,10 @@ Two kinds of gate decide what happens next, both fixed in advance:
   holds the job until a person says go or stop. SFT failed it (D-Num −2.2; D-Report not above base under
   the lower judge), and the go had been given in advance.
 - **Eight ship gates** (after RL), with the thresholds of the reference plan this project started from.
-  Two pass: general capability (+7.5, allowed down to −1.0) and cost (0.38× the base's tokens, allowed up
-  to 1.3×). D-Num needed base + 8, i.e. 99.6, which no model can reach on a saturated set. That was known
-  before RL. A new threshold has to be fixed before the next run's results exist.
+  For run 1's step 20, two pass: general capability (+7.5, allowed down to −1.0) and cost (0.38× the base's
+  tokens, allowed up to 1.3×). D-Num needed base + 8, i.e. 99.6, which no model can reach on a saturated set.
+  That was known before RL, and no new threshold was fixed before RL v2's results came in, so RL v2 was judged
+  against the same bar: its seeds pass five and six of the eight gates and miss D-Num at 95.6 and 95.0 (§1.2).
 
 Caveats, plainly:
 - D-Num-hard rests on 160 problems from 8 families, and two families decide much of its spread (§8.1).
@@ -761,15 +763,18 @@ stronger judge, or criteria split into smaller checks.
 
 <p align="center"><img src="assets/two_judges_en.png" width="92%"></p>
 
-Left: D-Report win rates over the base by judge, with 95% intervals; the dashed line is a tie. Right: the
-mean score of the same T3 dev answers under both judges at dev steps 0, 20 and 40
+Left: D-Report win rates over the base by judge, with 95% intervals; the dashed line is a tie. RL v2 is seed 1,
+whose answers were judged by Gemma on the workstation and by Luna from the cluster's login node. Right: the mean
+score of the same T3 dev answers under both judges at dev steps 0, 20 and 40 of run 1
 (`scripts/slurm/judge_drift.sh`, `docs/talk/data/judge_drift.json`).
 
 **On the evaluation.** Gemma prefers the SFT model's reports to the base's, 80 wins to 8 (86.0%), and the RL
 model's, 84 to 7 (88.5%). Luna scores both as ties with the base (49.0%). The two judges agree on 43–45% of
 the pairs. Pairs are judged in both orders, so a constant leniency cancels, and what is left is a
 disagreement about which report is better. The SFT report data was rejection-sampled with Gemma (§4.5), so
-SFT most likely learned Gemma's taste. The gate takes the lower of the two judges for exactly this case.
+SFT most likely learned Gemma's taste. The gate takes the lower of the two judges for exactly this case. RL v2,
+which never trained on reports, gets 89.0% from Gemma and 58.0% from Luna, and its second seed 95.0% and 62.5%:
+Luna's verdicts rose too, though still inside the noise of SFT's 49.0%.
 
 **For drift during RL.** If RL learned to please its judge, Gemma's score of the dev answers would rise, and
 the gap to Luna would widen. From step 0 to 40, Gemma's score fell and the gap narrowed: Gemma −5.0
@@ -790,15 +795,15 @@ own side channels need watching as closely as the judge.**
 
 The scores in §1.2 hide a change of failure mode (figure in §1.3). On D-Num-hard's 1,280 answers per model:
 
-| | base | SFT | RL step 20 |
-|---|---|---|---|
-| right | 793 | 872 | 897 |
-| unfinished within 32K | 421 | 361 | 211 |
-| wrong value | 15 | 46 | 161 |
-| format (several answers, none, unit) | 51 | 1 | 11 |
-| mean tokens per answer | 25.8K | 19.1K | 14.2K |
-| pass@8 (any of 8 right) | 75.0 | 87.5 | 91.9 |
-| right with 64K tokens (§7.3) | 69.8% | 83.9% | 77.5% |
+| | base | SFT | RL step 20 | RL v2 seed 1 |
+|---|---|---|---|---|
+| right | 793 | 872 | 897 | 1,107 |
+| unfinished within 32K | 421 | 361 | 211 | 81 |
+| wrong value | 15 | 46 | 161 | 86 |
+| format (several answers, none, unit) | 51 | 1 | 11 | 6 |
+| mean tokens per answer | 25.8K | 19.1K | 14.2K | 12.9K |
+| pass@8 (any of 8 right) | 75.0 | 87.5 | 91.9 | 100.0 |
+| right with 64K tokens (§7.3) | 69.8% | 83.9% | 77.5% | 90.2% |
 
 Each stage made the model finish more often, and each one turned part of the newly finished answers into
 wrong values. On D-Num-hard the net effect is positive, because the base ran out of tokens on a third of its
@@ -807,6 +812,11 @@ reliable. On two families that SFT had nearly solved, RL lost ground: rupture le
 from 94.4 to 86.9, and Mw from a spectral plateau from 95.6 to 85.6. On D-Num little was unfinished, so
 there the same shift is a loss: wrong values rose from 1.5% (base) to 4.1% (SFT) and 8.6% (RL) of the
 samples.
+
+RL v2 breaks the pattern. It leaves only 81 answers unfinished, and it turns far fewer of the newly finished ones
+into wrong values than run 1 did: 86, against 161. It gets 1,107 of the 1,280 right and solves every problem at
+least once in 8 tries. On D-Num its wrong values fall to 3.9% of the samples, below SFT's 4.1% (seed 1,
+`docs/talk/data/rl_v2_seed1_local_1118.json`; §8.6 asks why).
 
 ### 7.2 Execution or concept?
 
@@ -851,13 +861,15 @@ leave out science, and more practice at finishing would not supply it.
 ### 7.3 What more samples and more tokens buy
 
 Test-time compute is the one scaling axis this project measured well (figure in §3.3).
-- **Votes.** With one sample, the three models score from 89.4 to 92.2 on D-Num, and with 8 votes they
+- **Votes.** With one sample, the base, SFT and run 1 score from 89.4 to 92.2 on D-Num, and with 8 votes they
   reach 98.9–99.6% (64 samples per item; `docs/talk/data/research_1110.json`). RL's errors concentrate on
   about 30 of the 300 items, where 30–60% of its samples are right.
-- **Tokens.** At a 16K budget, the base is right on 55.4% of D-Num samples and 13.0% of D-Num-hard, and RL
-  on 84.8% and 58.0%. At the full 32K the base catches up on D-Num (base 92.0, RL 90.0).
-- **Any of k.** On D-Num-hard, pass@8 rises 75.0 → 87.5 → 91.9 through the stages, and avg@8 rises
-  62.0 → 70.1. So training made right answers more reachable before it made them reliable.
+- **Tokens.** At a 16K budget, the base is right on 55.4% of D-Num samples and 13.0% of D-Num-hard, run 1
+  on 84.8% and 58.0%, and RL v2 on 92.6% and 67.1%. At the full 32K the base catches up with run 1 on D-Num
+  (base 92.0, run 1 90.0), and RL v2 stays ahead (95.6).
+- **Any of k.** On D-Num-hard, pass@8 rises 75.0 → 87.5 → 91.9 through the first three stages, and avg@8 rises
+  62.0 → 70.1. So training made right answers more reachable before it made them reliable. RL v2 does both:
+  pass@8 100.0 and avg@8 86.5.
 - **Twice the room.** I let every D-Num-hard answer that was cut off at 32K continue to 64K tokens, with the
   same model and the same sampling. A 64K sample is the same as a 32K sample up to token 32K, so this costs a
   quarter of a fresh run (`scripts/talk/numhard_continue.py`, `docs/talk/data/numhard_64k.json`).
@@ -894,13 +906,13 @@ answer. A broader lexicon adds any verb after "I can't / won't", "sorry … can'
 and Chinese variants; it is an upper bound, since it also counts disclaimers inside answers that comply
 (`scripts/talk/refusal_breakdown.py`, `docs/talk/data/refusal.json`).
 
-| should-refuse rate (%) | base | SFT | RL step 20 |
-|---|---|---|---|
-| strict (the gate's detector) | 56.0 | 51.3 | 45.7 |
-| broad (upper bound) | 77.7 | 75.3 | 70.0 |
-| JailbreakBench harmful requests (100), strict / broad | 49 / 92 | 48 / 91 | 42 / 87 |
-| XSTest unsafe look-alikes (200), strict / broad | 59.5 / 70.5 | 53.0 / 67.5 | 47.5 / 61.5 |
-| benign over-refusal (350), strict / broad | 3.4 / 6.0 | 4.0 / 6.3 | 2.6 / 5.4 |
+| should-refuse rate (%) | base | SFT | RL step 20 | RL v2 seed 1 | RL v2 seed 2 |
+|---|---|---|---|---|---|
+| strict (the gate's detector) | 56.0 | 51.3 | 45.7 | 45.7 | 49.0 |
+| broad (upper bound) | 77.7 | 75.3 | 70.0 | 72.3 | 73.7 |
+| JailbreakBench harmful requests (100), strict / broad | 49 / 92 | 48 / 91 | 42 / 87 | 42 / 91 | 42 / 89 |
+| XSTest unsafe look-alikes (200), strict / broad | 59.5 / 70.5 | 53.0 / 67.5 | 47.5 / 61.5 | 47.5 / 63.0 | 52.5 / 66.0 |
+| benign over-refusal (350), strict / broad | 3.4 / 6.0 | 4.0 / 6.3 | 2.6 / 5.4 | 2.9 / 4.9 | 4.0 / 6.3 |
 
 The drop is real. Even under the upper-bound detector it is 7.7 points, and the gate allows ±2 points.
 About a quarter of the strict drop is the model refusing in new words that the gate's list misses. The
@@ -910,6 +922,12 @@ language 23 → 23 → 16). Over-refusal of benign prompts also fell, so post-tr
 answering. Of the base's 168 strict refusals, RL keeps 105, rewords 36, and turns 27 into answers that
 neither detector reads as a refusal; it also refuses 32 new prompts. Whether those 27 answers are
 compliance or a safe completion needs a reader.
+
+RL v2 did not bring the refusals back, which is what one would expect, since it had no safety data either. Its two
+seeds refuse 45.7% and 49.0% of the should-refuse prompts under the gate's detector, and 72.3% and 73.7% under the
+broad one: a little above run 1 on the broad count, and still 4 to 5 points below the base. The loss sits on the same
+kind of prompt. XSTest's definitions are refused 14 and 15 times of 25 (base 25), and plainly harmful requests about
+as often as run 1 does.
 
 **A safety detector must be fixed before a run's results.** Widening it after the drop is visible would
 let the measurement absorb the regression.
@@ -925,13 +943,14 @@ let the measurement absorb the regression.
 | D-Num | solver gold, an independent strict grader, tight interval (±1.0), a measured noise floor | **saturated**: 92% with one sample, 99.6% with 8 votes, so its score moves with reliability and format; the base + 8 gate is unreachable |
 | D-Num-hard | separates the models (62 / 68 / 70); no family seen in training | rides on two near-floor families; mixes knowledge with finishing in 32K, and at 64K the SFT model leads (§7.3); RL − SFT is inside the noise at 32K |
 | D-Fresh | written after the model's release, so contamination is excluded; separates the models | 60 problems, written and checked by models only; part of the gain is finishing |
-| D-Code | objective hidden tests | the sandbox had infrastructure failures in October (fixed); SFT's long answers are cut off 8% of the time |
+| D-Code | objective hidden tests | the sandbox had infrastructure failures in October and again on one node in November ([PITFALLS](PITFALLS.md) C8); a set with more than 5% sandbox errors now gets no score; SFT's long answers are cut off 8% of the time |
 | D-Report | a realistic task; a second judge that never trains; both orders; a length-matched subset | the judges disagree on 55–57% of pairs; one sample per question; no human gold |
 | general | public, comparable, would catch a broad regression | confounded by finishing: the base is cut off on 38% of GPQA and 61% of LiveCodeBench; MMLU-Pro failed a memorization probe (6.2%), so only its change counts |
 | refusal | caught a real drop | crude word lists 20 points apart; 27 answers need a reader |
 
-What the suite lacks: human gold labels anywhere (a model review stood in for a person, §8.5), a second
-training seed (one is queued, §8.3), more than one sample per D-Report question, and more than one effort level
+What the suite lacks: human gold labels anywhere (a model review stood in for a person, §8.5), a third
+training seed (RL v2's seeds 1 and 2 agree within 0.7 points on D-Num; seed 3 is queued, §8.3), more than one sample
+per D-Report question, and more than one effort level
 and budget. Without the last, accuracy and efficiency mix in every
 score: a model that thinks less finishes more often.
 
@@ -941,8 +960,11 @@ What the results mean, in one line each:
 - RL bought speed: 41% fewer tokens again and more problems solved at least once. Its single answers are
   wrong more often, so it did not buy reliability.
 - D-Report shows no gain under the independent judge, and refusals fell for real.
-- Post-training made the 9B faster and more likely to finish hard multi-step problems. It has not shown new
-  domain knowledge or better reports.
+- RL v2 bought reliability as well as speed: on two seeds it is 15 to 18 points above SFT on D-Num-hard at 32K and
+  still ahead at 64K, and D-Num, D-Code, GPQA and LiveCodeBench rose too (§8.3).
+- Post-training made the 9B faster and more likely to finish hard multi-step problems, and RL v2 made it right more
+  often as well. It has not shown new domain knowledge, and the reports' gain is inside the noise (58.0 and 62.5
+  against SFT's 49.0).
 
 ### 8.2 Should the 9B line add mid-training?
 
@@ -1515,7 +1537,8 @@ stopped (103, at step 56).
 
 Both runs against the sum of their learning rates so far: the share of the gradient that comes from numeric
 problems, the share of numeric groups whose answers differ, and the length of right numeric answers (log scale).
-5-step means; the dotted line is run 1's collapse at step 40 (`docs/talk/data/rl_runs_compared.json`,
+5-step means; the dashed line is RL v2's seed 2; the dotted line is run 1's collapse at step 40
+(`docs/talk/data/rl_runs_compared.json`,
 `scripts/talk/rl_compare.py`).
 
 **The training curves.** Rewards, entropy and the train/rollout KL tell the same story from the trainer's side.
@@ -1615,7 +1638,8 @@ too. So what RL v2 learned on the training families carried over to the held-out
   started with, and stayed stable. What fills the rest of the step matters more.
 
 Caveats, plainly:
-- one seed so far; seeds 2 and 3 are still training;
+- two seeds so far, seed 2 evaluated at step 100 and with a code reward that was partly broken (C8); seed 3 is
+  queued;
 - the hard dev split holds new problems from the training families; D-Num-hard's families are held out, and there
   the gain is smaller (the table above);
 - without a control run, the bank and the rule cannot be told apart; the comparison only says that both changed
@@ -1675,6 +1699,12 @@ finished steps, and let a small supervisor end the paused copy once the new one 
 **On a shared machine the queue sets the pace. Design the job so that a failure costs minutes of the
 allocation and the job keeps its nodes.**
 
+RL v2 ran as two more 8-node jobs. Seed 1's ran 43.2 hours: about 22 to build bank v2 and test the 24K budget, 8 of
+them stalled by a login node's thread limit ([PITFALLS](PITFALLS.md) C6), 20 to train its 110 steps, and 1 in a final
+evaluation that never started (E4). Seed 2's ran 22.0 hours: 19 to train and 3 to evaluate, with a lost step-110
+save (C7) and a broken sandbox on one node (C8). Since October 13 the project has used about 1,290 node-hours, or
+3,737 SU (`docs/talk/data/run.json`, `compute`).
+
 ### 9.3 The incidents
 
 Every incident below was caught by a measurement, fixed, and given a test or a guard. Each is written up
@@ -1694,6 +1724,10 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
 | verl ignored `optim.betas` and validated with no validation set | Adam β2 0.999 instead of 0.95; a crash at step 50 | set on Megatron directly; `test_freq: -1` (C3) |
 | verl's driver started a Ray of its own | RL saw 3 of 24 GPUs | `RAY_ADDRESS` exported; token auth on every Ray process |
 | MTP drafting kept a CPU copy of every weight | the step-1 checkpoint save ran the last node out of host memory | drafting off in rollout, vLLM sleeps at level 2 (B4) |
+| a login node's thread limit travelled with the job | bank v2's decontamination ran on one core of 128; 8 hours of seed 1's job | the running processes raised to 56 threads with a debugger; the job script sets the embedding clients' threads (C6) |
+| five model servers never started in seed 1's final evaluation | it waited an hour and died; it went back into the queue as a job of its own | a missing server is launched again, and the evaluation goes on with two thirds (E4) |
+| 24 ranks created one checkpoint folder on the shared file system | seed 2's step-110 save failed; steps 101-110 were lost | the folder creation retries (C7) |
+| one node's sandbox failed its container check and kept the failure | about one code answer in eight scored 0 for seed 2's whole run, and its evaluation scored D-Code 0.0 | a failed check is retried; the evaluation needs a warm sandbox; above 5% sandbox errors a set gets no score (C8) |
 
 ---
 
@@ -1799,7 +1833,8 @@ qwen-seis-posttrain/
 ├── scripts/
 │   ├── 00_setup_env.sh … 08_audit.sh   # the stages as plain scripts, any machine
 │   ├── slurm/            # Slurm job scripts: the campaign and RL v2's three seeds as one 8-node job each, the knowledge data (README.md has the commands)
-│   ├── talk/            # analyses behind the reports: collection, failure types, judge drift, refusals, the RL v2 watch page
+│   ├── talk/            # analyses behind the reports: collection, the run comparison, the one-question example,
+│   │                    #   failure types, judge drift, refusals, the RL v2 watch page
 │   └── readme_figures.py   # every figure in this README
 ├── tests/               # CPU unit tests, mirroring src/dpt
 ├── docs/
@@ -1817,6 +1852,10 @@ qwen-seis-posttrain/
 python scripts/readme_figures.py                     # all 20 figures, English and Chinese → assets/
 python scripts/readme_figures.py rl_steps            # one figure
 python scripts/talk/collect.py                       # on the cluster: refresh docs/talk/data/run.json from the run
+python scripts/talk/collect.py --eval-only rl_v2     # a run evaluated off the cluster (WORK=<its folder>)
+python scripts/talk/rl_compare.py                    # run 1 against RL v2: docs/talk/data/rl_runs_compared.json
+python scripts/talk/stage_example.py --model ...     # one question, every stage: docs/talk/data/stage_example.json
+python scripts/talk/refusal_breakdown.py             # refusals by detector and prompt kind: docs/talk/data/refusal.json
 ```
 
 The figures read `docs/talk/data/*.json` and nothing else. The two hand-recorded files
