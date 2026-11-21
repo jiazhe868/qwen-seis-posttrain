@@ -23,6 +23,8 @@ nanogpt-seis-posttrain PITFALLS F2, where figures drifted away from the logs the
 - docs/talk/data/stage_example.json: one new question answered 16 times by every model (scripts/talk/stage_example.py)
 - docs/talk/data/rl_v2_seed1_local_1118.json: RL v2 seed 1 on D-Num-hard and D-Fresh, run on the workstation while its
   final evaluation waited for the cluster (scripts/talk/collect.py --eval-only); run.json's own results replace it
+- docs/talk/data/large_models_1120.json: RL v2 against Qwen3.8-27B and Qwen3.5-122B-A10B on D-Num-hard at 16K and 32K
+  (scripts/talk/large_models.py)
 
 Colours follow the talk deck (scripts/talk/render.py), whose categorical slots were checked with the
 data-viz palette validator: models are base grey, SFT blue, RL orange; tasks T1 blue, T2 orange,
@@ -77,6 +79,9 @@ planned_time_color, lost_time_color = "#2a78d6", "#e87ba4"
 length_only_color = "#c3c2b7"           # gradient from the length penalty alone, not from right against wrong
 partial_level_color = "#9fdcc3"         # a three-level judge's "partial", a tint of the judge's green
 run_color = {"run1": model_color["rl_seed1"], "rl_v2_seed1": model_color["rl_v2_seed1"]}   # run 1 keeps RL's orange
+# the larger Qwen models in a cool grey ramp, darker for the larger one (the base model keeps the warm grey)
+larger_model_color = {"rl_v2": model_color["rl_v2_seed1"], "sft": model_color["sft"],
+                      "qwen38_27b_nvfp4": "#7d8c99", "qwen35_122b_int4": "#3f4d5a"}
 
 # ---------------------------------------------------------------------------
 # the only words in the figures, in both languages
@@ -89,6 +94,10 @@ label_text = {
         "workflow_score": "D-Num-hard", "workflow_tokens": "tokens / answer",
         "conversations": "conversations", "problems": "problems",
         "score": "score", "tokens_thousands": "tokens (K)",
+        "larger_model": {"rl_v2": "RL v2, 9B (ours)", "sft": "SFT, 9B (ours)",
+                         "qwen38_27b_nvfp4": "Qwen3.8-27B (teacher)", "qwen35_122b_int4": "Qwen3.5-122B-A10B"},
+        "larger_budgets": ["16K cap", "32K cap"], "larger_score": "D-Num-hard, % right",
+        "larger_tokens": "tokens per answer (K)",
         "domain_sets": ["D-Num", "D-Num-hard", "D-Fresh", "D-Code"],
         "general_sets": ["GPQA", "MMLU-Pro", "IFEval", "LiveCode", "tools"],
         "percent_right": "% right", "budget_thousands": "token budget (K)", "samples_k": "samples (k)",
@@ -146,6 +155,10 @@ label_text = {
         "workflow_score": "D-Num-hard", "workflow_tokens": "每个回答的 token",
         "conversations": "条对话", "problems": "道题",
         "score": "得分", "tokens_thousands": "token 数（千）",
+        "larger_model": {"rl_v2": "RL v2，9B（我们的）", "sft": "SFT，9B（我们的）",
+                         "qwen38_27b_nvfp4": "Qwen3.8-27B（教师）", "qwen35_122b_int4": "Qwen3.5-122B-A10B"},
+        "larger_budgets": ["16K 上限", "32K 上限"], "larger_score": "D-Num-hard 答对 %",
+        "larger_tokens": "每个回答的 token 数 (K)",
         "domain_sets": ["D-Num", "D-Num-hard", "D-Fresh", "D-Code"],
         "general_sets": ["GPQA", "MMLU-Pro", "IFEval", "LiveCode", "工具调用"],
         "percent_right": "正确率（%）", "budget_thousands": "token 预算（千）", "samples_k": "样本数 k",
@@ -1287,6 +1300,57 @@ def draw_stage_outputs(results: dict, language: str) -> None:
     save_figure(figure, "stage_outputs", language)
 
 
+def draw_larger_models(results: dict, language: str) -> None:
+    """RL v2 and SFT against two larger Qwen models on D-Num-hard: % right at a 16K and a 32K cap with 95% item
+    intervals, and the mean output tokens per answer at the 32K cap (docs/talk/data/large_models_1120.json, written
+    by scripts/talk/large_models.py). The layout follows nanogpt-seis-posttrain's comparison with general models."""
+    text = label_text[language]
+    comparison = load_result_file("large_models_1120.json")
+    models = ["rl_v2", "sft", "qwen38_27b_nvfp4", "qwen35_122b_int4"]
+    budgets = ["at_16k", "at_32k"]
+    rows = comparison["rows"]
+
+    figure, (score_axes, token_axes) = plt.subplots(1, 2, figsize=(12.5, 4.6),
+                                                    gridspec_kw={"width_ratios": [2.6, 1.0], "wspace": 0.22})
+    bar_width = 0.19
+    middle = (len(models) - 1) / 2
+    for model_index, model in enumerate(models):
+        positions = [group + (model_index - middle) * (bar_width + 0.015) for group in range(len(budgets))]
+        scores = [rows[model][budget]["score"] for budget in budgets]
+        lower = [rows[model][budget]["score"] - rows[model][budget]["score_interval"]["low"] for budget in budgets]
+        upper = [rows[model][budget]["score_interval"]["high"] - rows[model][budget]["score"] for budget in budgets]
+        score_axes.bar(positions, scores, width=bar_width, color=larger_model_color[model], zorder=2)
+        score_axes.errorbar(positions, scores, yerr=[lower, upper], fmt="none", ecolor=ink_color, elinewidth=1.0,
+                            capsize=2.5, zorder=3)
+        for position, score, top in zip(positions, scores, upper):
+            # ours carry their own colour, as in the comparison this figure follows; the others stay in grey ink
+            score_axes.text(position, score + top + 1.2, f"{score:.1f}", ha="center", va="bottom", fontsize=11.5,
+                            fontweight="bold", color=larger_model_color[model] if model in ("rl_v2", "sft") else
+                            secondary_ink_color)
+    score_axes.set_xticks(range(len(budgets)), text["larger_budgets"])
+    score_axes.tick_params(axis="x", length=0, labelsize=13)
+    score_axes.set_ylim(0, 105)
+    score_axes.set_yticks([0, 20, 40, 60, 80, 100])
+    score_axes.set_ylabel(text["larger_score"])
+    add_horizontal_grid(score_axes)
+
+    tokens = [rows[model]["at_32k"]["mean_tokens"] / 1000 for model in models]
+    for model_index, (model, value) in enumerate(zip(models, tokens)):
+        token_axes.bar(model_index, value, width=0.62, color=larger_model_color[model], zorder=2)
+        token_axes.text(model_index, value + 0.4, f"{value:.1f}", ha="center", va="bottom", fontsize=11.5,
+                        fontweight="bold", color=larger_model_color[model] if model in ("rl_v2", "sft") else
+                        secondary_ink_color)
+    token_axes.set_xticks([])
+    token_axes.set_ylim(0, max(tokens) * 1.18)
+    token_axes.set_ylabel(text["larger_tokens"])
+    add_horizontal_grid(token_axes)
+
+    legend_handles = [plt.Rectangle((0, 0), 1, 1, color=larger_model_color[model]) for model in models]
+    figure.legend(legend_handles, [text["larger_model"][model] for model in models], ncol=len(models),
+                  loc="upper center", bbox_to_anchor=(0.5, 0.02), handlelength=1.0, columnspacing=1.6)
+    save_figure(figure, "larger_models", language)
+
+
 figure_drawers = {
     "workflow": draw_workflow_strip,
     "results_by_stage": draw_results_by_stage,
@@ -1308,6 +1372,7 @@ figure_drawers = {
     "rl_runs_compared": draw_rl_runs_compared,
     "rl_training_curves": draw_rl_training_curves,
     "stage_outputs": draw_stage_outputs,
+    "larger_models": draw_larger_models,
 }
 
 

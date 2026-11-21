@@ -42,8 +42,9 @@ def main() -> None:
         assert all(row in rows for row in kept_rows), f"{baseline_name}: a row is missing"
         for row_name in kept_rows:
             row = rows[row_name]
-            scores = {budget: {"score": row[budget]["score"], "outcomes_pct": row[budget]["outcomes_pct"]}
-                      for budget in kept_budgets}
+            # the score with its 95% item interval, the outcome shares, and the mean output tokens under the cap
+            kept_fields = ("score", "score_interval", "outcomes_pct", "mean_tokens")
+            scores = {budget: {key: row[budget][key] for key in kept_fields} for budget in kept_budgets}
             collected["rows"].setdefault(row_name, {"items": row["items"], **scores})
             if row_name != baseline_name:
                 # the paired difference row − baseline over the same 160 items, with its 95% interval

@@ -157,10 +157,14 @@ def row_samples(spec: SetSpec, run_dir: Path, *, verify: bool = True) -> tuple[l
 
 def three_budget_scores(spec: SetSpec, items: Sequence[EvalItem], gens: dict[str, list[Sample]],
                         continuations: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Per-item scores (% right over the item's samples) and outcome counts at 16K, 32K and 64K."""
+    """Per-item scores (% right over the item's samples), outcome counts and output tokens at 16K, 32K and 64K.
+
+    Tokens count what a sample would have cost under each cap: up to 16K at 16K, its own length at 32K (the eval's
+    cap), and at 64K its length plus the continuation's when it was continued."""
     grader = get_grader(spec.grader, **spec.grader_kwargs)
     per_item: dict[int, dict[str, float]] = {b: {} for b in THREE_BUDGETS}
     counts: dict[int, Counter[str]] = {b: Counter() for b in THREE_BUDGETS}
+    tokens: dict[int, list[int]] = {b: [] for b in THREE_BUDGETS}
     missing = 0
     for it in items:
         right: Counter[int] = Counter()
@@ -168,6 +172,7 @@ def three_budget_scores(spec: SetSpec, items: Sequence[EvalItem], gens: dict[str
             at_32k = outcome(s, it, grader)
             at_16k = at_32k if int(s.n_tokens) <= THREE_BUDGETS[0] else "unfinished"
             at_64k = at_32k
+            tokens_at_64k = int(s.n_tokens)
             if at_32k == "unfinished":
                 c = continuations.get(f"{it.id}|{i}")
                 if c is None:
@@ -176,12 +181,26 @@ def three_budget_scores(spec: SetSpec, items: Sequence[EvalItem], gens: dict[str
                     longer = Sample(text=s.text + c["text"], finish_reason=c.get("finish_reason") or "stop",
                                     n_tokens=int(s.n_tokens) + int(c.get("n_tokens") or 0))
                     at_64k = outcome(longer, it, grader)
+                    tokens_at_64k = longer.n_tokens
+            for b, used in zip(THREE_BUDGETS, (min(int(s.n_tokens), THREE_BUDGETS[0]), int(s.n_tokens), tokens_at_64k)):
+                tokens[b].append(used)
             for b, o in zip(THREE_BUDGETS, (at_16k, at_32k, at_64k)):
                 counts[b][o] += 1
                 right[b] += o == "right"
         for b in THREE_BUDGETS:
             per_item[b][it.id] = 100.0 * right[b] / max(1, len(gens[it.id]))
-    return {"per_item": per_item, "counts": counts, "missing_continuations": missing}
+    return {"per_item": per_item, "counts": counts, "missing_continuations": missing,
+            "mean_tokens": {b: float(np.mean(tokens[b])) if tokens[b] else float("nan") for b in THREE_BUDGETS}}
+
+
+def score_interval(per_item: dict[str, float], *, n_boot: int = 10000, seed: int = 1) -> dict[str, float]:
+    """The 95% bootstrap interval of a row's score (the mean over items), items resampled."""
+    values = np.array(list(per_item.values()), dtype=float)
+    if not len(values):
+        return {"low": float("nan"), "high": float("nan")}
+    means = values[np.random.default_rng(seed).integers(0, len(values), size=(n_boot, len(values)))].mean(axis=1)
+    low, high = np.percentile(means, [2.5, 97.5])
+    return {"low": round(float(low), 1), "high": round(float(high), 1)}
 
 
 def paired_interval(candidate: dict[str, float], baseline: dict[str, float], *, n_boot: int = 10000,
@@ -216,7 +235,8 @@ def pooled_scores(scored: Sequence[dict[str, Any]]) -> dict[str, Any]:
         per_item[b] = {i: float(np.mean([sc["per_item"][b][i] for sc in scored])) for i in sorted(common)}
         counts[b] = sum((sc["counts"][b] for sc in scored), Counter())
     return {"per_item": per_item, "counts": counts,
-            "missing_continuations": sum(sc["missing_continuations"] for sc in scored)}
+            "missing_continuations": sum(sc["missing_continuations"] for sc in scored),
+            "mean_tokens": {b: float(np.mean([sc["mean_tokens"][b] for sc in scored])) for b in THREE_BUDGETS}}
 
 
 def compare(cfg: dict[str, Any], root: Path, rows: Sequence[str], baseline: str, sets: Sequence[str], *,
@@ -251,6 +271,8 @@ def compare(cfg: dict[str, Any], root: Path, rows: Sequence[str], baseline: str,
                 n = sum(sc["counts"][b].values())
                 e[f"at_{b // 1024}k"] = {
                     "score": round(float(np.mean(list(sc["per_item"][b].values()))), 1),
+                    "score_interval": score_interval(sc["per_item"][b]),
+                    "mean_tokens": round(sc["mean_tokens"][b]),
                     "outcomes_pct": {o: round(100 * sc["counts"][b][o] / max(1, n), 1) for o in OUTCOMES}}
                 if row != baseline and baseline in scored:
                     iv = paired_interval(sc["per_item"][b], scored[baseline]["per_item"][b])

@@ -1,5 +1,5 @@
 {
- "written_at": "2026-11-20T18:26",
+ "written_at": "2026-11-20T19:19",
  "set": "d_num_hard",
  "samples_per_item": 8,
  "large_models": {
@@ -11,147 +11,217 @@
    "items": 160,
    "at_16k": {
     "score": 22.7,
+    "score_interval": {
+     "low": 18.4,
+     "high": 27.2
+    },
     "outcomes_pct": {
      "right": 22.7,
      "wrong_value": 0.1,
      "unfinished": 77.2,
      "format": 0.0
-    }
+    },
+    "mean_tokens": 15640
    },
    "at_32k": {
     "score": 82.0,
+    "score_interval": {
+     "low": 78.3,
+     "high": 85.4
+    },
     "outcomes_pct": {
      "right": 82.0,
      "wrong_value": 0.5,
      "unfinished": 14.8,
      "format": 2.7
-    }
+    },
+    "mean_tokens": 22425
    }
   },
   "qwen38_27b_nvfp4": {
    "items": 160,
    "at_16k": {
     "score": 59.6,
+    "score_interval": {
+     "low": 53.7,
+     "high": 65.5
+    },
     "outcomes_pct": {
      "right": 59.6,
      "wrong_value": 0.8,
      "unfinished": 39.5,
      "format": 0.1
-    }
+    },
+    "mean_tokens": 12413
    },
    "at_32k": {
     "score": 88.0,
+    "score_interval": {
+     "low": 84.9,
+     "high": 91.0
+    },
     "outcomes_pct": {
      "right": 88.0,
      "wrong_value": 1.2,
      "unfinished": 10.2,
      "format": 0.5
-    }
+    },
+    "mean_tokens": 15981
    }
   },
   "sft": {
    "items": 160,
    "at_16k": {
     "score": 47.8,
+    "score_interval": {
+     "low": 41.7,
+     "high": 54.0
+    },
     "outcomes_pct": {
      "right": 47.8,
      "wrong_value": 2.2,
      "unfinished": 49.9,
      "format": 0.1
-    }
+    },
+    "mean_tokens": 13098
    },
    "at_32k": {
     "score": 68.1,
+    "score_interval": {
+     "low": 62.2,
+     "high": 74.0
+    },
     "outcomes_pct": {
      "right": 68.1,
      "wrong_value": 3.6,
      "unfinished": 28.2,
      "format": 0.1
-    }
+    },
+    "mean_tokens": 19148
    }
   },
   "rl_seed1": {
    "items": 160,
    "at_16k": {
     "score": 58.0,
+    "score_interval": {
+     "low": 52.0,
+     "high": 64.1
+    },
     "outcomes_pct": {
      "right": 58.0,
      "wrong_value": 7.3,
      "unfinished": 34.3,
      "format": 0.3
-    }
+    },
+    "mean_tokens": 10157
    },
    "at_32k": {
     "score": 70.1,
+    "score_interval": {
+     "low": 64.8,
+     "high": 75.3
+    },
     "outcomes_pct": {
      "right": 70.1,
      "wrong_value": 12.6,
      "unfinished": 16.5,
      "format": 0.9
-    }
+    },
+    "mean_tokens": 14196
    }
   },
   "rl_v2_seed1": {
    "items": 160,
    "at_16k": {
     "score": 67.1,
+    "score_interval": {
+     "low": 61.0,
+     "high": 73.1
+    },
     "outcomes_pct": {
      "right": 67.1,
      "wrong_value": 2.8,
      "unfinished": 30.0,
      "format": 0.1
-    }
+    },
+    "mean_tokens": 10044
    },
    "at_32k": {
     "score": 86.5,
+    "score_interval": {
+     "low": 83.3,
+     "high": 89.5
+    },
     "outcomes_pct": {
      "right": 86.5,
      "wrong_value": 6.7,
      "unfinished": 6.3,
      "format": 0.5
-    }
+    },
+    "mean_tokens": 12886
    }
   },
   "rl_v2_seed2": {
    "items": 160,
    "at_16k": {
     "score": 71.8,
+    "score_interval": {
+     "low": 65.5,
+     "high": 77.9
+    },
     "outcomes_pct": {
      "right": 71.8,
      "wrong_value": 3.4,
      "unfinished": 24.7,
      "format": 0.1
-    }
+    },
+    "mean_tokens": 9199
    },
    "at_32k": {
     "score": 83.4,
+    "score_interval": {
+     "low": 79.2,
+     "high": 87.3
+    },
     "outcomes_pct": {
      "right": 83.4,
      "wrong_value": 7.8,
      "unfinished": 8.4,
      "format": 0.4
-    }
+    },
+    "mean_tokens": 11863
    }
   },
   "rl_v2": {
    "items": 160,
    "at_16k": {
     "score": 69.5,
+    "score_interval": {
+     "low": 63.3,
+     "high": 75.4
+    },
     "outcomes_pct": {
      "right": 69.5,
      "wrong_value": 3.1,
      "unfinished": 27.3,
      "format": 0.1
-    }
+    },
+    "mean_tokens": 9622
    },
    "at_32k": {
     "score": 84.9,
+    "score_interval": {
+     "low": 81.5,
+     "high": 88.2
+    },
     "outcomes_pct": {
      "right": 84.9,
      "wrong_value": 7.3,
      "unfinished": 7.4,
      "format": 0.4
-    }
+    },
+    "mean_tokens": 12374
    }
   }
  },
@@ -354,7 +424,7 @@
   }
  },
  "collected_at": {
-  "qwen35_122b_int4": "2026-11-20T17:31",
-  "qwen38_27b_nvfp4": "2026-11-20T17:31"
+  "qwen35_122b_int4": "2026-11-20T19:12",
+  "qwen38_27b_nvfp4": "2026-11-20T19:12"
  }
 }

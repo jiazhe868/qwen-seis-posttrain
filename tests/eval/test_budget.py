@@ -93,6 +93,10 @@ def test_one_32k_run_gives_three_budgets(tmp_path):
     assert sc["counts"][32768] == {"right": 2, "unfinished": 1, "wrong_value": 1}
     assert sc["counts"][16384]["unfinished"] == 2 and sc["missing_continuations"] == 0
     assert three_budget_scores(spec, items, gens, {})["missing_continuations"] == 1
+    # tokens a sample would cost under each cap: 16K caps the 20K and 32K answers; at 64K the cut one adds its 30
+    assert sc["mean_tokens"][16384] == (900 + 16384 + 16384 + 800) / 4
+    assert sc["mean_tokens"][32768] == (900 + 32768 + 20000 + 800) / 4
+    assert sc["mean_tokens"][65536] == (900 + 32798 + 20000 + 800) / 4
 
 
 def test_paired_comparison_with_sft_at_each_budget(tmp_path):
@@ -113,6 +117,9 @@ def test_paired_comparison_with_sft_at_each_budget(tmp_path):
     assert rl["at_64k"]["vs_baseline"]["diff"] == -12.5 and not rl["at_64k"]["vs_baseline"]["above_noise"]
     assert sft["at_64k"]["score"] == 100.0 and "vs_baseline" not in sft["at_32k"]
     assert sft["at_32k"]["outcomes_pct"] == {"right": 50.0, "wrong_value": 0.0, "unfinished": 50.0, "format": 0.0}
+    assert sft["at_32k"]["score_interval"] == {"low": 50.0, "high": 50.0}      # every item scores 50: no spread
+    assert rl["at_32k"]["score_interval"]["low"] <= 87.5 <= rl["at_32k"]["score_interval"]["high"]
+    assert sft["at_16k"]["mean_tokens"] == round((900 + 16384) / 2) and rl["at_32k"]["mean_tokens"] == 900
     assert rl["items"] == 4 and res["excluded"] == {"d_fresh": 0}
 
     # the screened subset (2026-11-14): flagged items are left out of every row and of the paired difference

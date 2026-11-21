@@ -636,6 +636,7 @@ def large_model_numbers(lm) -> dict[str, str]:
             v[f"Lg{m}{name}"] = f"{at['score']:.1f}"
             v[f"Lg{m}Unf{name}"] = f"{at['outcomes_pct']['unfinished']:.1f}"
             v[f"Lg{m}Wrong{name}"] = f"{at['outcomes_pct']['wrong_value']:.1f}"
+            v[f"Lg{m}Tokens{name}"] = f"{at['mean_tokens'] / 1000:.1f}"            # thousands of tokens per answer
     for baseline, bname in (("qwen35_122b_int4", "Big"), ("qwen38_27b_nvfp4", "Teacher")):
         for model, m in (("rl_v2", "P"), ("rl_v2_seed1", "V"), ("rl_v2_seed2", "W")):
             for b, name in budgets.items():
@@ -646,7 +647,7 @@ def large_model_numbers(lm) -> dict[str, str]:
     return v
 
 
-README_FIGS = ("rl_training_curves", "rl_runs_compared")    # README figures (scripts/readme_figures.py) the report uses
+README_FIGS = ("rl_training_curves", "rl_runs_compared", "larger_models")  # README figures the report uses
 
 
 def main() -> None:

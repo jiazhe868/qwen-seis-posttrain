@@ -252,6 +252,49 @@ One problem is not a test. It shows on one question what §1.3 and §7.1 measure
 mostly changed when the model stops thinking. Source: `docs/talk/data/stage_example.json`, written by
 `scripts/talk/stage_example.py`.
 
+### 1.5 Against larger models, scored the same way
+
+<p align="center"><img src="assets/larger_models_en.png" width="96%"></p>
+
+Two larger Qwen models answered D-Num-hard with the harness, prompts, effort setting, sampling (8 samples per problem
+at temperature 1) and grader of every model above, in 4-bit weights on a workstation's A100s: Qwen3.8-27B, the
+teacher that wrote the SFT solutions, and Qwen3.5-122B-A10B, the 9B's own generation with 13 times its parameters and
+10B of them active per token. Every answer is scored as if the cap had been 16K or 32K tokens, the same test that
+RL v2 passed against SFT (§8.3); the bars carry 95% intervals over the 160 problems, and tokens per answer are at the
+32K cap. Data: `docs/talk/data/large_models_1120.json`; script: `scripts/talk/large_models.py`.
+
+| model | parameters | right at 16K | right at 32K | unfinished at 32K | tokens per answer, 32K |
+|---|---|---|---|---|---|
+| **RL v2 (this model)** | **9B** | **69.5%** | 84.9% | 7.4% | **12.4K** |
+| SFT | 9B | 47.8% | 68.1% | 28.2% | 19.1K |
+| Qwen3.8-27B (teacher) | 27B | 59.6% | **88.0%** | 10.2% | 16.0K |
+| Qwen3.5-122B-A10B | 122B, 10B active | 22.7% | 82.0% | 14.8% | 22.4K |
+
+Where the 9B keeps up with models up to 13 times its size:
+- **A 16K budget.** RL v2 is right on 69.5% of its answers, the 27B on 59.6% (+9.8 points [+6.1, +13.6]) and the
+  122B on 22.7% (+46.7 [+41.3, +52.1]). The larger models are still reasoning when the budget ends: 40% of the 27B's
+  answers and 77% of the 122B's are unfinished.
+- **The 122B at 32K.** RL v2 84.9% against 82.0%: +3.0 points [+0.1, +5.8], just above the noise. Seed 1 alone is
+  +4.5 [+1.3, +7.7]; seed 2 alone is level, +1.4 [−1.7, +4.4].
+- **Cost.** At 32K RL v2 writes 12.4K tokens per answer, against 16.0K for the 27B and 22.4K for the 122B. With 9B
+  parameters that is about a quarter of the 27B's compute per answer and about half of the 122B's (10B active).
+
+Where it is behind: the teacher, with room to finish. At 32K the 27B is ahead by 3.1 points [−5.2, −1.1]. The two
+miss in different ways. The 27B leaves 10.2% of its answers unfinished and gives a wrong value in 1.2%; RL v2
+finishes more often (7.4% unfinished) and gives a wrong value more often (7.3%).
+
+The route forward is fewer wrong values. RL v2 already finishes more often than the teacher, so more room would not
+close the gap, and its excess of wrong values over the teacher's (7.3% against 1.2%) is larger than the whole gap of
+3.1 points. §7.2 traced the same shift after RL run 1: unfinished answers turned into wrong formulas.
+
+Caveats:
+- The larger models ran with 4-bit weights (the card of the 27B's NVFP4 build reports GPQA 88.0 against 88.9 in BF16).
+- One set of 160 problems; the differences are paired over the problems, the intervals in the table are not.
+- 64K is left out on purpose: RL v2 trained with a 24K response cap and was never asked to use more, so a 64K test
+  would measure room it never trained for.
+- The 27B wrote the SFT solutions, so RL v2 learned its style; every model used the 9B's prompts and effort setting,
+  not each model's own recommended ones.
+
 ---
 
 ## 2. Quick start
@@ -898,29 +941,7 @@ from 15.0% to 54.4% for SFT, and RL v2 reaches 66.2% and 75.6% at 64K. The base 
 **A model that thinks longer can be the more accurate one; one budget hides that.** At 32K run 1 is ahead of SFT
 only because it finishes sooner. RL v2 is ahead at both budgets.
 
-- **Against larger models.** A 9B result invites a comparison with larger models of the same family. I ran two of
-  them on D-Num-hard with the same harness, prompts, effort, sampling and 8 samples per item as every model above,
-  in 4-bit weights on a workstation's A100s: Qwen3.8-27B (NVFP4), the teacher that wrote the SFT solutions, and
-  Qwen3.5-122B-A10B (GPTQ-Int4), the 9B's own generation with 13 times its parameters and 10B of them active per
-  token (`scripts/talk/large_models.py`, `docs/talk/data/large_models_1120.json`).
-
-| D-Num-hard, % right (% unfinished) | 16K | 32K | RL v2 − model at 16K [95%] | RL v2 − model at 32K [95%] |
-|---|---|---|---|---|
-| Qwen3.5-122B-A10B, 4-bit | 22.7 (77.2) | 82.0 (14.8) | +46.7 [+41.3, +52.1] | +3.0 [+0.1, +5.8] |
-| Qwen3.8-27B, 4-bit (the SFT teacher) | 59.6 (39.5) | **88.0** (10.2) | +9.8 [+6.1, +13.6] | −3.1 [−5.2, −1.1] |
-| SFT, 9B | 47.8 (49.9) | 68.1 (28.2) | | |
-| RL v2, 9B, two seeds | **69.5** (27.3) | 84.9 (7.4) | | |
-
-At 16K RL v2 is ahead of both: the larger models are still reasoning when the budget ends, and 77% of the 122B's
-answers and 40% of the 27B's are unfinished. At 32K the 27B leads by 3.1 points, and RL v2 is just ahead of the 122B
-(seed 1 by 4.5 points [+1.3, +7.7]; seed 2 is level with it, +1.4 [−1.7, +4.4]). The misses differ in kind. The 27B
-and the 122B rarely give a wrong value at 32K (1.2% and 0.5% of their answers); they miss by running out of room.
-RL v2 finishes more often (7.4% unfinished) and gives a wrong value more often (7.3%).
-
-**Training for a budget beats size at that budget; with room to finish, the 27B teacher stays ahead.** Caveats,
-plainly: the large models ran with 4-bit weights (the card of the 27B's NVFP4 build reports GPQA 88.0 against 88.9
-in BF16); one set of 160 problems; the 64K budget is left out on purpose, since RL v2 trained with a 24K response cap
-and was never asked to use more; and the 27B wrote the SFT solutions, so RL v2 learned its style.
+- **Against larger models.** §1.5 sets RL v2 beside Qwen3.8-27B and Qwen3.5-122B-A10B at the same budgets.
 
 ### 7.4 Refusals
 
@@ -1785,7 +1806,7 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   69.8%. More than half of SFT's cut-off answers were on their way to the right value (§7.3).
 - **Larger models.** On D-Num-hard at 16K, RL v2 (69.5%) is far ahead of Qwen3.8-27B (59.6%) and
   Qwen3.5-122B-A10B (22.7%), which are still reasoning when the budget ends. At 32K the 27B teacher leads by 3.1
-  points and RL v2 is level with or just above the 122B, +3.0 [+0.1, +5.8] (§7.3).
+  points and RL v2 is level with or just above the 122B, +3.0 [+0.1, +5.8] (§1.5).
 - **Safety.** Refusal of should-refuse prompts fell from 56.0% to 45.7% (strict), and by 7.7 points even
   under a broad detector, mostly on unsafe prompts worded like harmless ones (§7.4).
 - **Systems.** 60% of the main job's hours went to incidents, waits and holds; the last pipeline stage ran at
