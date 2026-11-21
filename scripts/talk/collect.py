@@ -182,6 +182,8 @@ def jobs() -> dict[str, Any]:
         if len(f) != 9:
             continue
         jid, name, part, nodes, submit, start, end, elapsed, state = f
+        if name.startswith("mt-"):          # from 11-20 the allocation also runs another project's jobs (mt-node, ...)
+            continue
         nodes, elapsed = int(nodes or 0), int(elapsed or 0)
         rate = SU_RATE.get(part)
         row = {"id": jid, "name": name, "partition": part, "nodes": nodes, "submit": submit, "start": start,

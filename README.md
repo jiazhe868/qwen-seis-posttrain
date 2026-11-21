@@ -76,7 +76,8 @@ D-Num-hard the weakness is finishing: at 32K the SFT model runs out of tokens on
 with a wrong value on 4%. RL v2 re-grades the bank with the SFT model, keeps the problems it solves only sometimes,
 and adds 18 longer families with a dev split of their own. Every seed counts an answer that runs out of tokens as
 wrong and has no soft length penalty: a replay of the first step showed that penalty pushing long right answers
-shorter. Seed 3 trains at 16K, seeds 1–2 at 24K. I expect the cut-off rule to matter more than any of the weights
+shorter. Seeds 1–2 train at 24K; a third seed at 16K was planned and cancelled before it started. I expect the
+cut-off rule to matter more than any of the weights
 (§8.3). For the reports, I had the teacher write answers from 3,000 openly licensed papers
 (§8.4).
 
@@ -86,7 +87,7 @@ solved every D-Num-hard and D-Fresh problem without seeing the answers, and all 
 825 problems in run 1's training bank carried labels 2.681 units too low. Bank v2 leaves them out. Of 100 rows of
 the paper-based report data, it would keep 2 and drop 50: the teacher wrote earthquake facts from memory, and
 many were wrong. Therefore, I dropped SFT v2, and the 8-node job planned for it runs RL v2 again with a second
-seed. A third seed is queued too.
+seed. A third seed was queued and cancelled before it started: it would have waited days, and the two seeds agree.
 
 RL v2's first seed trained all 110 of its steps without collapsing, and it passes the test. At 32K it is 18.4 points
 above SFT on D-Num-hard [+14.4, +22.4], at 86.5, and 10.4 points above on D-Fresh [+5.2, +16.2]. It stays ahead at
@@ -97,7 +98,7 @@ gradient, as few as in run 1's first steps, and the run stayed stable, so a scar
 collapse (§8.6). The other sets moved too: D-Num 95.6, the first stage above the base, D-Code 92.7, GPQA 77.5 and
 LiveCodeBench 63.2, with the shortest answers of any stage. Refusals stayed at run 1's level. All of it ran on a
 workstation while the cluster's final evaluation waited in the queue. A second seed passes too (+15.2 on D-Num-hard
-and +8.5 on D-Fresh at 32K), and seed 3 is queued.
+and +8.5 on D-Fresh at 32K), so the third seed was cancelled before it started.
 
 Most of the month went to systems. The one 8-node job ran 71.9 hours: 28.7 of them ran the planned stages,
 and 43.2 went to incidents, waits and holds, 35.1 of those before SFT could start (§9.2). A 9B model on
@@ -897,6 +898,30 @@ from 15.0% to 54.4% for SFT, and RL v2 reaches 66.2% and 75.6% at 64K. The base 
 **A model that thinks longer can be the more accurate one; one budget hides that.** At 32K run 1 is ahead of SFT
 only because it finishes sooner. RL v2 is ahead at both budgets.
 
+- **Against larger models.** A 9B result invites a comparison with larger models of the same family. I ran two of
+  them on D-Num-hard with the same harness, prompts, effort, sampling and 8 samples per item as every model above,
+  in 4-bit weights on a workstation's A100s: Qwen3.8-27B (NVFP4), the teacher that wrote the SFT solutions, and
+  Qwen3.5-122B-A10B (GPTQ-Int4), the 9B's own generation with 13 times its parameters and 10B of them active per
+  token (`scripts/talk/large_models.py`, `docs/talk/data/large_models_1120.json`).
+
+| D-Num-hard, % right (% unfinished) | 16K | 32K | RL v2 − model at 16K [95%] | RL v2 − model at 32K [95%] |
+|---|---|---|---|---|
+| Qwen3.5-122B-A10B, 4-bit | 22.7 (77.2) | 82.0 (14.8) | +46.7 [+41.3, +52.1] | +3.0 [+0.1, +5.8] |
+| Qwen3.8-27B, 4-bit (the SFT teacher) | 59.6 (39.5) | **88.0** (10.2) | +9.8 [+6.1, +13.6] | −3.1 [−5.2, −1.1] |
+| SFT, 9B | 47.8 (49.9) | 68.1 (28.2) | | |
+| RL v2, 9B, two seeds | **69.5** (27.3) | 84.9 (7.4) | | |
+
+At 16K RL v2 is ahead of both: the larger models are still reasoning when the budget ends, and 77% of the 122B's
+answers and 40% of the 27B's are unfinished. At 32K the 27B leads by 3.1 points, and RL v2 is just ahead of the 122B
+(seed 1 by 4.5 points [+1.3, +7.7]; seed 2 is level with it, +1.4 [−1.7, +4.4]). The misses differ in kind. The 27B
+and the 122B rarely give a wrong value at 32K (1.2% and 0.5% of their answers); they miss by running out of room.
+RL v2 finishes more often (7.4% unfinished) and gives a wrong value more often (7.3%).
+
+**Training for a budget beats size at that budget; with room to finish, the 27B teacher stays ahead.** Caveats,
+plainly: the large models ran with 4-bit weights (the card of the 27B's NVFP4 build reports GPQA 88.0 against 88.9
+in BF16); one set of 160 problems; the 64K budget is left out on purpose, since RL v2 trained with a 24K response cap
+and was never asked to use more; and the 27B wrote the SFT solutions, so RL v2 learned its style.
+
 ### 7.4 Refusals
 
 <p align="center"><img src="assets/refusals_en.png" width="72%"></p>
@@ -949,7 +974,7 @@ let the measurement absorb the regression.
 | refusal | caught a real drop | crude word lists 20 points apart; 27 answers need a reader |
 
 What the suite lacks: human gold labels anywhere (a model review stood in for a person, §8.5), a third
-training seed (RL v2's seeds 1 and 2 agree within 0.7 points on D-Num; seed 3 is queued, §8.3), more than one sample
+training seed (RL v2's seeds 1 and 2 agree within 0.7 points on D-Num; seed 3 was cancelled, §8.3), more than one sample
 per D-Report question, and more than one effort level
 and budget. Without the last, accuracy and efficiency mix in every
 score: a model that thinks less finishes more often.
@@ -1026,7 +1051,9 @@ the cluster in its own job.
 At 32K both seeds are above SFT by more than the noise on both sets, so RL v2 passes. They are above SFT at 16K as
 well, and at 64K, where every model has room to finish, both are ahead on D-Num-hard and the pool is ahead on
 D-Fresh. Run 1 was faster than SFT and fell behind it at 64K. RL v2 is faster too, and it stays ahead at 64K. So it
-made the model more reliable as well as faster. Seed 3, which trains at 16K, is still queued.
+made the model more reliable as well as faster. Seed 3, which would have trained at 16K, was cancelled on November 20
+before it started: it would have waited days in the queue, and seeds 1 and 2 agree (+18.4 and +15.2 on D-Num-hard at
+32K). The cluster's re-run of seed 1's evaluation was cancelled with it.
 
 **The changes, each with the evidence behind it:**
 
@@ -1293,8 +1320,8 @@ go on to the re-grade, 2,997 problems from five families before the cap, and the
 SFT model. A problem stays if at least one of its 8 answers reaches the label. If none does, it is dropped, and it
 does not go to the hard pool, where nothing would ever check it ([PITFALLS](PITFALLS.md) A6).
 
-Two more 8-node jobs run the same steps with seeds 2 and 3 (`configs/rl/rl_9b_v2_seed2.yaml`,
-`configs/rl/rl_9b_v2_seed3.yaml`). The job for seed 2 was queued for SFT v2, which was dropped (§8.4), and its script
+Two more 8-node jobs were queued to run the same steps with seeds 2 and 3 (`configs/rl/rl_9b_v2_seed2.yaml`,
+`configs/rl/rl_9b_v2_seed3.yaml`); seed 2 ran, and seed 3 was cancelled before it started. The job for seed 2 was queued for SFT v2, which was dropped (§8.4), and its script
 keeps that first name. If several jobs start without a bank, the later ones wait for the first one's build. A
 seed reuses the length cap another seed chose, since the model, layout and lengths are the same. The final
 evaluation compares each seed with SFT, and the seeds pooled: each item's score averaged over the seeds
@@ -1330,9 +1357,8 @@ python -m dpt.eval.budget table budgets_rl_v2.json --rows rl_seed1,rl_v2_seed1,r
 **A job that waits days in the queue should read its steps when it starts.**
 
 Caveats, plainly:
-- three seeds of RL v2, and one of every other run; seed 3 differs only in its budget, so its comparison with
-  seeds 1–2 rests on one seed, and if the 24K memory test fails, seeds 1–2 also train at 16K and the seeds differ
-  only in which pass rate weights the problems;
+- two seeds of RL v2, and one of every other run (the third seed, which differed only in its budget, was cancelled
+  before it started);
 - every seed stops where seed 1 stopped for time, after step 110, so RL v2 trains 110 of its planned 120 steps, and
   its learning rate, which falls from step 86, ends at 6.5 × 10⁻⁷ instead of the planned 5 × 10⁻⁷;
 - D-Fresh has 60 problems, so its interval is about ±5 points;
@@ -1621,7 +1647,7 @@ too. So what RL v2 learned on the training families carried over to the held-out
 | a cut-off answer counts as wrong, no length penalty | what the gradient paid for | run 1's first step: 28% of the advantage from the penalty alone; RL v2: right finished answers longer inside 88 of 110 steps, shortening stopped where answers finished | changed the incentive; measured, but entangled with the bank |
 | half the learning rate | how far each step moves | RL v2 passed run 1's collapse point (a sum of 71) at step 76 and ended at 101; its right answers had 7,061 tokens at 40 and 7,973 at 100 | how far the policy moved does not explain the collapse alone; whether smaller steps are safer cannot be separated |
 | no report task | removed a judged reward that took 26–72% of run 1's gradient in steps 27–40 | run 1's numeric answers were already shrinking before reports joined (2,205 tokens at step 14) | cannot be separated |
-| a 24K budget instead of 16K | room to finish | seed 3 trains at 16K with everything else the same | open until seed 3 |
+| a 24K budget instead of 16K | room to finish | a seed at 16K with everything else the same would separate it; seed 3 was that seed and was cancelled | open |
 | dev pass every 10 steps, hard dev split, pause rules | what is measured and when the run stops | no pause rule fired in 110 steps | explains none of the difference; insurance |
 
 **What carries over to other projects:**
@@ -1638,8 +1664,8 @@ too. So what RL v2 learned on the training families carried over to the held-out
   started with, and stayed stable. What fills the rest of the step matters more.
 
 Caveats, plainly:
-- two seeds so far, seed 2 evaluated at step 100 and with a code reward that was partly broken (C8); seed 3 is
-  queued;
+- two seeds, seed 2 evaluated at step 100 and with a code reward that was partly broken (C8); seed 3 was
+  cancelled before it started;
 - the hard dev split holds new problems from the training families; D-Num-hard's families are held out, and there
   the gain is smaller (the table above);
 - without a control run, the bank and the rule cannot be told apart; the comparison only says that both changed
@@ -1757,6 +1783,9 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   untouched by SFT or RL (§7.2).
 - **Budget.** With 64K tokens on D-Num-hard the SFT model answers 83.9% right, RL step 20 77.5% and the base
   69.8%. More than half of SFT's cut-off answers were on their way to the right value (§7.3).
+- **Larger models.** On D-Num-hard at 16K, RL v2 (69.5%) is far ahead of Qwen3.8-27B (59.6%) and
+  Qwen3.5-122B-A10B (22.7%), which are still reasoning when the budget ends. At 32K the 27B teacher leads by 3.1
+  points and RL v2 is level with or just above the 122B, +3.0 [+0.1, +5.8] (§7.3).
 - **Safety.** Refusal of should-refuse prompts fell from 56.0% to 45.7% (strict), and by 7.7 points even
   under a broad detector, mostly on unsafe prompts worded like harmless ones (§7.4).
 - **Systems.** 60% of the main job's hours went to incidents, waits and holds; the last pipeline stage ran at
@@ -1771,10 +1800,11 @@ in [PITFALLS.md](PITFALLS.md) with the false story it supported and the test tha
   RL step 20 a 60.0% win rate against the base, between Gemma (86.7%) and Luna (45.0%) on the same pairs (§8.5).
 - **Not measured yet:**
   - human gold labels for any reward or test (a model review stood in, §8.5);
-  - a third seed (RL v2's seed 3, at 16K, is queued), and any scaling curve in data, model size or RL steps;
+  - a third seed (RL v2's seed 3, at 16K, was cancelled before it started), and any scaling curve in data, model
+    size or RL steps;
   - the 27 unclear refusal answers;
   - the cause of run 1's collapse;
-  - RL v2's seed 3, and the three seeds pooled (§8.3).
+  - whether RL v2's 24K budget mattered: the seed that would have trained at 16K was cancelled (§8.3).
 
 ---
 
@@ -1786,7 +1816,7 @@ Report portable units. "56 RL steps" means nothing on another batch size. "56 st
 | axis | measured here | what to add |
 |---|---|---|
 | SFT data | one mix: 13,095 conversations, 44.1M tokens, one run | a data sweep (¼, ½, 1×) on D-Num-hard and D-Report; report rows written from papers with every claim matched to its source (the unmatched version failed review, §8.4) |
-| RL compute | run 1: 56 steps × 1,008 samples at ≤ 16K tokens, ~3.7 h on 8 nodes, good to step 20. RL v2 seed 1: 110 steps × 1,008 samples at ≤ 24K tokens, ~20 h on 8 nodes, stable to the end (§8.6) | seeds 2 and 3 of RL v2 (one training, one queued, §8.3); a longer run, to see where the gain stops |
+| RL compute | run 1: 56 steps × 1,008 samples at ≤ 16K tokens, ~3.7 h on 8 nodes, good to step 20. RL v2 seed 1: 110 steps × 1,008 samples at ≤ 24K tokens, ~20 h on 8 nodes, stable to the end (§8.6) | a third seed of RL v2 (the one queued was cancelled, §8.3); a longer run, to see where the gain stops |
 | model size | 9B only (the 27B line does not fit 40 GB GPUs for RL) | the 27B on 80 GB GPUs, or 4B as a cheap probe |
 | mid-training | none (§8.2) | a small token sweep, only after knowledge-dense SFT data is tried |
 | test-time compute | budgets 2K–32K and votes 1–64 on D-Num; budgets up to 64K on D-Num-hard (§7.3) | one more effort level |

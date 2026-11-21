@@ -1,0 +1,360 @@
+{
+ "written_at": "2026-11-20T18:26",
+ "set": "d_num_hard",
+ "samples_per_item": 8,
+ "large_models": {
+  "qwen35_122b_int4": "Qwen3.5-122B-A10B (GPTQ-Int4)",
+  "qwen38_27b_nvfp4": "Qwen3.8-27B (NVFP4)"
+ },
+ "rows": {
+  "qwen35_122b_int4": {
+   "items": 160,
+   "at_16k": {
+    "score": 22.7,
+    "outcomes_pct": {
+     "right": 22.7,
+     "wrong_value": 0.1,
+     "unfinished": 77.2,
+     "format": 0.0
+    }
+   },
+   "at_32k": {
+    "score": 82.0,
+    "outcomes_pct": {
+     "right": 82.0,
+     "wrong_value": 0.5,
+     "unfinished": 14.8,
+     "format": 2.7
+    }
+   }
+  },
+  "qwen38_27b_nvfp4": {
+   "items": 160,
+   "at_16k": {
+    "score": 59.6,
+    "outcomes_pct": {
+     "right": 59.6,
+     "wrong_value": 0.8,
+     "unfinished": 39.5,
+     "format": 0.1
+    }
+   },
+   "at_32k": {
+    "score": 88.0,
+    "outcomes_pct": {
+     "right": 88.0,
+     "wrong_value": 1.2,
+     "unfinished": 10.2,
+     "format": 0.5
+    }
+   }
+  },
+  "sft": {
+   "items": 160,
+   "at_16k": {
+    "score": 47.8,
+    "outcomes_pct": {
+     "right": 47.8,
+     "wrong_value": 2.2,
+     "unfinished": 49.9,
+     "format": 0.1
+    }
+   },
+   "at_32k": {
+    "score": 68.1,
+    "outcomes_pct": {
+     "right": 68.1,
+     "wrong_value": 3.6,
+     "unfinished": 28.2,
+     "format": 0.1
+    }
+   }
+  },
+  "rl_seed1": {
+   "items": 160,
+   "at_16k": {
+    "score": 58.0,
+    "outcomes_pct": {
+     "right": 58.0,
+     "wrong_value": 7.3,
+     "unfinished": 34.3,
+     "format": 0.3
+    }
+   },
+   "at_32k": {
+    "score": 70.1,
+    "outcomes_pct": {
+     "right": 70.1,
+     "wrong_value": 12.6,
+     "unfinished": 16.5,
+     "format": 0.9
+    }
+   }
+  },
+  "rl_v2_seed1": {
+   "items": 160,
+   "at_16k": {
+    "score": 67.1,
+    "outcomes_pct": {
+     "right": 67.1,
+     "wrong_value": 2.8,
+     "unfinished": 30.0,
+     "format": 0.1
+    }
+   },
+   "at_32k": {
+    "score": 86.5,
+    "outcomes_pct": {
+     "right": 86.5,
+     "wrong_value": 6.7,
+     "unfinished": 6.3,
+     "format": 0.5
+    }
+   }
+  },
+  "rl_v2_seed2": {
+   "items": 160,
+   "at_16k": {
+    "score": 71.8,
+    "outcomes_pct": {
+     "right": 71.8,
+     "wrong_value": 3.4,
+     "unfinished": 24.7,
+     "format": 0.1
+    }
+   },
+   "at_32k": {
+    "score": 83.4,
+    "outcomes_pct": {
+     "right": 83.4,
+     "wrong_value": 7.8,
+     "unfinished": 8.4,
+     "format": 0.4
+    }
+   }
+  },
+  "rl_v2": {
+   "items": 160,
+   "at_16k": {
+    "score": 69.5,
+    "outcomes_pct": {
+     "right": 69.5,
+     "wrong_value": 3.1,
+     "unfinished": 27.3,
+     "format": 0.1
+    }
+   },
+   "at_32k": {
+    "score": 84.9,
+    "outcomes_pct": {
+     "right": 84.9,
+     "wrong_value": 7.3,
+     "unfinished": 7.4,
+     "format": 0.4
+    }
+   }
+  }
+ },
+ "versus": {
+  "qwen35_122b_int4": {
+   "qwen38_27b_nvfp4": {
+    "at_16k": {
+     "items": 160,
+     "diff": 36.88,
+     "low": 32.03,
+     "high": 41.72,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 6.09,
+     "low": 2.66,
+     "high": 9.61,
+     "above_noise": true
+    }
+   },
+   "sft": {
+    "at_16k": {
+     "items": 160,
+     "diff": 25.08,
+     "low": 20.47,
+     "high": 29.69,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -13.83,
+     "low": -18.05,
+     "high": -9.61,
+     "above_noise": false
+    }
+   },
+   "rl_seed1": {
+    "at_16k": {
+     "items": 160,
+     "diff": 35.31,
+     "low": 30.23,
+     "high": 40.47,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -11.88,
+     "low": -15.86,
+     "high": -7.97,
+     "above_noise": false
+    }
+   },
+   "rl_v2_seed1": {
+    "at_16k": {
+     "items": 160,
+     "diff": 44.38,
+     "low": 38.98,
+     "high": 49.69,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 4.53,
+     "low": 1.33,
+     "high": 7.73,
+     "above_noise": true
+    }
+   },
+   "rl_v2_seed2": {
+    "at_16k": {
+     "items": 160,
+     "diff": 49.06,
+     "low": 43.2,
+     "high": 54.77,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 1.41,
+     "low": -1.72,
+     "high": 4.38,
+     "above_noise": false
+    }
+   },
+   "rl_v2": {
+    "at_16k": {
+     "items": 160,
+     "diff": 46.72,
+     "low": 41.33,
+     "high": 52.11,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 2.97,
+     "low": 0.08,
+     "high": 5.78,
+     "above_noise": true
+    }
+   }
+  },
+  "qwen38_27b_nvfp4": {
+   "qwen35_122b_int4": {
+    "at_16k": {
+     "items": 160,
+     "diff": -36.88,
+     "low": -41.72,
+     "high": -32.03,
+     "above_noise": false
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -6.09,
+     "low": -9.61,
+     "high": -2.66,
+     "above_noise": false
+    }
+   },
+   "sft": {
+    "at_16k": {
+     "items": 160,
+     "diff": -11.8,
+     "low": -14.84,
+     "high": -8.83,
+     "above_noise": false
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -19.92,
+     "low": -24.06,
+     "high": -15.94,
+     "above_noise": false
+    }
+   },
+   "rl_seed1": {
+    "at_16k": {
+     "items": 160,
+     "diff": -1.56,
+     "low": -5.08,
+     "high": 1.95,
+     "above_noise": false
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -17.97,
+     "low": -21.48,
+     "high": -14.61,
+     "above_noise": false
+    }
+   },
+   "rl_v2_seed1": {
+    "at_16k": {
+     "items": 160,
+     "diff": 7.5,
+     "low": 4.22,
+     "high": 10.86,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -1.56,
+     "low": -3.67,
+     "high": 0.55,
+     "above_noise": false
+    }
+   },
+   "rl_v2_seed2": {
+    "at_16k": {
+     "items": 160,
+     "diff": 12.19,
+     "low": 7.73,
+     "high": 16.8,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -4.69,
+     "low": -7.58,
+     "high": -1.95,
+     "above_noise": false
+    }
+   },
+   "rl_v2": {
+    "at_16k": {
+     "items": 160,
+     "diff": 9.84,
+     "low": 6.13,
+     "high": 13.63,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -3.12,
+     "low": -5.23,
+     "high": -1.05,
+     "above_noise": false
+    }
+   }
+  }
+ },
+ "collected_at": {
+  "qwen35_122b_int4": "2026-11-20T17:31",
+  "qwen38_27b_nvfp4": "2026-11-20T17:31"
+ }
+}
