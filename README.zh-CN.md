@@ -4,6 +4,8 @@
 
 [English](README.md) | [中文](README.zh-CN.md) | [nanoGPT-Seis（预训练）](https://github.com/jiazhe868/nanogpt-seis) | [nanoGPT-Seis-Posttrain（113M SFT + GRPO）](https://github.com/jiazhe868/nanogpt-seis-posttrain)
 
+Hugging Face 上的模型：[SFT](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-SFT) | [RL 第一轮](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-RL-run1) | [RL v2，最终模型](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-RL-v2)
+
 在共享 GPU 集群上为地震学后训练（post-training）Qwen3.5-9B：先用教师撰写的数据做监督微调（SFT），再用程序化奖励和裁判打分的奖励做多任务 GRPO，并在任何训练开始之前就已冻结的测试集上评测。全部工作在一个月内完成，使用 8 个节点，每个节点 3 × NVIDIA A100-PCIe-40GB。
 
 </div>
@@ -165,6 +167,9 @@ RL v2 是第二种 RL 设计（§8.3），也是第一个让 D-Num-hard 大幅�
 ## 2. 快速开始
 
 ```bash
+# --- 已发布的模型：从 Hugging Face Hub 启动最终模型的服务（提示词见它的模型卡） ---
+vllm serve jiazhe868/Qwen3.5-9B-Seis-RL-v2 --max-model-len 40960 --reasoning-parser qwen3 --language-model-only
+
 # --- CPU：安装、测试、判分器、显存规划器 -----------------------------------
 pip install -e . -r requirements/core.txt
 make test            # CPU 单元测试（不需要 GPU）

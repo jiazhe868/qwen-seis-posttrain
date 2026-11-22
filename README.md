@@ -4,6 +4,8 @@
 
 [English](README.md) | [中文](README.zh-CN.md) | [nanoGPT-Seis (pretraining)](https://github.com/jiazhe868/nanogpt-seis) | [nanoGPT-Seis-Posttrain (113M SFT + GRPO)](https://github.com/jiazhe868/nanogpt-seis-posttrain)
 
+Models on Hugging Face: [SFT](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-SFT) | [RL run 1](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-RL-run1) | [RL v2, the final model](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-RL-v2)
+
 Post-training Qwen3.5-9B for seismology on a shared GPU cluster: supervised fine-tuning on
 teacher-written data, then multi-task GRPO with programmatic and judged rewards, measured on test sets
 frozen before any training. Everything ran in one month on 8 nodes of 3 × NVIDIA A100-PCIe-40GB.
@@ -300,6 +302,9 @@ Caveats:
 ## 2. Quick start
 
 ```bash
+# --- the released models: serve the final one from the Hugging Face Hub (its card shows the prompt) ---
+vllm serve jiazhe868/Qwen3.5-9B-Seis-RL-v2 --max-model-len 40960 --reasoning-parser qwen3 --language-model-only
+
 # --- CPU: install, tests, graders, the memory planner ----------------------
 pip install -e . -r requirements/core.txt
 make test            # CPU unit tests (no GPU needed)

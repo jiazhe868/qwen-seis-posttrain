@@ -1073,7 +1073,7 @@
    "sft_eval": "2026-10-29T21:16"
   }
  },
- "collected_at": "2026-11-20T18:17",
+ "collected_at": "2026-11-22T09:17",
  "compute": {
   "balance": {
    "available_su": 3150,
@@ -1922,13 +1922,13 @@
    },
    {
     "elapsed_s": 0,
-    "end": "Unknown",
+    "end": "2026-11-20T18:37:20",
     "id": "3583946",
     "name": "dpt-rlv2s3",
     "nodes": 8,
     "partition": "gpu-a100",
-    "start": "Unknown",
-    "state": "PENDING",
+    "start": "None",
+    "state": "CANCELLED",
     "su": 0.0,
     "submit": "2026-11-15T12:43:25"
    },
@@ -1982,13 +1982,13 @@
    },
    {
     "elapsed_s": 0,
-    "end": "Unknown",
+    "end": "2026-11-20T18:50:37",
     "id": "3592027",
     "name": "dpt-fe-s1",
     "nodes": 4,
     "partition": "gpu-a100",
-    "start": "Unknown",
-    "state": "PENDING",
+    "start": "None",
+    "state": "CANCELLED",
     "su": 0.0,
     "submit": "2026-11-18T03:44:21"
    }
