@@ -1214,7 +1214,7 @@ python scripts/talk/refusal_breakdown.py             # 按检测器和提示类�
 - **测试集不公开。** 它们的题目、答案和评分细则只保存在训练机器上，以便继续用作留出测试；README 和报告中只有汇总数据。
 - **留出题的生成器同样不公开。** 18 个留出数值题族（D-Num、D-Num-hard）和 11 种留出代码题型（D-Code）的模板、参数范围和求解器能够重新生成测试题，所以它们放在三个不纳入 git 的文件中（`src/dpt/data/gen/*_heldout.py`）。公开代码没有它们也能运行：留出划分为空，构建这些测试集的六个测试会被跳过（`dpt.data.gen.common.import_private_module_if_present`）。
 - **GPT-6 Luna** 只用于评测（起草和核查测试题、担任第二裁判、打失败标签）。按照其使用条款的要求，它的任何输出都不在任何训练集中。
-- **模型权重**（`sft9b_seed1`、`rl9b_seed1_step20`，各 19 GB）尚未发布。
+- **模型权重**已按 Apache-2.0（与基座模型相同）发布在 Hugging Face 上：[SFT](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-SFT)（`sft9b_seed1`）、[RL 第一轮](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-RL-run1)（`rl9b_seed1_step20`）和 [RL v2](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-RL-v2)（第一个种子，第 110 步），各 19 GB。
 - 公开基准（GPQA、MMLU-Pro、IFEval、LiveCodeBench、XSTest、JailbreakBench）按各自的许可使用，本仓库不再分发。GPQA 要求不要在网上公开它的题目。
 - Qwen3.5-9B 和其他模型均按各自的许可使用。
 

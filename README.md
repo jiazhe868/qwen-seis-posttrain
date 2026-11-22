@@ -1985,7 +1985,10 @@ by Google DeepMind; GPT-6 Luna by OpenAI.
   skipped (`dpt.data.gen.common.import_private_module_if_present`).
 - **GPT-6 Luna** was used for evaluation only (drafting and checking test items, a second judge, failure
   labels). None of its outputs is in any training set, as its terms require.
-- **The model weights** (`sft9b_seed1`, `rl9b_seed1_step20`, 19 GB each) are not published yet.
+- **The model weights** are on Hugging Face under Apache-2.0, as the base model:
+  [SFT](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-SFT) (`sft9b_seed1`),
+  [RL run 1](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-RL-run1) (`rl9b_seed1_step20`) and
+  [RL v2](https://huggingface.co/jiazhe868/Qwen3.5-9B-Seis-RL-v2) (seed 1, step 110), 19 GB each.
 - Public benchmarks (GPQA, MMLU-Pro, IFEval, LiveCodeBench, XSTest, JailbreakBench) are used under their own
   licences and are not redistributed here. GPQA asks that its items not be revealed online.
 - Qwen3.5-9B and the other models are used under their own licences.
