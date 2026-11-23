@@ -263,14 +263,23 @@ at temperature 1) and grader of every model above, in 4-bit weights on a worksta
 teacher that wrote the SFT solutions, and Qwen3.5-122B-A10B, the 9B's own generation with 13 times its parameters and
 10B of them active per token. Every answer is scored as if the cap had been 16K or 32K tokens, the same test that
 RL v2 passed against SFT (§8.3); the bars carry 95% intervals over the 160 problems, and tokens per answer are at the
-32K cap. Data: `docs/talk/data/large_models_1120.json`; script: `scripts/talk/large_models.py`.
+32K cap. The 9B base model, where SFT started, is scored the same way; its answers come from the main evaluation in
+the same harness at the same 32K cap. Data: `docs/talk/data/large_models_1120.json`; script:
+`scripts/talk/large_models.py`.
 
 | model | parameters | right at 16K | right at 32K | unfinished at 32K | tokens per answer, 32K |
 |---|---|---|---|---|---|
 | **RL v2 (this model)** | **9B** | **69.5%** | 84.9% | 7.4% | **12.4K** |
 | SFT | 9B | 47.8% | 68.1% | 28.2% | 19.1K |
+| Qwen3.5-9B (base) | 9B | 13.0% | 62.0% | 32.9% | 25.8K |
 | Qwen3.8-27B (teacher) | 27B | 59.6% | **88.0%** | 10.2% | 16.0K |
 | Qwen3.5-122B-A10B | 122B, 10B active | 22.7% | 82.0% | 14.8% | 22.4K |
+
+**From the base to past the 122B.** The base 9B writes the longest answers of all, 25.8K tokens at the 32K cap, and
+at a 16K budget 87% of them are unfinished: it is right on 13.0% at 16K and 62.0% at 32K. At 32K the 122B is ahead
+of the base by 20.0 points [+16.0, +24.1]. RL v2 is ahead of the base by 56.4 points [+50.7, +62.0] at 16K and by
+23.0 [+19.4, +26.7] at 32K, so post-training covered the whole distance from the base to the 122B and a little more.
+SFT alone is ahead of the base by 34.8 [+29.8, +39.7] at 16K and by 6.2 [+3.4, +8.9] at 32K.
 
 Where the 9B keeps up with models up to 13 times its size:
 - **A 16K budget.** RL v2 is right on 69.5% of its answers, the 27B on 59.6% (+9.8 points [+6.1, +13.6]) and the

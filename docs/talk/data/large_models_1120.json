@@ -1,10 +1,13 @@
 {
- "written_at": "2026-11-20T19:19",
+ "written_at": "2026-11-22T19:46",
  "set": "d_num_hard",
  "samples_per_item": 8,
  "large_models": {
   "qwen35_122b_int4": "Qwen3.5-122B-A10B (GPTQ-Int4)",
   "qwen38_27b_nvfp4": "Qwen3.8-27B (NVFP4)"
+ },
+ "base_model": {
+  "base_medium": "Qwen3.5-9B (base)"
  },
  "rows": {
   "qwen35_122b_int4": {
@@ -67,6 +70,37 @@
      "format": 0.5
     },
     "mean_tokens": 15981
+   }
+  },
+  "base_medium": {
+   "items": 160,
+   "at_16k": {
+    "score": 13.0,
+    "score_interval": {
+     "low": 9.5,
+     "high": 16.9
+    },
+    "outcomes_pct": {
+     "right": 13.0,
+     "wrong_value": 0.0,
+     "unfinished": 86.9,
+     "format": 0.1
+    },
+    "mean_tokens": 15958
+   },
+   "at_32k": {
+    "score": 62.0,
+    "score_interval": {
+     "low": 55.8,
+     "high": 68.0
+    },
+    "outcomes_pct": {
+     "right": 62.0,
+     "wrong_value": 1.2,
+     "unfinished": 32.9,
+     "format": 4.0
+    },
+    "mean_tokens": 25787
    }
   },
   "sft": {
@@ -243,6 +277,22 @@
      "above_noise": true
     }
    },
+   "base_medium": {
+    "at_16k": {
+     "items": 160,
+     "diff": -9.69,
+     "low": -12.19,
+     "high": -7.27,
+     "above_noise": false
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -20.0,
+     "low": -24.14,
+     "high": -16.02,
+     "above_noise": false
+    }
+   },
    "sft": {
     "at_16k": {
      "items": 160,
@@ -341,6 +391,22 @@
      "above_noise": false
     }
    },
+   "base_medium": {
+    "at_16k": {
+     "items": 160,
+     "diff": -46.56,
+     "low": -51.72,
+     "high": -41.41,
+     "above_noise": false
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": -26.09,
+     "low": -30.55,
+     "high": -21.8,
+     "above_noise": false
+    }
+   },
    "sft": {
     "at_16k": {
      "items": 160,
@@ -421,10 +487,125 @@
      "above_noise": false
     }
    }
+  },
+  "base_medium": {
+   "qwen35_122b_int4": {
+    "at_16k": {
+     "items": 160,
+     "diff": 9.69,
+     "low": 7.27,
+     "high": 12.19,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 20.0,
+     "low": 16.02,
+     "high": 24.14,
+     "above_noise": true
+    }
+   },
+   "qwen38_27b_nvfp4": {
+    "at_16k": {
+     "items": 160,
+     "diff": 46.56,
+     "low": 41.41,
+     "high": 51.72,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 26.09,
+     "low": 21.8,
+     "high": 30.55,
+     "above_noise": true
+    }
+   },
+   "sft": {
+    "at_16k": {
+     "items": 160,
+     "diff": 34.77,
+     "low": 29.84,
+     "high": 39.69,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 6.17,
+     "low": 3.44,
+     "high": 8.91,
+     "above_noise": true
+    }
+   },
+   "rl_seed1": {
+    "at_16k": {
+     "items": 160,
+     "diff": 45.0,
+     "low": 39.61,
+     "high": 50.39,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 8.12,
+     "low": 5.23,
+     "high": 11.02,
+     "above_noise": true
+    }
+   },
+   "rl_v2_seed1": {
+    "at_16k": {
+     "items": 160,
+     "diff": 54.06,
+     "low": 48.36,
+     "high": 59.69,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 24.53,
+     "low": 20.47,
+     "high": 28.83,
+     "above_noise": true
+    }
+   },
+   "rl_v2_seed2": {
+    "at_16k": {
+     "items": 160,
+     "diff": 58.75,
+     "low": 52.81,
+     "high": 64.69,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 21.41,
+     "low": 18.05,
+     "high": 24.92,
+     "above_noise": true
+    }
+   },
+   "rl_v2": {
+    "at_16k": {
+     "items": 160,
+     "diff": 56.41,
+     "low": 50.74,
+     "high": 61.99,
+     "above_noise": true
+    },
+    "at_32k": {
+     "items": 160,
+     "diff": 22.97,
+     "low": 19.38,
+     "high": 26.68,
+     "above_noise": true
+    }
+   }
   }
  },
  "collected_at": {
-  "qwen35_122b_int4": "2026-11-20T19:12",
-  "qwen38_27b_nvfp4": "2026-11-20T19:12"
+  "qwen35_122b_int4": "2026-11-22T19:45",
+  "qwen38_27b_nvfp4": "2026-11-22T19:44",
+  "base_medium": "2026-11-22T19:45"
  }
 }

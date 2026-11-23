@@ -81,7 +81,8 @@ partial_level_color = "#9fdcc3"         # a three-level judge's "partial", a tin
 run_color = {"run1": model_color["rl_seed1"], "rl_v2_seed1": model_color["rl_v2_seed1"]}   # run 1 keeps RL's orange
 # the larger Qwen models in a cool grey ramp, darker for the larger one (the base model keeps the warm grey)
 larger_model_color = {"rl_v2": model_color["rl_v2_seed1"], "sft": model_color["sft"],
-                      "qwen38_27b_nvfp4": "#7d8c99", "qwen35_122b_int4": "#3f4d5a"}
+                      "base_medium": model_color["base_medium"], "qwen38_27b_nvfp4": "#7d8c99",
+                      "qwen35_122b_int4": "#3f4d5a"}
 
 # ---------------------------------------------------------------------------
 # the only words in the figures, in both languages
@@ -94,7 +95,7 @@ label_text = {
         "workflow_score": "D-Num-hard", "workflow_tokens": "tokens / answer",
         "conversations": "conversations", "problems": "problems",
         "score": "score", "tokens_thousands": "tokens (K)",
-        "larger_model": {"rl_v2": "RL v2, 9B (ours)", "sft": "SFT, 9B (ours)",
+        "larger_model": {"rl_v2": "RL v2, 9B (ours)", "sft": "SFT, 9B (ours)", "base_medium": "Qwen3.5-9B (base)",
                          "qwen38_27b_nvfp4": "Qwen3.8-27B (teacher)", "qwen35_122b_int4": "Qwen3.5-122B-A10B"},
         "larger_budgets": ["16K cap", "32K cap"], "larger_score": "D-Num-hard, % right",
         "larger_tokens": "tokens per answer (K)",
@@ -155,7 +156,7 @@ label_text = {
         "workflow_score": "D-Num-hard", "workflow_tokens": "每个回答的 token",
         "conversations": "条对话", "problems": "道题",
         "score": "得分", "tokens_thousands": "token 数（千）",
-        "larger_model": {"rl_v2": "RL v2，9B（我们的）", "sft": "SFT，9B（我们的）",
+        "larger_model": {"rl_v2": "RL v2，9B（我们的）", "sft": "SFT，9B（我们的）", "base_medium": "Qwen3.5-9B（基座）",
                          "qwen38_27b_nvfp4": "Qwen3.8-27B（教师）", "qwen35_122b_int4": "Qwen3.5-122B-A10B"},
         "larger_budgets": ["16K 上限", "32K 上限"], "larger_score": "D-Num-hard 答对 %",
         "larger_tokens": "每个回答的 token 数 (K)",
@@ -1306,13 +1307,13 @@ def draw_larger_models(results: dict, language: str) -> None:
     by scripts/talk/large_models.py). The layout follows nanogpt-seis-posttrain's comparison with general models."""
     text = label_text[language]
     comparison = load_result_file("large_models_1120.json")
-    models = ["rl_v2", "sft", "qwen38_27b_nvfp4", "qwen35_122b_int4"]
+    models = ["rl_v2", "sft", "base_medium", "qwen38_27b_nvfp4", "qwen35_122b_int4"]
     budgets = ["at_16k", "at_32k"]
     rows = comparison["rows"]
 
     figure, (score_axes, token_axes) = plt.subplots(1, 2, figsize=(12.5, 4.6),
                                                     gridspec_kw={"width_ratios": [2.6, 1.0], "wspace": 0.22})
-    bar_width = 0.19
+    bar_width = 0.155                # five models in a group of width 1
     middle = (len(models) - 1) / 2
     for model_index, model in enumerate(models):
         positions = [group + (model_index - middle) * (bar_width + 0.015) for group in range(len(budgets))]

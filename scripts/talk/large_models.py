@@ -9,6 +9,10 @@ as baseline, next to the private eval results. This script keeps what may be pub
 and paired differences, and writes them to docs/talk/data/large_models_1120.json for the README, the report and the
 deck.
 
+The 9B base model (Qwen3.5-9B, the starting point of SFT) is a row too, and a third baseline: its answers came
+from the main evaluation in the same harness at the same 32K cap, so the same scoring gives it a 16K and a 32K
+score (it was missing from the first version of this file, 11-20, because only the three-budget rows were listed).
+
 Only the 16K and 32K budgets are kept. RL v2 trained with a 24K response cap, so a 64K comparison asks it to use room
 it never trained for; and the 122B's 64K step was not run, so its 64K entry in the source file is a copy of its 32K
 entry.
@@ -25,7 +29,9 @@ from pathlib import Path
 repository_root = Path(__file__).resolve().parents[2]
 output_path = repository_root / "docs" / "talk" / "data" / "large_models_1120.json"
 large_model_names = {"qwen35_122b_int4": "Qwen3.5-122B-A10B (GPTQ-Int4)", "qwen38_27b_nvfp4": "Qwen3.8-27B (NVFP4)"}
-kept_rows = ["qwen35_122b_int4", "qwen38_27b_nvfp4", "sft", "rl_seed1", "rl_v2_seed1", "rl_v2_seed2", "rl_v2"]
+base_model_names = {"base_medium": "Qwen3.5-9B (base)"}
+kept_rows = ["qwen35_122b_int4", "qwen38_27b_nvfp4", "base_medium", "sft", "rl_seed1", "rl_v2_seed1", "rl_v2_seed2",
+             "rl_v2"]
 kept_budgets = ["at_16k", "at_32k"]
 
 
@@ -34,8 +40,9 @@ def main() -> None:
     parser.add_argument("--results", required=True, help="folder with budgets_large_models_vs_<model>.json")
     arguments = parser.parse_args()
     collected: dict = {"written_at": dt.datetime.now().isoformat(timespec="minutes"), "set": "d_num_hard",
-                       "samples_per_item": 8, "large_models": large_model_names, "rows": {}, "versus": {}}
-    for baseline_name in large_model_names:
+                       "samples_per_item": 8, "large_models": large_model_names, "base_model": base_model_names,
+                       "rows": {}, "versus": {}}
+    for baseline_name in [*large_model_names, *base_model_names]:
         source = json.loads((Path(arguments.results) / f"budgets_large_models_vs_{baseline_name}.json").read_text())
         assert source["baseline"] == baseline_name, f"{baseline_name}: the file names another baseline"
         rows = source["sets"]["d_num_hard"]
